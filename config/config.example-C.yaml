@@ -1,0 +1,24 @@
+# LegacyMCP — Profile C: Live Mode (internet-facing)
+# WARNING: Only deploy with a WAF in front. See CLAUDE.md for requirements.
+# Minimum requirements: WAF + TLS + OAuth2/OIDC (Entra ID) + MFA + rate limiting.
+
+mode: live
+
+workspace:
+  forests:
+    - name: contoso.local
+      relation: standalone
+      dc: dc01.contoso.local
+      credentials: gmsa
+
+# Authentication (OAuth2 / Entra ID)
+# auth:
+#   provider: entra               # entra | none (never use none on profile C)
+#   tenant_id: YOUR_TENANT_ID
+#   client_id: YOUR_CLIENT_ID
+#   audience:  api://legacymcp
+
+# Server binding
+# server:
+#   host: 127.0.0.1              # bind to localhost — WAF terminates TLS externally
+#   port: 8080

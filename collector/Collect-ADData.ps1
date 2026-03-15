@@ -1,0 +1,338 @@
+#Requires -Version 5.1
+#Requires -Modules ActiveDirectory
+
+<#
+.SYNOPSIS
+    LegacyMCP Offline Data Collector — exports AD data to a structured JSON file.
+
+.DESCRIPTION
+    Collects Active Directory data across all sections covered by LegacyMCP Core
+    and exports it as a single JSON file for offline analysis.
+    Read-only. No changes are made to the AD environment.
+
+.PARAMETER OutputPath
+    Path to the output JSON file. Default: .\ad-data.json
+
+.PARAMETER Server
+    Domain Controller to query. Defaults to the closest DC via auto-discovery.
+
+.PARAMETER Credential
+    PSCredential to use. If omitted, uses the current user context (gMSA or logged-in user).
+
+.EXAMPLE
+    .\Collect-ADData.ps1 -OutputPath C:\export\contoso.json
+
+.EXAMPLE
+    .\Collect-ADData.ps1 -Server dc01.contoso.local -OutputPath C:\export\contoso.json
+#>
+
+[CmdletBinding()]
+param(
+    [string]$OutputPath = ".\ad-data.json",
+    [string]$Server,
+    [System.Management.Automation.PSCredential]$Credential
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$commonParams = @{}
+if ($Server)     { $commonParams["Server"]     = $Server }
+if ($Credential) { $commonParams["Credential"] = $Credential }
+
+function Write-Status([string]$Section, [string]$State) {
+    $symbol = if ($State -eq "OK") { "[OK]" } elseif ($State -eq "WARN") { "[WARN]" } else { "[FAIL]" }
+    Write-Host "$symbol  $Section"
+}
+
+function Invoke-Section([string]$Name, [scriptblock]$Block) {
+    try {
+        $result = & $Block
+        Write-Status $Name "OK"
+        return $result
+    } catch {
+        Write-Status $Name "WARN"
+        Write-Warning "$Name`: $_"
+        return $null
+    }
+}
+
+$data = [ordered]@{}
+
+# --- Forest ---
+$data["forest"] = Invoke-Section "Forest" {
+    Get-ADForest @commonParams | Select-Object Name, ForestMode, SchemaMaster,
+        DomainNamingMaster, Sites, Domains, GlobalCatalogs,
+        @{N="SchemaVersion"; E={ (Get-ADObject (Get-ADRootDSE @commonParams).schemaNamingContext -Properties objectVersion @commonParams).objectVersion }}
+}
+
+# --- Optional Features ---
+$data["optional_features"] = Invoke-Section "Optional Features" {
+    Get-ADOptionalFeature -Filter * @commonParams | Select-Object Name, EnabledScopes,
+        @{N="Enabled"; E={ $_.EnabledScopes.Count -gt 0 }}
+}
+
+# --- Schema Extensions ---
+$data["schema"] = Invoke-Section "Schema Extensions" {
+    $schemaDN = (Get-ADRootDSE @commonParams).schemaNamingContext
+    Get-ADObject -SearchBase $schemaDN -Filter { isSingleValued -like "*" } `
+        -Properties lDAPDisplayName, objectClass, adminDescription @commonParams |
+        Where-Object { $_.adminDescription -ne $null } |
+        Select-Object lDAPDisplayName, objectClass, adminDescription |
+        Select-Object -First 200
+}
+
+# --- Domains ---
+$data["domains"] = Invoke-Section "Domains" {
+    Get-ADDomain @commonParams | Select-Object Name, DNSRoot, DomainMode,
+        PDCEmulator, RIDMaster, InfrastructureMaster, ChildDomains,
+        @{N="Forest"; E={ $_.Forest }}
+}
+
+# --- Default Password Policy ---
+$data["default_password_policy"] = Invoke-Section "Default Password Policy" {
+    Get-ADDefaultDomainPasswordPolicy @commonParams | Select-Object ComplexityEnabled,
+        LockoutDuration, LockoutObservationWindow, LockoutThreshold,
+        MaxPasswordAge, MinPasswordAge, MinPasswordLength, PasswordHistoryCount,
+        ReversibleEncryptionEnabled,
+        @{N="Domain"; E={ (Get-ADDomain @commonParams).DNSRoot }}
+}
+
+# --- Domain Controllers ---
+$data["dcs"] = Invoke-Section "Domain Controllers" {
+    Get-ADDomainController -Filter * @commonParams | Select-Object Name, HostName,
+        IPv4Address, Site, OperatingSystem, OperatingSystemVersion,
+        IsGlobalCatalog, IsReadOnly, Enabled,
+        @{N="Reachable"; E={ Test-Connection $_.HostName -Count 1 -Quiet }}
+}
+
+# --- FSMO Roles ---
+$data["fsmo_roles"] = Invoke-Section "FSMO Roles" {
+    $forest = Get-ADForest @commonParams
+    $domain = Get-ADDomain @commonParams
+    [ordered]@{
+        SchemaMaster           = $forest.SchemaMaster
+        DomainNamingMaster     = $forest.DomainNamingMaster
+        PDCEmulator            = $domain.PDCEmulator
+        RIDMaster              = $domain.RIDMaster
+        InfrastructureMaster   = $domain.InfrastructureMaster
+    }
+}
+
+# --- EventLog Config ---
+$data["eventlog_config"] = Invoke-Section "EventLog Config" {
+    $dcs = Get-ADDomainController -Filter * @commonParams
+    $results = foreach ($dc in $dcs) {
+        try {
+            $logs = Get-WinEvent -ListLog "Application","System","Security" -ComputerName $dc.HostName -ErrorAction Stop
+            foreach ($log in $logs) {
+                [PSCustomObject]@{
+                    DC             = $dc.HostName
+                    LogName        = $log.LogName
+                    MaxSizeBytes   = $log.MaximumSizeInBytes
+                    RetentionDays  = $log.LogRetentionDays
+                    OverflowAction = $log.LogMode
+                }
+            }
+        } catch {
+            [PSCustomObject]@{ DC = $dc.HostName; LogName = "ERROR"; MaxSizeBytes = 0; RetentionDays = 0; OverflowAction = $_.ToString() }
+        }
+    }
+    $results
+}
+
+# --- NTP Config (per DC from registry) ---
+$data["ntp_config"] = Invoke-Section "NTP Config" {
+    $dcs = Get-ADDomainController -Filter * @commonParams
+    foreach ($dc in $dcs) {
+        try {
+            $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey("LocalMachine", $dc.HostName)
+            $key = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Services\W32Time\Parameters")
+            [PSCustomObject]@{
+                DC        = $dc.HostName
+                NtpServer = $key.GetValue("NtpServer")
+                Type      = $key.GetValue("Type")
+            }
+        } catch {
+            [PSCustomObject]@{ DC = $dc.HostName; NtpServer = "UNREACHABLE"; Type = "UNKNOWN" }
+        }
+    }
+}
+
+# --- SYSVOL ---
+$data["sysvol"] = Invoke-Section "SYSVOL" {
+    Get-ADDomainController -Filter * @commonParams | ForEach-Object {
+        $dcName = $_.HostName
+        try {
+            $dfsr = Get-WmiObject -Namespace "root\MicrosoftDFS" -Class DfsrReplicatedFolderInfo `
+                -ComputerName $dcName -Filter "ReplicatedFolderName='SYSVOL Share'" -ErrorAction Stop
+            [PSCustomObject]@{
+                DC        = $dcName
+                Mechanism = "DFSR"
+                State     = $dfsr.State
+            }
+        } catch {
+            [PSCustomObject]@{ DC = $dcName; Mechanism = "Unknown"; State = "Unreachable" }
+        }
+    }
+}
+
+# --- Sites ---
+$data["sites"] = Invoke-Section "Sites" {
+    Get-ADReplicationSite -Filter * @commonParams | Select-Object Name, Description,
+        @{N="Subnets"; E={ (Get-ADReplicationSubnet -Filter "Site -eq '$($_.DistinguishedName)'" @commonParams).Name -join ", " }}
+}
+
+# --- Site Links ---
+$data["site_links"] = Invoke-Section "Site Links" {
+    Get-ADReplicationSiteLink -Filter * @commonParams | Select-Object Name, Cost,
+        ReplicationFrequencyInMinutes, SitesIncluded,
+        @{N="Transport"; E={ $_.InterSiteTransportProtocol }}
+}
+
+# --- Users ---
+$data["users"] = Invoke-Section "Users" {
+    Get-ADUser -Filter * -Properties Enabled, PasswordNeverExpires, LockedOut,
+        LastLogonDate, PasswordLastSet, Description @commonParams |
+        Select-Object SamAccountName, DisplayName, Enabled, PasswordNeverExpires,
+            LockedOut, LastLogonDate, PasswordLastSet, Description |
+        Select-Object -First 5000
+}
+
+# --- Privileged Accounts ---
+$data["privileged_accounts"] = Invoke-Section "Privileged Accounts" {
+    $privilegedGroups = @(
+        "Domain Admins", "Enterprise Admins", "Schema Admins",
+        "Administrators", "Account Operators", "Backup Operators",
+        "Print Operators", "Server Operators"
+    )
+    $seen = @{}
+    foreach ($groupName in $privilegedGroups) {
+        try {
+            Get-ADGroupMember -Identity $groupName -Recursive @commonParams |
+                Where-Object { $_.objectClass -eq "user" -and -not $seen[$_.SamAccountName] } |
+                ForEach-Object {
+                    $seen[$_.SamAccountName] = $true
+                    [PSCustomObject]@{
+                        SamAccountName = $_.SamAccountName
+                        Group          = $groupName
+                    }
+                }
+        } catch { }
+    }
+}
+
+# --- Groups ---
+$data["groups"] = Invoke-Section "Groups" {
+    Get-ADGroup -Filter * -Properties Members @commonParams |
+        Select-Object Name, SamAccountName, GroupCategory, GroupScope,
+            @{N="MemberCount"; E={ $_.Members.Count }}
+}
+
+# --- Privileged Groups (with members) ---
+$data["privileged_groups"] = Invoke-Section "Privileged Groups" {
+    $names = @("Domain Admins","Enterprise Admins","Schema Admins","Administrators",
+               "Account Operators","Backup Operators","Print Operators","Server Operators")
+    foreach ($name in $names) {
+        try {
+            $members = Get-ADGroupMember -Identity $name -Recursive @commonParams |
+                Select-Object SamAccountName, objectClass, distinguishedName
+            [PSCustomObject]@{ Group = $name; Members = $members }
+        } catch {
+            [PSCustomObject]@{ Group = $name; Members = @() }
+        }
+    }
+}
+
+# --- OUs ---
+$data["ous"] = Invoke-Section "OUs" {
+    Get-ADOrganizationalUnit -Filter * -Properties gpLink, gPOptions @commonParams |
+        Select-Object Name, DistinguishedName,
+            @{N="BlockedInheritance"; E={ ($_.gPOptions -band 1) -eq 1 }},
+            @{N="LinkedGPOs";         E={ $_.gpLink }}
+}
+
+# --- GPO Inventory ---
+$data["gpos"] = Invoke-Section "GPO Inventory" {
+    try {
+        Get-GPO -All @commonParams | Select-Object DisplayName, Id, GpoStatus,
+            CreationTime, ModificationTime, Owner
+    } catch {
+        Write-Warning "GPO cmdlets not available — skipping GPO inventory"
+        @()
+    }
+}
+
+# --- GPO Links ---
+$data["gpo_links"] = Invoke-Section "GPO Links" {
+    try {
+        $domain = (Get-ADDomain @commonParams).DistinguishedName
+        Get-GPInheritance -Target $domain @commonParams |
+            Select-Object -ExpandProperty GpoLinks |
+            Select-Object DisplayName, GpoId, Enabled, Enforced, Target, Order
+    } catch { @() }
+}
+
+# --- Blocked Inheritance OUs ---
+$data["blocked_inheritance"] = Invoke-Section "Blocked Inheritance" {
+    Get-ADOrganizationalUnit -Filter * -Properties gPOptions @commonParams |
+        Where-Object { ($_.gPOptions -band 1) -eq 1 } |
+        Select-Object Name, DistinguishedName
+}
+
+# --- Trusts ---
+$data["trusts"] = Invoke-Section "Trusts" {
+    Get-ADTrust -Filter * @commonParams | Select-Object Name, Direction, TrustType,
+        TrustAttributes, SelectiveAuthentication, SIDFilteringForestAware,
+        SIDFilteringQuarantined, DisallowTransivity, DistinguishedName
+}
+
+# --- Fine-Grained Password Policies ---
+$data["fgpp"] = Invoke-Section "FGPP" {
+    Get-ADFineGrainedPasswordPolicy -Filter * @commonParams | Select-Object Name,
+        Precedence, MinPasswordLength, PasswordHistoryCount, ComplexityEnabled,
+        MaxPasswordAge, MinPasswordAge, LockoutThreshold, LockoutDuration,
+        LockoutObservationWindow, ReversibleEncryptionEnabled,
+        @{N="AppliesTo"; E={ ($_ | Get-ADFineGrainedPasswordPolicySubject @commonParams).Name -join ", " }}
+}
+
+# --- DNS ---
+$data["dns"] = Invoke-Section "DNS Zones" {
+    try {
+        $dcs = (Get-ADDomainController -Filter * @commonParams).HostName
+        $dc = $dcs | Select-Object -First 1
+        Get-DnsServerZone -ComputerName $dc | Select-Object ZoneName, ZoneType,
+            IsDsIntegrated, ReplicationScope, IsReverseLookupZone, IsAutoCreated
+    } catch { @() }
+}
+
+# --- DNS Forwarders ---
+$data["dns_forwarders"] = Invoke-Section "DNS Forwarders" {
+    try {
+        $dcs = (Get-ADDomainController -Filter * @commonParams).HostName
+        foreach ($dc in $dcs) {
+            try {
+                $fwd = Get-DnsServerForwarder -ComputerName $dc
+                [PSCustomObject]@{ DC = $dc; Forwarders = $fwd.IPAddress -join ", "; UseRootHint = $fwd.UseRootHint }
+            } catch {
+                [PSCustomObject]@{ DC = $dc; Forwarders = "UNREACHABLE"; UseRootHint = $null }
+            }
+        }
+    } catch { @() }
+}
+
+# --- PKI / CA Discovery ---
+$data["pki"] = Invoke-Section "PKI / CA Discovery" {
+    $configDN = (Get-ADRootDSE @commonParams).configurationNamingContext
+    $enrollmentDN = "CN=Enrollment Services,CN=Public Key Services,CN=Services,$configDN"
+    try {
+        Get-ADObject -SearchBase $enrollmentDN -Filter * @commonParams |
+            Select-Object Name, DistinguishedName, ObjectClass
+    } catch { @() }
+}
+
+# --- Export ---
+Write-Host ""
+Write-Host "Exporting to $OutputPath ..."
+$data | ConvertTo-Json -Depth 20 -Compress | Out-File -FilePath $OutputPath -Encoding UTF8
+Write-Host "Done. File size: $([Math]::Round((Get-Item $OutputPath).Length / 1KB, 1)) KB"

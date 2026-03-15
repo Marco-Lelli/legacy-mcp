@@ -1,0 +1,20 @@
+# LegacyMCP — Profile B: Live Mode (internal network)
+# MCP server runs on a server inside the customer network.
+# Requires WinRM access to Domain Controllers.
+# Use gMSA for authentication — no password management.
+
+mode: live
+
+workspace:
+  forests:
+    - name: contoso.local
+      relation: standalone
+      dc: dc01.contoso.local      # target Domain Controller
+      credentials: gmsa           # gmsa | env (LEGACYMCP_AD_USER / LEGACYMCP_AD_PASSWORD)
+
+# Server binding (for HTTP transport, if not using stdio)
+# server:
+#   host: 0.0.0.0
+#   port: 8443
+#   tls_cert: certs/server.crt
+#   tls_key:  certs/server.key

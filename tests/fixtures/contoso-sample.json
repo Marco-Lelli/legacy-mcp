@@ -1,0 +1,441 @@
+{
+  "forest": {
+    "Name": "contoso.local",
+    "ForestMode": "Windows2016Forest",
+    "SchemaMaster": "DC01.contoso.local",
+    "DomainNamingMaster": "DC01.contoso.local",
+    "Sites": "HQ-Milan, Branch-Rome, Branch-London",
+    "Domains": "contoso.local, eu.contoso.local",
+    "GlobalCatalogs": "DC01.contoso.local, DC02.contoso.local, EUDC01.eu.contoso.local",
+    "SchemaVersion": 88
+  },
+
+  "optional_features": [
+    {
+      "Name": "Recycle Bin Feature",
+      "Enabled": true,
+      "Scopes": "CN=Partitions,CN=Configuration,DC=contoso,DC=local"
+    },
+    {
+      "Name": "Privileged Access Management Feature",
+      "Enabled": false,
+      "Scopes": ""
+    }
+  ],
+
+  "schema": [
+    {
+      "lDAPDisplayName": "employeeType",
+      "ObjectClass": "attributeSchema",
+      "AdminDescription": "Custom employee type classification (Full-Time, Contractor, Intern)",
+      "IsSingleValued": true
+    },
+    {
+      "lDAPDisplayName": "costCenter",
+      "ObjectClass": "attributeSchema",
+      "AdminDescription": "Internal cost center code for billing and reporting",
+      "IsSingleValued": true
+    },
+    {
+      "lDAPDisplayName": "contosoManagedDevice",
+      "ObjectClass": "classSchema",
+      "AdminDescription": "Extended computer class for Contoso endpoint management",
+      "IsSingleValued": false
+    }
+  ],
+
+  "domains": [
+    {
+      "Name": "contoso",
+      "DNSRoot": "contoso.local",
+      "DomainMode": "Windows2016Domain",
+      "PDCEmulator": "DC01.contoso.local",
+      "RIDMaster": "DC01.contoso.local",
+      "InfrastructureMaster": "DC02.contoso.local",
+      "ChildDomains": "eu.contoso.local",
+      "Forest": "contoso.local"
+    },
+    {
+      "Name": "eu",
+      "DNSRoot": "eu.contoso.local",
+      "DomainMode": "Windows2016Domain",
+      "PDCEmulator": "EUDC01.eu.contoso.local",
+      "RIDMaster": "EUDC01.eu.contoso.local",
+      "InfrastructureMaster": "EUDC01.eu.contoso.local",
+      "ChildDomains": "",
+      "Forest": "contoso.local"
+    }
+  ],
+
+  "default_password_policy": [
+    {
+      "Domain": "contoso.local",
+      "MinPasswordLength": 12,
+      "PasswordHistoryCount": 24,
+      "MaxPasswordAgeDays": 90,
+      "MinPasswordAgeDays": 1,
+      "ComplexityEnabled": true,
+      "ReversibleEncryptionEnabled": false,
+      "LockoutThreshold": 5,
+      "LockoutDurationMinutes": 30,
+      "LockoutObservationMinutes": 30
+    },
+    {
+      "Domain": "eu.contoso.local",
+      "MinPasswordLength": 10,
+      "PasswordHistoryCount": 12,
+      "MaxPasswordAgeDays": 90,
+      "MinPasswordAgeDays": 1,
+      "ComplexityEnabled": true,
+      "ReversibleEncryptionEnabled": false,
+      "LockoutThreshold": 5,
+      "LockoutDurationMinutes": 30,
+      "LockoutObservationMinutes": 30
+    }
+  ],
+
+  "dcs": [
+    {
+      "Name": "DC01",
+      "HostName": "DC01.contoso.local",
+      "IPv4Address": "10.0.0.10",
+      "Site": "HQ-Milan",
+      "OperatingSystem": "Windows Server 2022 Standard",
+      "OperatingSystemVersion": "10.0 (20348)",
+      "IsGlobalCatalog": true,
+      "IsReadOnly": false,
+      "Enabled": true,
+      "Reachable": true
+    },
+    {
+      "Name": "DC02",
+      "HostName": "DC02.contoso.local",
+      "IPv4Address": "10.0.0.11",
+      "Site": "HQ-Milan",
+      "OperatingSystem": "Windows Server 2022 Standard",
+      "OperatingSystemVersion": "10.0 (20348)",
+      "IsGlobalCatalog": true,
+      "IsReadOnly": false,
+      "Enabled": true,
+      "Reachable": true
+    },
+    {
+      "Name": "DC-ROME01",
+      "HostName": "DC-ROME01.contoso.local",
+      "IPv4Address": "10.1.0.10",
+      "Site": "Branch-Rome",
+      "OperatingSystem": "Windows Server 2019 Standard",
+      "OperatingSystemVersion": "10.0 (17763)",
+      "IsGlobalCatalog": false,
+      "IsReadOnly": true,
+      "Enabled": true,
+      "Reachable": true
+    },
+    {
+      "Name": "DC-LON01",
+      "HostName": "DC-LON01.contoso.local",
+      "IPv4Address": "10.2.0.10",
+      "Site": "Branch-London",
+      "OperatingSystem": "Windows Server 2019 Standard",
+      "OperatingSystemVersion": "10.0 (17763)",
+      "IsGlobalCatalog": false,
+      "IsReadOnly": true,
+      "Enabled": true,
+      "Reachable": false
+    },
+    {
+      "Name": "EUDC01",
+      "HostName": "EUDC01.eu.contoso.local",
+      "IPv4Address": "10.3.0.10",
+      "Site": "Branch-London",
+      "OperatingSystem": "Windows Server 2022 Datacenter",
+      "OperatingSystemVersion": "10.0 (20348)",
+      "IsGlobalCatalog": true,
+      "IsReadOnly": false,
+      "Enabled": true,
+      "Reachable": true
+    }
+  ],
+
+  "fsmo_roles": {
+    "SchemaMaster": "DC01.contoso.local",
+    "DomainNamingMaster": "DC01.contoso.local",
+    "PDCEmulator": "DC01.contoso.local",
+    "RIDMaster": "DC01.contoso.local",
+    "InfrastructureMaster": "DC02.contoso.local"
+  },
+
+  "eventlog_config": [
+    { "DC": "DC01.contoso.local", "LogName": "Security",     "MaxSizeBytes": 1073741824, "RetentionDays": 0, "OverflowAction": "OverwriteAsNeeded" },
+    { "DC": "DC01.contoso.local", "LogName": "System",       "MaxSizeBytes": 524288000,  "RetentionDays": 0, "OverflowAction": "OverwriteAsNeeded" },
+    { "DC": "DC01.contoso.local", "LogName": "Application",  "MaxSizeBytes": 104857600,  "RetentionDays": 0, "OverflowAction": "OverwriteAsNeeded" },
+    { "DC": "DC02.contoso.local", "LogName": "Security",     "MaxSizeBytes": 1073741824, "RetentionDays": 0, "OverflowAction": "OverwriteAsNeeded" },
+    { "DC": "DC02.contoso.local", "LogName": "System",       "MaxSizeBytes": 524288000,  "RetentionDays": 0, "OverflowAction": "OverwriteAsNeeded" },
+    { "DC": "DC02.contoso.local", "LogName": "Application",  "MaxSizeBytes": 104857600,  "RetentionDays": 0, "OverflowAction": "OverwriteAsNeeded" },
+    { "DC": "DC-ROME01.contoso.local", "LogName": "Security",    "MaxSizeBytes": 20971520, "RetentionDays": 0, "OverflowAction": "OverwriteAsNeeded" },
+    { "DC": "DC-ROME01.contoso.local", "LogName": "System",      "MaxSizeBytes": 20971520, "RetentionDays": 0, "OverflowAction": "OverwriteAsNeeded" },
+    { "DC": "DC-ROME01.contoso.local", "LogName": "Application", "MaxSizeBytes": 20971520, "RetentionDays": 0, "OverflowAction": "OverwriteAsNeeded" },
+    { "DC": "DC-LON01.contoso.local",  "LogName": "Security",    "MaxSizeBytes": 20971520, "RetentionDays": 0, "OverflowAction": "OverwriteAsNeeded" },
+    { "DC": "DC-LON01.contoso.local",  "LogName": "System",      "MaxSizeBytes": 20971520, "RetentionDays": 0, "OverflowAction": "OverwriteAsNeeded" },
+    { "DC": "DC-LON01.contoso.local",  "LogName": "Application",  "MaxSizeBytes": 20971520, "RetentionDays": 0, "OverflowAction": "OverwriteAsNeeded" }
+  ],
+
+  "ntp_config": [
+    { "DC": "DC01.contoso.local",      "NtpServer": "time.windows.com,0x9 ntp.contoso.local,0x8", "Type": "NTP",    "Status": "OK" },
+    { "DC": "DC02.contoso.local",      "NtpServer": "DC01.contoso.local,0x8",                      "Type": "NT5DS",  "Status": "OK" },
+    { "DC": "DC-ROME01.contoso.local", "NtpServer": "DC01.contoso.local,0x8",                      "Type": "NT5DS",  "Status": "OK" },
+    { "DC": "DC-LON01.contoso.local",  "NtpServer": "DC01.contoso.local,0x8",                      "Type": "NT5DS",  "Status": "Unreachable" },
+    { "DC": "EUDC01.eu.contoso.local", "NtpServer": "DC01.contoso.local,0x8",                      "Type": "NT5DS",  "Status": "OK" }
+  ],
+
+  "sysvol": [
+    { "DC": "DC01.contoso.local",      "Mechanism": "DFSR", "State": "4",         "StateDescription": "Normal" },
+    { "DC": "DC02.contoso.local",      "Mechanism": "DFSR", "State": "4",         "StateDescription": "Normal" },
+    { "DC": "DC-ROME01.contoso.local", "Mechanism": "DFSR", "State": "4",         "StateDescription": "Normal" },
+    { "DC": "DC-LON01.contoso.local",  "Mechanism": "DFSR", "State": "Unreachable", "StateDescription": "Unreachable" },
+    { "DC": "EUDC01.eu.contoso.local", "Mechanism": "DFSR", "State": "4",         "StateDescription": "Normal" }
+  ],
+
+  "sites": [
+    { "Name": "HQ-Milan",       "Description": "Headquarters — Via Dante 1, Milan",   "Subnets": "10.0.0.0/16" },
+    { "Name": "Branch-Rome",    "Description": "Rome branch office — Via Veneto 42",   "Subnets": "10.1.0.0/24" },
+    { "Name": "Branch-London",  "Description": "London branch office — Canary Wharf",  "Subnets": "10.2.0.0/24, 10.3.0.0/24" }
+  ],
+
+  "site_links": [
+    {
+      "Name": "HQ-to-Rome",
+      "Cost": 100,
+      "ReplicationFrequencyMinutes": 15,
+      "Transport": "IP",
+      "SitesIncluded": "HQ-Milan, Branch-Rome"
+    },
+    {
+      "Name": "HQ-to-London",
+      "Cost": 150,
+      "ReplicationFrequencyMinutes": 30,
+      "Transport": "IP",
+      "SitesIncluded": "HQ-Milan, Branch-London"
+    },
+    {
+      "Name": "Rome-to-London",
+      "Cost": 200,
+      "ReplicationFrequencyMinutes": 60,
+      "Transport": "IP",
+      "SitesIncluded": "Branch-Rome, Branch-London"
+    }
+  ],
+
+  "users": [
+    { "SamAccountName": "a.rossi",       "DisplayName": "Alessandro Rossi",    "Enabled": "True",  "PasswordNeverExpires": "False", "LockedOut": "False", "LastLogonDate": "2026-03-14T09:12:00", "PasswordLastSet": "2026-01-10T08:00:00", "Description": "IT Manager" },
+    { "SamAccountName": "m.ferrari",     "DisplayName": "Marco Ferrari",        "Enabled": "True",  "PasswordNeverExpires": "False", "LockedOut": "False", "LastLogonDate": "2026-03-14T10:45:00", "PasswordLastSet": "2026-02-01T08:00:00", "Description": "Senior Developer" },
+    { "SamAccountName": "l.bianchi",     "DisplayName": "Laura Bianchi",        "Enabled": "True",  "PasswordNeverExpires": "False", "LockedOut": "False", "LastLogonDate": "2026-03-13T16:30:00", "PasswordLastSet": "2026-01-15T08:00:00", "Description": "HR Director" },
+    { "SamAccountName": "g.conti",       "DisplayName": "Giorgio Conti",        "Enabled": "True",  "PasswordNeverExpires": "False", "LockedOut": "True",  "LastLogonDate": "2026-03-10T11:00:00", "PasswordLastSet": "2025-12-01T08:00:00", "Description": "Accountant" },
+    { "SamAccountName": "s.martini",     "DisplayName": "Sofia Martini",        "Enabled": "True",  "PasswordNeverExpires": "False", "LockedOut": "False", "LastLogonDate": "2026-03-14T08:55:00", "PasswordLastSet": "2026-02-20T08:00:00", "Description": "Sales Manager" },
+    { "SamAccountName": "r.greco",       "DisplayName": "Roberto Greco",        "Enabled": "False", "PasswordNeverExpires": "False", "LockedOut": "False", "LastLogonDate": "2025-09-30T17:00:00", "PasswordLastSet": "2025-06-01T08:00:00", "Description": "Former employee — left 2025-10-01" },
+    { "SamAccountName": "f.esposito",    "DisplayName": "Federica Esposito",    "Enabled": "False", "PasswordNeverExpires": "False", "LockedOut": "False", "LastLogonDate": "2025-11-15T09:00:00", "PasswordLastSet": "2025-10-01T08:00:00", "Description": "Former employee — left 2025-12-01" },
+    { "SamAccountName": "svc.backup",    "DisplayName": "Backup Service",       "Enabled": "True",  "PasswordNeverExpires": "True",  "LockedOut": "False", "LastLogonDate": "2026-03-14T02:00:00", "PasswordLastSet": "2024-01-01T00:00:00", "Description": "Veeam backup service account" },
+    { "SamAccountName": "svc.monitor",   "DisplayName": "Monitoring Service",   "Enabled": "True",  "PasswordNeverExpires": "True",  "LockedOut": "False", "LastLogonDate": "2026-03-14T00:01:00", "PasswordLastSet": "2024-06-01T00:00:00", "Description": "SCOM monitoring service account" },
+    { "SamAccountName": "svc.deploy",    "DisplayName": "Deploy Service",       "Enabled": "True",  "PasswordNeverExpires": "True",  "LockedOut": "False", "LastLogonDate": "2026-03-12T14:00:00", "PasswordLastSet": "2023-03-01T00:00:00", "Description": "CI/CD deployment account — password age >1000 days" },
+    { "SamAccountName": "adm.rossi",     "DisplayName": "Alessandro Rossi (ADM)", "Enabled": "True", "PasswordNeverExpires": "False", "LockedOut": "False", "LastLogonDate": "2026-03-14T07:30:00", "PasswordLastSet": "2026-01-10T08:00:00", "Description": "Admin account — a.rossi" },
+    { "SamAccountName": "adm.ferrari",   "DisplayName": "Marco Ferrari (ADM)",  "Enabled": "True",  "PasswordNeverExpires": "False", "LockedOut": "False", "LastLogonDate": "2026-03-13T18:00:00", "PasswordLastSet": "2026-02-01T08:00:00", "Description": "Admin account — m.ferrari" },
+    { "SamAccountName": "Administrator", "DisplayName": "Administrator",         "Enabled": "True",  "PasswordNeverExpires": "True",  "LockedOut": "False", "LastLogonDate": "2026-03-01T10:00:00", "PasswordLastSet": "2024-09-01T08:00:00", "Description": "Built-in domain administrator" },
+    { "SamAccountName": "Guest",         "DisplayName": "Guest",                 "Enabled": "False", "PasswordNeverExpires": "True",  "LockedOut": "False", "LastLogonDate": null,                   "PasswordLastSet": null,                   "Description": "Built-in guest account" },
+    { "SamAccountName": "krbtgt",        "DisplayName": "krbtgt",                "Enabled": "False", "PasswordNeverExpires": "False", "LockedOut": "False", "LastLogonDate": null,                   "PasswordLastSet": "2025-01-15T03:00:00", "Description": "Key Distribution Center Service Account" }
+  ],
+
+  "privileged_accounts": [
+    { "SamAccountName": "Administrator", "Group": "Domain Admins" },
+    { "SamAccountName": "adm.rossi",     "Group": "Domain Admins" },
+    { "SamAccountName": "adm.ferrari",   "Group": "Domain Admins" },
+    { "SamAccountName": "Administrator", "Group": "Enterprise Admins" },
+    { "SamAccountName": "adm.rossi",     "Group": "Enterprise Admins" },
+    { "SamAccountName": "Administrator", "Group": "Schema Admins" },
+    { "SamAccountName": "svc.backup",    "Group": "Backup Operators" }
+  ],
+
+  "groups": [
+    { "Name": "Domain Admins",     "SamAccountName": "Domain Admins",     "GroupCategory": "Security",     "GroupScope": "Global",      "MemberCount": 3 },
+    { "Name": "Enterprise Admins", "SamAccountName": "Enterprise Admins", "GroupCategory": "Security",     "GroupScope": "Universal",   "MemberCount": 2 },
+    { "Name": "Schema Admins",     "SamAccountName": "Schema Admins",     "GroupCategory": "Security",     "GroupScope": "Universal",   "MemberCount": 1 },
+    { "Name": "Administrators",    "SamAccountName": "Administrators",    "GroupCategory": "Security",     "GroupScope": "DomainLocal", "MemberCount": 4 },
+    { "Name": "Backup Operators",  "SamAccountName": "Backup Operators",  "GroupCategory": "Security",     "GroupScope": "DomainLocal", "MemberCount": 1 },
+    { "Name": "Account Operators", "SamAccountName": "Account Operators", "GroupCategory": "Security",     "GroupScope": "DomainLocal", "MemberCount": 0 },
+    { "Name": "Print Operators",   "SamAccountName": "Print Operators",   "GroupCategory": "Security",     "GroupScope": "DomainLocal", "MemberCount": 0 },
+    { "Name": "Server Operators",  "SamAccountName": "Server Operators",  "GroupCategory": "Security",     "GroupScope": "DomainLocal", "MemberCount": 0 },
+    { "Name": "IT-Helpdesk",       "SamAccountName": "IT-Helpdesk",       "GroupCategory": "Security",     "GroupScope": "Global",      "MemberCount": 5 },
+    { "Name": "IT-NetworkAdmins",  "SamAccountName": "IT-NetworkAdmins",  "GroupCategory": "Security",     "GroupScope": "Global",      "MemberCount": 2 },
+    { "Name": "Sales-EMEA",        "SamAccountName": "Sales-EMEA",        "GroupCategory": "Security",     "GroupScope": "Global",      "MemberCount": 12 },
+    { "Name": "HR-Staff",          "SamAccountName": "HR-Staff",          "GroupCategory": "Security",     "GroupScope": "Global",      "MemberCount": 4 },
+    { "Name": "Finance-Users",     "SamAccountName": "Finance-Users",     "GroupCategory": "Security",     "GroupScope": "Global",      "MemberCount": 8 },
+    { "Name": "VPN-Users",         "SamAccountName": "VPN-Users",         "GroupCategory": "Security",     "GroupScope": "Universal",   "MemberCount": 47 },
+    { "Name": "All-Staff-DL",      "SamAccountName": "All-Staff-DL",      "GroupCategory": "Distribution", "GroupScope": "Universal",   "MemberCount": 142 }
+  ],
+
+  "privileged_groups": [
+    {
+      "Group": "Domain Admins",
+      "Members": [
+        { "SamAccountName": "Administrator", "objectClass": "user", "distinguishedName": "CN=Administrator,CN=Users,DC=contoso,DC=local" },
+        { "SamAccountName": "adm.rossi",     "objectClass": "user", "distinguishedName": "CN=Alessandro Rossi (ADM),OU=AdminAccounts,OU=IT,DC=contoso,DC=local" },
+        { "SamAccountName": "adm.ferrari",   "objectClass": "user", "distinguishedName": "CN=Marco Ferrari (ADM),OU=AdminAccounts,OU=IT,DC=contoso,DC=local" }
+      ]
+    },
+    {
+      "Group": "Enterprise Admins",
+      "Members": [
+        { "SamAccountName": "Administrator", "objectClass": "user", "distinguishedName": "CN=Administrator,CN=Users,DC=contoso,DC=local" },
+        { "SamAccountName": "adm.rossi",     "objectClass": "user", "distinguishedName": "CN=Alessandro Rossi (ADM),OU=AdminAccounts,OU=IT,DC=contoso,DC=local" }
+      ]
+    },
+    {
+      "Group": "Schema Admins",
+      "Members": [
+        { "SamAccountName": "Administrator", "objectClass": "user", "distinguishedName": "CN=Administrator,CN=Users,DC=contoso,DC=local" }
+      ]
+    },
+    {
+      "Group": "Backup Operators",
+      "Members": [
+        { "SamAccountName": "svc.backup", "objectClass": "user", "distinguishedName": "CN=Backup Service,OU=ServiceAccounts,OU=IT,DC=contoso,DC=local" }
+      ]
+    },
+    { "Group": "Account Operators", "Members": [] },
+    { "Group": "Print Operators",   "Members": [] },
+    { "Group": "Server Operators",  "Members": [] }
+  ],
+
+  "group_members": [
+    { "GroupName": "IT-Helpdesk",      "SamAccountName": "a.rossi",    "objectClass": "user" },
+    { "GroupName": "IT-Helpdesk",      "SamAccountName": "m.ferrari",  "objectClass": "user" },
+    { "GroupName": "IT-NetworkAdmins", "SamAccountName": "adm.rossi",  "objectClass": "user" },
+    { "GroupName": "IT-NetworkAdmins", "SamAccountName": "adm.ferrari","objectClass": "user" },
+    { "GroupName": "HR-Staff",         "SamAccountName": "l.bianchi",  "objectClass": "user" }
+  ],
+
+  "ous": [
+    { "Name": "Contoso",         "DistinguishedName": "OU=Contoso,DC=contoso,DC=local",                               "BlockedInheritance": false, "LinkedGPOs": "[LDAP://cn={A1B2C3D4-0001-0001-0001-000000000001},cn=policies,cn=system,DC=contoso,DC=local;0]" },
+    { "Name": "IT",              "DistinguishedName": "OU=IT,OU=Contoso,DC=contoso,DC=local",                         "BlockedInheritance": false, "LinkedGPOs": "" },
+    { "Name": "AdminAccounts",   "DistinguishedName": "OU=AdminAccounts,OU=IT,OU=Contoso,DC=contoso,DC=local",        "BlockedInheritance": true,  "LinkedGPOs": "[LDAP://cn={A1B2C3D4-0001-0001-0001-000000000005},cn=policies,cn=system,DC=contoso,DC=local;0]" },
+    { "Name": "ServiceAccounts", "DistinguishedName": "OU=ServiceAccounts,OU=IT,OU=Contoso,DC=contoso,DC=local",      "BlockedInheritance": false, "LinkedGPOs": "" },
+    { "Name": "Workstations",    "DistinguishedName": "OU=Workstations,OU=IT,OU=Contoso,DC=contoso,DC=local",         "BlockedInheritance": false, "LinkedGPOs": "[LDAP://cn={A1B2C3D4-0001-0001-0001-000000000003},cn=policies,cn=system,DC=contoso,DC=local;0]" },
+    { "Name": "Servers",         "DistinguishedName": "OU=Servers,OU=IT,OU=Contoso,DC=contoso,DC=local",              "BlockedInheritance": false, "LinkedGPOs": "[LDAP://cn={A1B2C3D4-0001-0001-0001-000000000004},cn=policies,cn=system,DC=contoso,DC=local;0]" },
+    { "Name": "Users",           "DistinguishedName": "OU=Users,OU=Contoso,DC=contoso,DC=local",                      "BlockedInheritance": false, "LinkedGPOs": "" },
+    { "Name": "HR",              "DistinguishedName": "OU=HR,OU=Users,OU=Contoso,DC=contoso,DC=local",                "BlockedInheritance": false, "LinkedGPOs": "" },
+    { "Name": "Finance",         "DistinguishedName": "OU=Finance,OU=Users,OU=Contoso,DC=contoso,DC=local",           "BlockedInheritance": false, "LinkedGPOs": "" },
+    { "Name": "Sales",           "DistinguishedName": "OU=Sales,OU=Users,OU=Contoso,DC=contoso,DC=local",             "BlockedInheritance": false, "LinkedGPOs": "" },
+    { "Name": "DisabledAccounts","DistinguishedName": "OU=DisabledAccounts,OU=Contoso,DC=contoso,DC=local",           "BlockedInheritance": true,  "LinkedGPOs": "" }
+  ],
+
+  "blocked_inheritance": [
+    { "Name": "AdminAccounts",    "DistinguishedName": "OU=AdminAccounts,OU=IT,OU=Contoso,DC=contoso,DC=local" },
+    { "Name": "DisabledAccounts", "DistinguishedName": "OU=DisabledAccounts,OU=Contoso,DC=contoso,DC=local" }
+  ],
+
+  "gpos": [
+    { "DisplayName": "Default Domain Policy",         "Id": "31B2F340-016D-11D2-945F-00C04FB984F9", "GpoStatus": "AllSettingsEnabled",       "CreationTime": "2020-06-01T10:00:00", "ModificationTime": "2024-11-15T14:30:00", "Owner": "CONTOSO\\Domain Admins" },
+    { "DisplayName": "Default Domain Controllers Policy", "Id": "6AC1786C-016F-11D2-945F-00C04FB984F9", "GpoStatus": "AllSettingsEnabled",   "CreationTime": "2020-06-01T10:00:00", "ModificationTime": "2024-11-15T14:30:00", "Owner": "CONTOSO\\Domain Admins" },
+    { "DisplayName": "Contoso-Baseline-Security",     "Id": "A1B2C3D4-0001-0001-0001-000000000001", "GpoStatus": "AllSettingsEnabled",       "CreationTime": "2021-03-15T09:00:00", "ModificationTime": "2025-09-01T11:00:00", "Owner": "CONTOSO\\Domain Admins" },
+    { "DisplayName": "Contoso-Workstation-Hardening", "Id": "A1B2C3D4-0001-0001-0001-000000000003", "GpoStatus": "AllSettingsEnabled",       "CreationTime": "2021-03-15T09:00:00", "ModificationTime": "2025-10-10T16:45:00", "Owner": "CONTOSO\\Domain Admins" },
+    { "DisplayName": "Contoso-Server-Baseline",       "Id": "A1B2C3D4-0001-0001-0001-000000000004", "GpoStatus": "AllSettingsEnabled",       "CreationTime": "2021-06-01T10:00:00", "ModificationTime": "2025-08-22T10:00:00", "Owner": "CONTOSO\\Domain Admins" },
+    { "DisplayName": "Contoso-AdminAccounts-Policy",  "Id": "A1B2C3D4-0001-0001-0001-000000000005", "GpoStatus": "AllSettingsEnabled",       "CreationTime": "2022-01-10T08:00:00", "ModificationTime": "2025-11-30T09:15:00", "Owner": "CONTOSO\\Domain Admins" },
+    { "DisplayName": "Contoso-BitLocker",             "Id": "A1B2C3D4-0001-0001-0001-000000000006", "GpoStatus": "AllSettingsEnabled",       "CreationTime": "2022-06-01T09:00:00", "ModificationTime": "2025-07-01T12:00:00", "Owner": "CONTOSO\\Domain Admins" },
+    { "DisplayName": "OLD-InternetExplorer-Settings", "Id": "A1B2C3D4-0001-0001-0001-000000000099", "GpoStatus": "AllSettingsDisabled",      "CreationTime": "2018-01-01T00:00:00", "ModificationTime": "2021-06-01T00:00:00", "Owner": "CONTOSO\\Domain Admins" }
+  ],
+
+  "gpo_links": [
+    { "DisplayName": "Default Domain Policy",         "GpoId": "31B2F340-016D-11D2-945F-00C04FB984F9", "Enabled": true,  "Enforced": false, "Target": "DC=contoso,DC=local",                                          "Order": 1 },
+    { "DisplayName": "Contoso-Baseline-Security",     "GpoId": "A1B2C3D4-0001-0001-0001-000000000001", "Enabled": true,  "Enforced": true,  "Target": "OU=Contoso,DC=contoso,DC=local",                               "Order": 1 },
+    { "DisplayName": "Contoso-Workstation-Hardening", "GpoId": "A1B2C3D4-0001-0001-0001-000000000003", "Enabled": true,  "Enforced": false, "Target": "OU=Workstations,OU=IT,OU=Contoso,DC=contoso,DC=local",         "Order": 1 },
+    { "DisplayName": "Contoso-BitLocker",             "GpoId": "A1B2C3D4-0001-0001-0001-000000000006", "Enabled": true,  "Enforced": false, "Target": "OU=Workstations,OU=IT,OU=Contoso,DC=contoso,DC=local",         "Order": 2 },
+    { "DisplayName": "Contoso-Server-Baseline",       "GpoId": "A1B2C3D4-0001-0001-0001-000000000004", "Enabled": true,  "Enforced": false, "Target": "OU=Servers,OU=IT,OU=Contoso,DC=contoso,DC=local",             "Order": 1 },
+    { "DisplayName": "Contoso-AdminAccounts-Policy",  "GpoId": "A1B2C3D4-0001-0001-0001-000000000005", "Enabled": true,  "Enforced": true,  "Target": "OU=AdminAccounts,OU=IT,OU=Contoso,DC=contoso,DC=local",       "Order": 1 },
+    { "DisplayName": "Default Domain Controllers Policy", "GpoId": "6AC1786C-016F-11D2-945F-00C04FB984F9", "Enabled": true, "Enforced": false, "Target": "OU=Domain Controllers,DC=contoso,DC=local",               "Order": 1 }
+  ],
+
+  "trusts": [
+    {
+      "Name": "partner.local",
+      "Direction": "Bidirectional",
+      "TrustType": "External",
+      "TrustAttributes": 8,
+      "SelectiveAuthentication": true,
+      "SIDFilteringForestAware": false,
+      "SIDFilteringQuarantined": true,
+      "DisallowTransivity": true,
+      "DistinguishedName": "CN=partner.local,CN=System,DC=contoso,DC=local"
+    },
+    {
+      "Name": "eu.contoso.local",
+      "Direction": "Bidirectional",
+      "TrustType": "ParentChild",
+      "TrustAttributes": 32,
+      "SelectiveAuthentication": false,
+      "SIDFilteringForestAware": false,
+      "SIDFilteringQuarantined": false,
+      "DisallowTransivity": false,
+      "DistinguishedName": "CN=eu.contoso.local,CN=System,DC=contoso,DC=local"
+    }
+  ],
+
+  "fgpp": [
+    {
+      "Name": "PSO-Admins",
+      "Precedence": 10,
+      "MinPasswordLength": 16,
+      "PasswordHistoryCount": 24,
+      "MaxPasswordAgeDays": 60,
+      "MinPasswordAgeDays": 1,
+      "ComplexityEnabled": true,
+      "ReversibleEncryptionEnabled": false,
+      "LockoutThreshold": 3,
+      "LockoutDurationMinutes": 0,
+      "LockoutObservationMinutes": 30,
+      "AppliesTo": "Domain Admins, Enterprise Admins"
+    },
+    {
+      "Name": "PSO-ServiceAccounts",
+      "Precedence": 20,
+      "MinPasswordLength": 20,
+      "PasswordHistoryCount": 12,
+      "MaxPasswordAgeDays": 365,
+      "MinPasswordAgeDays": 0,
+      "ComplexityEnabled": true,
+      "ReversibleEncryptionEnabled": false,
+      "LockoutThreshold": 0,
+      "LockoutDurationMinutes": 0,
+      "LockoutObservationMinutes": 0,
+      "AppliesTo": "IT-ServiceAccounts"
+    }
+  ],
+
+  "dns": [
+    { "ZoneName": "contoso.local",        "ZoneType": "Primary",   "IsDsIntegrated": true,  "ReplicationScope": "Forest",  "IsReverseLookupZone": false, "IsAutoCreated": false, "DC": "DC01.contoso.local" },
+    { "ZoneName": "eu.contoso.local",     "ZoneType": "Primary",   "IsDsIntegrated": true,  "ReplicationScope": "Forest",  "IsReverseLookupZone": false, "IsAutoCreated": false, "DC": "DC01.contoso.local" },
+    { "ZoneName": "partner.local",        "ZoneType": "Stub",      "IsDsIntegrated": true,  "ReplicationScope": "Forest",  "IsReverseLookupZone": false, "IsAutoCreated": false, "DC": "DC01.contoso.local" },
+    { "ZoneName": "0.0.10.in-addr.arpa",  "ZoneType": "Primary",   "IsDsIntegrated": true,  "ReplicationScope": "Domain",  "IsReverseLookupZone": true,  "IsAutoCreated": false, "DC": "DC01.contoso.local" },
+    { "ZoneName": "1.0.10.in-addr.arpa",  "ZoneType": "Primary",   "IsDsIntegrated": true,  "ReplicationScope": "Domain",  "IsReverseLookupZone": true,  "IsAutoCreated": false, "DC": "DC01.contoso.local" },
+    { "ZoneName": "TrustAnchors",         "ZoneType": "Primary",   "IsDsIntegrated": true,  "ReplicationScope": "Forest",  "IsReverseLookupZone": false, "IsAutoCreated": true,  "DC": "DC01.contoso.local" },
+    { "ZoneName": "_msdcs.contoso.local", "ZoneType": "Primary",   "IsDsIntegrated": true,  "ReplicationScope": "Forest",  "IsReverseLookupZone": false, "IsAutoCreated": true,  "DC": "DC01.contoso.local" }
+  ],
+
+  "dns_forwarders": [
+    { "DC": "DC01.contoso.local",      "Forwarders": "8.8.8.8, 8.8.4.4",   "UseRootHint": false, "Status": "OK" },
+    { "DC": "DC02.contoso.local",      "Forwarders": "8.8.8.8, 8.8.4.4",   "UseRootHint": false, "Status": "OK" },
+    { "DC": "DC-ROME01.contoso.local", "Forwarders": "10.0.0.10, 10.0.0.11", "UseRootHint": false, "Status": "OK" },
+    { "DC": "DC-LON01.contoso.local",  "Forwarders": "10.0.0.10, 10.0.0.11", "UseRootHint": false, "Status": "Unreachable" }
+  ],
+
+  "pki": [
+    {
+      "Name": "Contoso-RootCA",
+      "DistinguishedName": "CN=Contoso-RootCA,CN=Certification Authorities,CN=Public Key Services,CN=Services,CN=Configuration,DC=contoso,DC=local",
+      "ObjectClass": "certificationAuthority"
+    },
+    {
+      "Name": "Contoso-IssuingCA",
+      "DistinguishedName": "CN=Contoso-IssuingCA,CN=Enrollment Services,CN=Public Key Services,CN=Services,CN=Configuration,DC=contoso,DC=local",
+      "ObjectClass": "pKIEnrollmentService"
+    }
+  ]
+}

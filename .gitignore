@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Project runtime
+*.db
+*.sqlite
+*.json.bak
+data/
+
+# Config with secrets
+config/config.yaml
+config/config-*.yaml
+!config/config.example-*.yaml
+
+# Claude Code local settings
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+Thumbs.db
+desktop.ini
