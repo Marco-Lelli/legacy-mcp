@@ -146,15 +146,31 @@ $data["ntp_config"] = Invoke-Section "NTP Config" {
     $dcs = Get-ADDomainController -Filter * @commonParams
     foreach ($dc in $dcs) {
         try {
-            $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey("LocalMachine", $dc.HostName)
-            $key = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Services\W32Time\Parameters")
+            $reg    = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey("LocalMachine", $dc.HostName)
+            $params = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Services\W32Time\Parameters")
+            $config = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Services\W32Time\Config")
+            $vmic   = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\VMICTimeProvider")
             [PSCustomObject]@{
-                DC        = $dc.HostName
-                NtpServer = $key.GetValue("NtpServer")
-                Type      = $key.GetValue("Type")
+                DC                      = $dc.HostName
+                NtpServer               = $params.GetValue("NtpServer")
+                Type                    = $params.GetValue("Type")
+                AnnounceFlags           = $config.GetValue("AnnounceFlags")
+                MaxNegPhaseCorrection   = $config.GetValue("MaxNegPhaseCorrection")
+                MaxPosPhaseCorrection   = $config.GetValue("MaxPosPhaseCorrection")
+                SpecialPollInterval     = $config.GetValue("SpecialPollInterval")
+                VMICTimeProviderEnabled = if ($vmic) { $vmic.GetValue("Enabled") } else { $null }
             }
         } catch {
-            [PSCustomObject]@{ DC = $dc.HostName; NtpServer = "UNREACHABLE"; Type = "UNKNOWN" }
+            [PSCustomObject]@{
+                DC                      = $dc.HostName
+                NtpServer               = $null
+                Type                    = $null
+                AnnounceFlags           = $null
+                MaxNegPhaseCorrection   = $null
+                MaxPosPhaseCorrection   = $null
+                SpecialPollInterval     = $null
+                VMICTimeProviderEnabled = $null
+            }
         }
     }
 }
@@ -193,10 +209,24 @@ $data["site_links"] = Invoke-Section "Site Links" {
 # --- Users ---
 $data["users"] = Invoke-Section "Users" {
     Get-ADUser -Filter * -Properties Enabled, PasswordNeverExpires, LockedOut,
-        LastLogonDate, PasswordLastSet, Description @commonParams |
-        Select-Object SamAccountName, DisplayName, Enabled, PasswordNeverExpires,
-            LockedOut, LastLogonDate, PasswordLastSet, Description |
-        Select-Object -First 5000
+        LastLogonDate, PasswordLastSet, Description, mail, adminCount @commonParams |
+        Select-Object -First 5000 |
+        ForEach-Object {
+            [PSCustomObject]@{
+                SamAccountName       = $_.SamAccountName
+                DisplayName          = $_.DisplayName
+                UserPrincipalName    = $_.UserPrincipalName
+                DistinguishedName    = $_.DistinguishedName
+                Mail                 = $_.mail
+                Enabled              = $_.Enabled
+                PasswordNeverExpires = $_.PasswordNeverExpires
+                LockedOut            = $_.LockedOut
+                LastLogonDate        = $_.LastLogonDate
+                PasswordLastSet      = $_.PasswordLastSet
+                Description          = $_.Description
+                AdminCount           = $_.adminCount
+            }
+        }
 }
 
 # --- Privileged Accounts ---
@@ -224,9 +254,18 @@ $data["privileged_accounts"] = Invoke-Section "Privileged Accounts" {
 
 # --- Groups ---
 $data["groups"] = Invoke-Section "Groups" {
-    Get-ADGroup -Filter * -Properties Members @commonParams |
-        Select-Object Name, SamAccountName, GroupCategory, GroupScope,
-            @{N="MemberCount"; E={ $_.Members.Count }}
+    Get-ADGroup -Filter * -Properties Members, adminCount @commonParams |
+        ForEach-Object {
+            [PSCustomObject]@{
+                Name              = $_.Name
+                SamAccountName    = $_.SamAccountName
+                DistinguishedName = $_.DistinguishedName
+                GroupCategory     = $_.GroupCategory.ToString()
+                GroupScope        = $_.GroupScope.ToString()
+                MemberCount       = $_.Members.Count
+                AdminCount        = $_.adminCount
+            }
+        }
 }
 
 # --- Privileged Groups (with members) ---
@@ -319,6 +358,30 @@ $data["dns_forwarders"] = Invoke-Section "DNS Forwarders" {
             }
         }
     } catch { @() }
+}
+
+# --- Computers ---
+$data["computers"] = Invoke-Section "Computers" {
+    Get-ADComputer -Filter * -Properties OperatingSystem, OperatingSystemVersion,
+        Enabled, LastLogonDate, PasswordLastSet, Description,
+        ServicePrincipalNames, isCriticalSystemObject @commonParams |
+        Select-Object -First 10000 |
+        ForEach-Object {
+            $isCNO = $_.ServicePrincipalNames -like "*MSClusterVirtualServer*"
+            $isVCO = (-not $isCNO) -and $_.isCriticalSystemObject
+            [PSCustomObject]@{
+                Name                   = $_.Name
+                DistinguishedName      = $_.DistinguishedName
+                OperatingSystem        = $_.OperatingSystem
+                OperatingSystemVersion = $_.OperatingSystemVersion
+                Enabled                = $_.Enabled
+                LastLogonDate          = $_.LastLogonDate
+                PasswordLastSet        = $_.PasswordLastSet
+                Description            = $_.Description
+                IsCNO                  = [bool]$isCNO
+                IsVCO                  = [bool]$isVCO
+            }
+        }
 }
 
 # --- PKI / CA Discovery ---

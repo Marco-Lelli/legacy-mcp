@@ -10,13 +10,15 @@ function Get-GroupsData {
     [CmdletBinding()]
     param([hashtable]$CommonParams = @{})
 
-    Get-ADGroup -Filter * -Properties Members @CommonParams | ForEach-Object {
+    Get-ADGroup -Filter * -Properties Members, adminCount @CommonParams | ForEach-Object {
         [PSCustomObject]@{
-            Name           = $_.Name
-            SamAccountName = $_.SamAccountName
-            GroupCategory  = $_.GroupCategory.ToString()
-            GroupScope     = $_.GroupScope.ToString()
-            MemberCount    = $_.Members.Count
+            Name              = $_.Name
+            SamAccountName    = $_.SamAccountName
+            DistinguishedName = $_.DistinguishedName
+            GroupCategory     = $_.GroupCategory.ToString()
+            GroupScope        = $_.GroupScope.ToString()
+            MemberCount       = $_.Members.Count
+            AdminCount        = $_.adminCount
         }
     }
 }

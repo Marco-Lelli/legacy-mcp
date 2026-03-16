@@ -8,18 +8,22 @@ function Get-UsersData {
     )
 
     Get-ADUser -Filter * -Properties Enabled, PasswordNeverExpires, LockedOut,
-        LastLogonDate, PasswordLastSet, Description @CommonParams |
+        LastLogonDate, PasswordLastSet, Description, mail, adminCount @CommonParams |
         Select-Object -First $Limit |
         ForEach-Object {
             [PSCustomObject]@{
-                SamAccountName      = $_.SamAccountName
-                DisplayName         = $_.DisplayName
-                Enabled             = $_.Enabled
+                SamAccountName       = $_.SamAccountName
+                DisplayName          = $_.DisplayName
+                UserPrincipalName    = $_.UserPrincipalName
+                DistinguishedName    = $_.DistinguishedName
+                Mail                 = $_.mail
+                Enabled              = $_.Enabled
                 PasswordNeverExpires = $_.PasswordNeverExpires
-                LockedOut           = $_.LockedOut
-                LastLogonDate       = $_.LastLogonDate
-                PasswordLastSet     = $_.PasswordLastSet
-                Description         = $_.Description
+                LockedOut            = $_.LockedOut
+                LastLogonDate        = $_.LastLogonDate
+                PasswordLastSet      = $_.PasswordLastSet
+                Description          = $_.Description
+                AdminCount           = $_.adminCount
             }
         }
 }
