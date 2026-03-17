@@ -11,9 +11,11 @@ l'infrastruttura legacy — non solo il cloud. È pubblicato su GitHub con licen
 come progetto open source, con un layer enterprise proprietario sviluppato separatamente
 da Impresoft 4ward.
 
-Il progetto è creato da Marco Lelli, Head of Identity presso Impresoft 4ward,
+Il progetto è creato da Marco Lelli, Head of Identity presso Impresoft 4ward (4ward.it),
 società di consulenza IT specializzata in Microsoft Identity, e collegato al
 blog Legacy Things (legacythings.it).
+
+Repository: https://github.com/Marco-Lelli/legacy-mcp
 
 ---
 
@@ -30,12 +32,19 @@ Copre:
 - Schema AD — oggetti e attributi custom
 - Domini — configurazione, functional level, password policy default
 - Domain Controllers — lista, ruoli FSMO, OS version, configurazioni locali
-  (incluse impostazioni registry NTP — recuperate contattando ogni DC individualmente)
+  (incluse impostazioni registry NTP avanzato — 12 chiavi tra cui AnnounceFlags,
+  MaxNegPhaseCorrection, MaxPosPhaseCorrection, SpecialPollInterval,
+  VMICTimeProviderEnabled — recuperate contattando ogni DC individualmente)
 - Event Log configuration — impostazioni EventLog per ogni DC
-- SYSVOL — stato e replicazione
+  (Application/System/Security: MaxSizeBytes, RetentionDays, OverflowAction)
+- SYSVOL — stato e replicazione (DFSR con traduzione stato numerico)
 - Siti e site links — topologia di replicazione
-- Utenti — conteggi, stati (abilitati/disabilitati/locked), last logon, account privilegiati
-- Gruppi — gruppi privilegiati, membership, nested groups ricorsivi
+- Utenti — conteggi, stati (abilitati/disabilitati/locked), lastlogon, pwdLastSet,
+  PasswordNeverExpires, adminCount, UserPrincipalName, DistinguishedName, mail
+- Gruppi — gruppi privilegiati, membership, nested groups ricorsivi,
+  DistinguishedName, adminCount
+- Computer objects — nome, OS, LastLogonDate, PasswordLastSet, Enabled,
+  DistinguishedName, Description, IsCNO, IsVCO (limite 10.000 oggetti, configurabile)
 - Organizational Units — struttura OU completa
 - GPO Inventory — lista GPO per dominio, link alle OU, blocked inheritance
   (inventario, non analisi approfondita — quella è nel layer proprietario)
@@ -262,12 +271,41 @@ del cliente, su macchine di management del cliente. A volte in modalità desktop
 
 ---
 
+## Struttura repository
+```
+legacy-mcp/
+├── collector/          # PowerShell offline data collector
+│   ├── Collect-ADData.ps1
+│   ├── README.txt
+│   └── modules/        # moduli PS per area funzionale
+├── config/             # template configurazione per profilo A/B/C
+├── docs/               # architettura e documentazione
+├── src/legacy_mcp/     # MCP server Python
+│   ├── server.py       # entrypoint FastMCP
+│   ├── config.py
+│   ├── workspace/
+│   ├── modes/          # live.py e offline.py
+│   ├── storage/        # JSON → SQLite
+│   ├── tools/          # 13 moduli tool MCP
+│   ├── eventlog/
+│   └── service/        # Windows Service wrapper
+└── tests/
+    ├── fixtures/       # contoso-sample.json (AD fittizio per test)
+    └── unit/
+```
+
+---
+
 ## Cronologia del progetto
 
 - 13 marzo 2025 — Prima idea
 - 14 marzo 2025 — Definizione scope, architettura, decisioni tecniche, avvio lavori.
-  Installazione Claude Code, creazione repository, primi file.
-- 15 marzo 2025 — Refinement architetturale: verifica coerenza con script Webster,
-  workspace multi-scope, autenticazione MCP, profili di deployment,
-  PKI strutturata in tre livelli progressivi, DHCP nel layer proprietario,
-  GPO inventory nel layer base e analisi approfondita nel layer proprietario.
+  Installazione Claude Code, creazione repository locale, primi file.
+- 15 marzo 2025 — Primo sviluppo: struttura completa 54 file, 27 tool MCP,
+  server funzionante in Offline Mode, 9/9 unit test passati.
+  Prima query reale su contoso.local — risposta completa con finding.
+  Primo commit git.
+- 17 marzo 2025 — Gap analysis collector vs Webster, allineamento moduli PS,
+  aggiunta Computers.psm1, pwdLastSet, adminCount, EventLog config, SYSVOL DFSR,
+  NTP avanzato. Creazione README.txt collector. Repository GitHub privato creato
+  e primo push.
