@@ -256,6 +256,12 @@ Regole:
 - Non modificare mai oggetti AD nel layer open source — sola lettura assoluta
 - Non usare PowerShell precedente a 5.1
 - Non esporre il MCP server su internet senza WAF e autenticazione forte con MFA
+- Nei file PowerShell usare esclusivamente caratteri ASCII — niente em dash, virgolette
+  curve, o qualsiasi carattere non-ASCII. Usare trattini semplici (-) e virgolette dritte.
+  Motivo: PowerShell su Windows legge i file senza BOM in codepage ANSI (CP1252) e
+  interpreta i byte UTF-8 multi-byte come caratteri diversi, causando errori di parsing
+  difficili da diagnosticare (es. il byte 0x94 dell'em dash UTF-8 diventa U+201D,
+  virgoletta destra, che PowerShell riconosce come terminatore di stringa).
 
 ---
 
