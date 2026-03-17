@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from legacy_mcp.workspace.workspace import Workspace
 
 from legacy_mcp.tools import (
+    workspace_info,
     forest,
     domains,
     dcs,
@@ -25,6 +26,7 @@ from legacy_mcp.tools import (
 )
 
 _MODULES = [
+    workspace_info,
     forest, domains, dcs, sysvol, sites,
     users, groups, ous, gpo, trusts,
     fgpp, dns, pki,

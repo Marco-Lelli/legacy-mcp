@@ -21,8 +21,12 @@ def create_server(config_path: str | Path) -> FastMCP:
         "LegacyMCP",
         instructions=(
             "You are connected to an Active Directory assessment server. "
-            "All operations are read-only. Use the available tools to query "
-            "AD configuration, users, groups, GPOs, and infrastructure."
+            "All operations are read-only. "
+            "At the start of every session, call list_workspaces() first to "
+            "discover which forests are available and confirm their data loaded "
+            "correctly before running any other query. "
+            "Use the forest 'name' values returned by list_workspaces as the "
+            "'forest_name' argument for all other tools."
         ),
     )
 
