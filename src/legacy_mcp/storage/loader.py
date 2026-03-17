@@ -35,7 +35,7 @@ class JsonLoader:
         self.path = path
 
     def load(self) -> sqlite3.Connection:
-        with self.path.open(encoding="utf-8") as fh:
+        with self.path.open(encoding="utf-8-sig") as fh:
             data = json.load(fh)
 
         db = sqlite3.connect(":memory:")
