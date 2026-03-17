@@ -29,6 +29,9 @@ config/config-*.yaml
 *.suo
 *.user
 
+# Reference material (internal, not for GitHub)
+reference/
+
 # OS
 Thumbs.db
 desktop.ini
