@@ -3,7 +3,7 @@
 
 <#
 .SYNOPSIS
-    LegacyMCP Offline Data Collector — exports AD data to a structured JSON file.
+    LegacyMCP Offline Data Collector - exports AD data to a structured JSON file.
 
 .DESCRIPTION
     Collects Active Directory data across all sections covered by LegacyMCP Core
@@ -297,7 +297,7 @@ $data["gpos"] = Invoke-Section "GPO Inventory" {
         Get-GPO -All @commonParams | Select-Object DisplayName, Id, GpoStatus,
             CreationTime, ModificationTime, Owner
     } catch {
-        Write-Warning "GPO cmdlets not available — skipping GPO inventory"
+        Write-Warning "GPO cmdlets not available - skipping GPO inventory"
         @()
     }
 }
