@@ -272,7 +272,7 @@ NOTES
 
 
 ================================================================================
-  LegacyMCP — https://github.com/marcolelli/legacy-mcp
-  Impresoft 4ward — https://www.impresoft4ward.com
+  LegacyMCP — https://github.com/Marco-Lelli/legacy-mcp
+  Impresoft 4ward — https://www.4ward.it/
   Legacy Things — https://legacythings.it
 ================================================================================
