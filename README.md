@@ -21,7 +21,7 @@ to modern AI tooling.
 LegacyMCP fills that gap.
 
 It was born out of a real consulting need: the Identity team at
-[Impresoft 4ward](https://www.impresoft4ward.com) runs AD assessments for
+[Impresoft 4ward](https://www.4ward.it/) runs AD assessments for
 enterprise clients regularly. The goal was to make that process faster,
 smarter, and more useful — and to share the result with the community.
 
@@ -120,7 +120,7 @@ Interested? Get in touch.
 ## Author
 
 **Marco Lelli**
-Head of Identity — [Impresoft 4ward](https://www.impresoft4ward.com)
+Head of Identity — [Impresoft 4ward](https://www.4ward.it/)
 Microsoft Identity specialist with 25+ years in enterprise IT infrastructure.
 
 📖 Follow the build story on [Legacy Things](https://legacythings.it) —
