@@ -220,6 +220,40 @@ EXAMPLES
       Recommended naming convention for multi-customer environments.
 
 
+DATA STORAGE
+------------
+
+  Store JSON output files in a dedicated folder OUTSIDE the repository.
+  AD data is sensitive — it must never be committed to GitHub.
+
+  Recommended base path:   C:\LegacyMCP-Data\
+
+  Naming convention:
+    <domainname>-data.json                    plain export
+    <domainname>-data-<yyyyMMdd>.json         date-stamped (recommended)
+
+  Examples:
+    C:\LegacyMCP-Data\contoso.local-data-20250317.json
+    C:\LegacyMCP-Data\child.contoso.local-data-20250317.json
+    C:\LegacyMCP-Data\fabrikam.local-data-20250317.json
+
+  WHY THIS MATTERS
+  The JSON file contains the full AD inventory: user accounts, group
+  memberships, password policies, trust relationships, PKI topology.
+  This is exactly the data an attacker needs to map an environment.
+
+  Rules:
+    - Never save JSON files inside the repository working directory.
+    - Never commit JSON files to git (add *.json to .gitignore if needed).
+    - Never send JSON files via unencrypted channels (email, Teams chat).
+    - Treat JSON files with the same classification as the customer's
+      Active Directory backup — typically Confidential or Restricted.
+    - Delete files when no longer needed for the assessment.
+
+  The repository already includes C:\LegacyMCP-Data\ in .gitignore.
+  If using a custom path, add it manually.
+
+
 OUTPUT FORMAT
 -------------
 
@@ -243,6 +277,77 @@ OUTPUT FORMAT
 
   Users are capped at 5,000 objects. Computer objects are capped at 10,000.
   Adjust the limits in the script if the environment exceeds these thresholds.
+
+
+MULTI-FOREST CONFIGURATION
+--------------------------
+
+  When the assessment scope spans multiple forests or multiple standalone
+  domains, load all JSON files into LegacyMCP via the workspace section
+  of config.yaml. The MCP server merges them into a single SQLite database,
+  tagging every object with its source domain for cross-domain queries.
+
+  --- Scenario A: multiple standalone forests (independent customers or BUs) ---
+
+  Each forest is treated as an independent scope. LegacyMCP loads all files
+  but does not infer any relationship between them.
+
+      workspace:
+        mode: offline
+        sources:
+          - domain: contoso.local
+            file: C:\LegacyMCP-Data\contoso.local-data-20250317.json
+          - domain: fabrikam.local
+            file: C:\LegacyMCP-Data\fabrikam.local-data-20250317.json
+          - domain: tailspin.local
+            file: C:\LegacyMCP-Data\tailspin.local-data-20250317.json
+
+  Use this when auditing multiple unrelated environments in a single session.
+  Claude can compare them but LegacyMCP will not generate migration findings.
+
+
+  --- Scenario B: migration — source forest and destination forest ---
+
+  Mark one forest as source and one as destination. LegacyMCP enables
+  migration-specific queries: objects present in source but not in destination,
+  naming conflicts, SIDHistory mapping for already-migrated accounts.
+
+      workspace:
+        mode: offline
+        migration: true
+        sources:
+          - domain: contoso.local
+            role: source
+            file: C:\LegacyMCP-Data\contoso.local-data-20250317.json
+          - domain: corp.fabrikam.com
+            role: destination
+            file: C:\LegacyMCP-Data\corp.fabrikam.com-data-20250317.json
+
+  With migration: true, LegacyMCP surfaces comparative findings:
+    - Users in source without a match in destination
+    - Groups with no equivalent in the target
+    - SIDHistory entries for already-migrated principals
+    - UPN / SAMAccountName conflicts between the two environments
+
+
+  --- Scenario C: multi-domain forest (one export per domain) ---
+
+  Run the collector once per domain (see EXAMPLES above) and list all
+  resulting files under the same forest entry. Use this when Enterprise
+  Admin rights were not available and each domain was collected separately.
+
+      workspace:
+        mode: offline
+        sources:
+          - domain: contoso.local
+            file: C:\LegacyMCP-Data\contoso.local-data-20250317.json
+          - domain: child.contoso.local
+            file: C:\LegacyMCP-Data\child.contoso.local-data-20250317.json
+          - domain: eu.contoso.local
+            file: C:\LegacyMCP-Data\eu.contoso.local-data-20250317.json
+
+  LegacyMCP will correlate trust relationships and cross-domain group
+  memberships across the files when the domains share the same forest root.
 
 
 NOTES
