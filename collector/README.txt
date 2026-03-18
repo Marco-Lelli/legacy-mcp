@@ -1,7 +1,7 @@
 ================================================================================
   Collect-ADData.ps1
-  LegacyMCP Offline Collector — Active Directory Data Export
-  Version 1.0 — March 2025
+  LegacyMCP Offline Collector - Active Directory Data Export
+  Version 1.1 - March 2025
   Marco Lelli, Impresoft 4ward
 ================================================================================
 
@@ -278,6 +278,26 @@ OUTPUT FORMAT
   Users are capped at 5,000 objects. Computer objects are capped at 10,000.
   Adjust the limits in the script if the environment exceeds these thresholds.
 
+  Fields per section (selected):
+
+  users
+    SamAccountName, DisplayName, UserPrincipalName, DistinguishedName,
+    Mail, Enabled, PasswordNeverExpires, LockedOut, LastLogonDate,
+    PasswordLastSet, Description, AdminCount,
+    TrustedForDelegation, TrustedToAuthForDelegation, AllowedToDelegateTo
+
+  computers
+    Name, DistinguishedName, OperatingSystem, OperatingSystemVersion,
+    Enabled, LastLogonDate, PasswordLastSet, Description,
+    IsCNO, IsVCO,
+    TrustedForDelegation, TrustedToAuthForDelegation, AllowedToDelegateTo
+
+  eventlog_config (per DC, per log)
+    DC, LogName, MaxSizeBytes, OverflowAction
+    Note: OverflowAction maps to LogMode values: Circular, Retain,
+    AutoBackup. There is no RetentionDays equivalent in the
+    Get-WinEvent API.
+
 
 MULTI-FOREST CONFIGURATION
 --------------------------
@@ -374,6 +394,36 @@ NOTES
     group memberships, password policy settings). Handle it according to
     your organization's data classification policy and the customer's
     confidentiality requirements.
+
+  - The script file is ASCII-only. No extended UTF-8 characters (em dashes,
+    curly quotes, or any codepoint above U+007F) are used in the source.
+    Reason: PowerShell on Windows reads files without a UTF-8 BOM using the
+    system ANSI code page (CP1252). Multi-byte UTF-8 sequences are
+    misinterpreted as separate characters, which can corrupt string literals
+    and cause hard-to-diagnose parse errors. Keep the file ASCII-only when
+    editing.
+
+
+VERSION HISTORY
+---------------
+
+  v1.1 - March 2025
+    - Fixed EventLog collection: removed RetentionDays field (property
+      does not exist on EventLogConfiguration objects). OverflowAction
+      now correctly maps to LogMode (Circular/Retain/AutoBackup).
+    - Fixed schema extensions filter: OID-based exclusion of Microsoft
+      base schema and Exchange objects. governsID and attributeID added
+      to output. Limit raised from 200 to 500.
+    - Fixed MemberCount for large groups: replaced $_.Members.Count with
+      Get-ADGroupMember, which handles LDAP range retrieval transparently.
+      Groups with membership exceeding MaxPageSize (~1500) now return the
+      correct count instead of 0.
+    - Added Kerberos delegation fields to users and computers:
+      TrustedForDelegation, TrustedToAuthForDelegation,
+      AllowedToDelegateTo (msDS-AllowedToDelegateTo).
+
+  v1.0 - March 2025
+    Initial release.
 
 
 ================================================================================
