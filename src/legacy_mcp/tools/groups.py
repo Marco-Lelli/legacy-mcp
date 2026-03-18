@@ -31,6 +31,16 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         group_name: str,
         forest_name: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return the members of a specific group, with recursive nested group expansion."""
+        """Return the direct members of a specific group.
+
+        Each row contains: GroupName, MemberSamAccountName, MemberDisplayName,
+        MemberObjectClass (user / computer / group), MemberDistinguishedName,
+        MemberEnabled (True/False for users and computers, null for nested groups).
+
+        For privileged groups (Domain Admins, Enterprise Admins, Schema Admins,
+        Administrators, Account Operators, Backup Operators, Print Operators,
+        Server Operators), use get_privileged_groups instead — it provides
+        recursive nested expansion.
+        """
         conn = workspace.connector(forest_name)
         return conn.query("group_members", GroupName=group_name)

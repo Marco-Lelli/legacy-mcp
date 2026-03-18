@@ -291,6 +291,44 @@ $data["groups"] = Invoke-Section "Groups" {
         }
 }
 
+# --- Group Members (flat table — one row per member per group) ---
+# Iterates all AD groups. For each group, emits one row per direct member
+# with identity and object class. Nested group membership is NOT expanded
+# here — use privileged_groups for recursive expansion of sensitive groups.
+# Groups with no members produce no rows (not an error).
+# MemberEnabled is null for members that are not user or computer objects.
+$data["group_members"] = Invoke-Section "Group Members" {
+    Get-ADGroup -Filter * @commonParams | ForEach-Object {
+        $groupName = $_.Name
+        $groupDN   = $_.DistinguishedName
+        try {
+            Get-ADGroupMember -Identity $groupDN @commonParams | ForEach-Object {
+                $member = $_
+                $enabled = $null
+                if ($member.objectClass -eq "user") {
+                    try {
+                        $enabled = (Get-ADUser -Identity $member.distinguishedName `
+                            -Properties Enabled @commonParams).Enabled
+                    } catch { }
+                } elseif ($member.objectClass -eq "computer") {
+                    try {
+                        $enabled = (Get-ADComputer -Identity $member.distinguishedName `
+                            -Properties Enabled @commonParams).Enabled
+                    } catch { }
+                }
+                [PSCustomObject]@{
+                    GroupName                = $groupName
+                    MemberSamAccountName     = $member.SamAccountName
+                    MemberDisplayName        = $member.name
+                    MemberObjectClass        = $member.objectClass
+                    MemberDistinguishedName  = $member.distinguishedName
+                    MemberEnabled            = $enabled
+                }
+            }
+        } catch { }
+    }
+}
+
 # --- Privileged Groups (with members) ---
 $data["privileged_groups"] = Invoke-Section "Privileged Groups" {
     $names = @("Domain Admins","Enterprise Admins","Schema Admins","Administrators",
