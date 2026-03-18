@@ -32,6 +32,9 @@ config/config-*.yaml
 # Reference material (internal, not for GitHub)
 reference/
 
+# Enterprise layer instructions — proprietario Impresoft 4ward, mai su GitHub
+CLAUDE-ENTERPRISE.md
+
 # OS
 Thumbs.db
 desktop.ini
