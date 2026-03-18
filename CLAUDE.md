@@ -277,6 +277,56 @@ del cliente, su macchine di management del cliente. A volte in modalità desktop
 
 ---
 
+## Strategia prompt per sessioni di assessment
+
+### 1. Separare raccolta da analisi — due turni distinti
+
+Il numero di tool call per turno e' limitato. Separare la raccolta dati
+dall'analisi permette di sfruttare entrambi i turni al massimo.
+
+Turno 1 — raccolta:
+  "Raccogli tutti i dati di [forest] chiamando tutti i tool disponibili.
+  Non produrre analisi — dimmi solo 'dati raccolti' quando hai finito."
+
+Turno 2 — analisi:
+  "Produci il report completo con finding per severita' Alta/Media/Bassa
+  e segnala tool che hanno restituito dati vuoti o anomali."
+
+### 2. Un ambiente alla volta
+
+Non chiedere analisi su piu' forest in un singolo turno.
+Il piano Pro di Claude Desktop ha un limite noto di tool call per turno
+che viene raggiunto facilmente con query multi-forest.
+Completare l'analisi di un forest, poi passare al successivo.
+
+### 3. Query specifiche vs query generali
+
+Quando si sa cosa cercare, essere specifici riduce il numero di tool call.
+
+Esempio generico (molte call):
+  "Analizza tutto l'ambiente"
+
+Esempio specifico (poche call):
+  "Dammi utenti con adminCount=1 e gruppi privilegiati con nested groups
+  su contoso.local"
+
+### 4. Il comando "Continue"
+
+Se Claude raggiunge il limite tool call prima di produrre il report,
+scrivere "Continue" fa riprendere la produzione del testo senza ulteriori
+tool call, perche' i dati sono gia' in memoria.
+E' la soluzione immediata quando si vede il messaggio:
+  "Claude reached its tool-use limit for this turn."
+
+### 5. list_workspaces() come primo passo
+
+All'inizio di ogni sessione Claude chiama automaticamente list_workspaces()
+per scoprire gli ambienti disponibili e verificare che i file JSON siano
+stati caricati correttamente.
+Se non lo fa, chiederlo esplicitamente prima di qualsiasi altra query.
+
+---
+
 ## Struttura repository
 ```
 legacy-mcp/
