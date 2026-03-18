@@ -365,7 +365,8 @@
     { "DisplayName": "Contoso-Server-Baseline",           "Id": "A1B2C3D4-0001-0001-0001-000000000004", "GpoStatus": "AllSettingsEnabled",  "CreationTime": "2021-06-01T10:00:00", "ModificationTime": "2025-08-22T10:00:00", "Owner": "CONTOSO\\Domain Admins" },
     { "DisplayName": "Contoso-AdminAccounts-Policy",      "Id": "A1B2C3D4-0001-0001-0001-000000000005", "GpoStatus": "AllSettingsEnabled",  "CreationTime": "2022-01-10T08:00:00", "ModificationTime": "2025-11-30T09:15:00", "Owner": "CONTOSO\\Domain Admins" },
     { "DisplayName": "Contoso-BitLocker",                 "Id": "A1B2C3D4-0001-0001-0001-000000000006", "GpoStatus": "AllSettingsEnabled",  "CreationTime": "2022-06-01T09:00:00", "ModificationTime": "2025-07-01T12:00:00", "Owner": "CONTOSO\\Domain Admins" },
-    { "DisplayName": "OLD-InternetExplorer-Settings",     "Id": "A1B2C3D4-0001-0001-0001-000000000099", "GpoStatus": "AllSettingsDisabled", "CreationTime": "2018-01-01T00:00:00", "ModificationTime": "2021-06-01T00:00:00", "Owner": "CONTOSO\\Domain Admins" }
+    { "DisplayName": "OLD-InternetExplorer-Settings",     "Id": "A1B2C3D4-0001-0001-0001-000000000099", "GpoStatus": "AllSettingsDisabled", "CreationTime": "2018-01-01T00:00:00", "ModificationTime": "2021-06-01T00:00:00", "Owner": "CONTOSO\\Domain Admins" },
+    { "DisplayName": "Contoso-UserSettings",               "Id": "A1B2C3D4-0001-0001-0001-000000000007", "GpoStatus": "AllSettingsEnabled",  "CreationTime": "2023-03-10T00:00:00", "ModificationTime": "2024-11-15T00:00:00", "Owner": "CONTOSO\\Domain Admins" }
   ],
 
   "gpo_links": [
@@ -375,7 +376,10 @@
     { "DisplayName": "Contoso-BitLocker",                 "GpoId": "A1B2C3D4-0001-0001-0001-000000000006", "Enabled": true,  "Enforced": false, "Target": "OU=Workstations,OU=IT,OU=Contoso,DC=contoso,DC=local",       "Order": 2 },
     { "DisplayName": "Contoso-Server-Baseline",           "GpoId": "A1B2C3D4-0001-0001-0001-000000000004", "Enabled": true,  "Enforced": false, "Target": "OU=Servers,OU=IT,OU=Contoso,DC=contoso,DC=local",           "Order": 1 },
     { "DisplayName": "Contoso-AdminAccounts-Policy",      "GpoId": "A1B2C3D4-0001-0001-0001-000000000005", "Enabled": true,  "Enforced": true,  "Target": "OU=AdminAccounts,OU=IT,OU=Contoso,DC=contoso,DC=local",     "Order": 1 },
-    { "DisplayName": "Default Domain Controllers Policy", "GpoId": "6AC1786C-016F-11D2-945F-00C04FB984F9", "Enabled": true,  "Enforced": false, "Target": "OU=Domain Controllers,DC=contoso,DC=local",                 "Order": 1 }
+    { "DisplayName": "Default Domain Controllers Policy", "GpoId": "6AC1786C-016F-11D2-945F-00C04FB984F9", "Enabled": true,  "Enforced": false, "Target": "OU=Domain Controllers,DC=contoso,DC=local",                 "Order": 1 },
+    { "DisplayName": "Contoso-UserSettings",              "GpoId": "A1B2C3D4-0001-0001-0001-000000000007", "Enabled": true,  "Enforced": false, "Target": "OU=HR,OU=Users,OU=Contoso,DC=contoso,DC=local",            "Order": 1 },
+    { "DisplayName": "Contoso-UserSettings",              "GpoId": "A1B2C3D4-0001-0001-0001-000000000007", "Enabled": true,  "Enforced": false, "Target": "OU=Finance,OU=Users,OU=Contoso,DC=contoso,DC=local",       "Order": 1 },
+    { "DisplayName": "Contoso-UserSettings",              "GpoId": "A1B2C3D4-0001-0001-0001-000000000007", "Enabled": true,  "Enforced": false, "Target": "OU=Sales,OU=Users,OU=Contoso,DC=contoso,DC=local",         "Order": 1 }
   ],
 
   "trusts": [

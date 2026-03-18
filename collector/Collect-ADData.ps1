@@ -364,12 +364,26 @@ $data["gpos"] = Invoke-Section "GPO Inventory" {
 }
 
 # --- GPO Links ---
+# Collects GPO links from the domain root and every OU.
+# The previous implementation queried only the domain root, which missed
+# all OU-level links — the majority in most environments.
+# Get-GPInheritance.GpoLinks returns DIRECT links on each target only
+# (not inherited), so the same GPO linked to multiple OUs appears as
+# multiple rows, each with its own Target field.
 $data["gpo_links"] = Invoke-Section "GPO Links" {
     try {
-        $domain = (Get-ADDomain @commonParams).DistinguishedName
-        Get-GPInheritance -Target $domain @commonParams |
-            Select-Object -ExpandProperty GpoLinks |
-            Select-Object DisplayName, GpoId, Enabled, Enforced, Target, Order
+        $domainDN = (Get-ADDomain @commonParams).DistinguishedName
+        $ouDNs    = Get-ADOrganizationalUnit -Filter * @commonParams |
+                        Select-Object -ExpandProperty DistinguishedName
+        $targets  = @($domainDN) + @($ouDNs)
+        $targets | ForEach-Object {
+            $target = $_
+            try {
+                Get-GPInheritance -Target $target @commonParams |
+                    Select-Object -ExpandProperty GpoLinks |
+                    Select-Object DisplayName, GpoId, Enabled, Enforced, Target, Order
+            } catch { }
+        }
     } catch { @() }
 }
 
