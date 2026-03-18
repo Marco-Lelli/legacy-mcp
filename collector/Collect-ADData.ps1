@@ -75,11 +75,23 @@ $data["optional_features"] = Invoke-Section "Optional Features" {
 # --- Schema Extensions ---
 $data["schema"] = Invoke-Section "Schema Extensions" {
     $schemaDN = (Get-ADRootDSE @commonParams).schemaNamingContext
-    Get-ADObject -SearchBase $schemaDN -Filter { isSingleValued -like "*" } `
-        -Properties lDAPDisplayName, objectClass, adminDescription @commonParams |
-        Where-Object { $_.adminDescription -ne $null } |
-        Select-Object lDAPDisplayName, objectClass, adminDescription |
-        Select-Object -First 200
+    # Microsoft base schema OIDs start with 1.2.840.113556 (Windows) or
+    # 2.16.840.1.101.2 (US DoD). Exchange uses 1.2.840.113556 as well.
+    # Custom extensions typically use private OIDs outside these prefixes.
+    # We identify custom objects by checking that their governsID / attributeID
+    # does NOT fall within the Microsoft-reserved OID subtree.
+    Get-ADObject -SearchBase $schemaDN -Filter * `
+        -Properties lDAPDisplayName, objectClass, adminDescription,
+                    governsID, attributeID @commonParams |
+        Where-Object {
+            $oid = if ($_.governsID) { $_.governsID } else { $_.attributeID }
+            $oid -and
+            -not $oid.StartsWith("1.2.840.113556") -and
+            -not $oid.StartsWith("2.16.840.1.101.2") -and
+            -not $oid.StartsWith("1.3.6.1.4.1.311")
+        } |
+        Select-Object lDAPDisplayName, objectClass, adminDescription, governsID, attributeID |
+        Select-Object -First 500
 }
 
 # --- Domains ---
@@ -130,12 +142,11 @@ $data["eventlog_config"] = Invoke-Section "EventLog Config" {
                     DC             = $dc.HostName
                     LogName        = $log.LogName
                     MaxSizeBytes   = $log.MaximumSizeInBytes
-                    RetentionDays  = $log.LogRetentionDays
                     OverflowAction = $log.LogMode
                 }
             }
         } catch {
-            [PSCustomObject]@{ DC = $dc.HostName; LogName = "ERROR"; MaxSizeBytes = 0; RetentionDays = 0; OverflowAction = $_.ToString() }
+            [PSCustomObject]@{ DC = $dc.HostName; LogName = "ERROR"; MaxSizeBytes = 0; OverflowAction = $_.ToString() }
         }
     }
     $results
@@ -209,22 +220,27 @@ $data["site_links"] = Invoke-Section "Site Links" {
 # --- Users ---
 $data["users"] = Invoke-Section "Users" {
     Get-ADUser -Filter * -Properties Enabled, PasswordNeverExpires, LockedOut,
-        LastLogonDate, PasswordLastSet, Description, mail, adminCount @commonParams |
+        LastLogonDate, PasswordLastSet, Description, mail, adminCount,
+        TrustedForDelegation, TrustedToAuthForDelegation,
+        "msDS-AllowedToDelegateTo" @commonParams |
         Select-Object -First 5000 |
         ForEach-Object {
             [PSCustomObject]@{
-                SamAccountName       = $_.SamAccountName
-                DisplayName          = $_.DisplayName
-                UserPrincipalName    = $_.UserPrincipalName
-                DistinguishedName    = $_.DistinguishedName
-                Mail                 = $_.mail
-                Enabled              = $_.Enabled
-                PasswordNeverExpires = $_.PasswordNeverExpires
-                LockedOut            = $_.LockedOut
-                LastLogonDate        = $_.LastLogonDate
-                PasswordLastSet      = $_.PasswordLastSet
-                Description          = $_.Description
-                AdminCount           = $_.adminCount
+                SamAccountName              = $_.SamAccountName
+                DisplayName                 = $_.DisplayName
+                UserPrincipalName           = $_.UserPrincipalName
+                DistinguishedName           = $_.DistinguishedName
+                Mail                        = $_.mail
+                Enabled                     = $_.Enabled
+                PasswordNeverExpires        = $_.PasswordNeverExpires
+                LockedOut                   = $_.LockedOut
+                LastLogonDate               = $_.LastLogonDate
+                PasswordLastSet             = $_.PasswordLastSet
+                Description                 = $_.Description
+                AdminCount                  = $_.adminCount
+                TrustedForDelegation        = $_.TrustedForDelegation
+                TrustedToAuthForDelegation  = $_.TrustedToAuthForDelegation
+                AllowedToDelegateTo         = $_.("msDS-AllowedToDelegateTo")
             }
         }
 }
@@ -254,15 +270,22 @@ $data["privileged_accounts"] = Invoke-Section "Privileged Accounts" {
 
 # --- Groups ---
 $data["groups"] = Invoke-Section "Groups" {
-    Get-ADGroup -Filter * -Properties Members, adminCount @commonParams |
+    Get-ADGroup -Filter * -Properties adminCount @commonParams |
         ForEach-Object {
+            # Get-ADGroupMember handles range retrieval (large groups > MaxPageSize).
+            # $_.Members.Count truncates at the LDAP page boundary for large groups
+            # like Domain Computers, returning 0 when membership exceeds ~1500.
+            $count = try {
+                (Get-ADGroupMember -Identity $_.DistinguishedName @commonParams |
+                    Measure-Object).Count
+            } catch { -1 }
             [PSCustomObject]@{
                 Name              = $_.Name
                 SamAccountName    = $_.SamAccountName
                 DistinguishedName = $_.DistinguishedName
                 GroupCategory     = $_.GroupCategory.ToString()
                 GroupScope        = $_.GroupScope.ToString()
-                MemberCount       = $_.Members.Count
+                MemberCount       = $count
                 AdminCount        = $_.adminCount
             }
         }
@@ -364,22 +387,27 @@ $data["dns_forwarders"] = Invoke-Section "DNS Forwarders" {
 $data["computers"] = Invoke-Section "Computers" {
     Get-ADComputer -Filter * -Properties OperatingSystem, OperatingSystemVersion,
         Enabled, LastLogonDate, PasswordLastSet, Description,
-        ServicePrincipalNames, isCriticalSystemObject @commonParams |
+        ServicePrincipalNames, isCriticalSystemObject,
+        TrustedForDelegation, TrustedToAuthForDelegation,
+        "msDS-AllowedToDelegateTo" @commonParams |
         Select-Object -First 10000 |
         ForEach-Object {
             $isCNO = $_.ServicePrincipalNames -like "*MSClusterVirtualServer*"
             $isVCO = (-not $isCNO) -and $_.isCriticalSystemObject
             [PSCustomObject]@{
-                Name                   = $_.Name
-                DistinguishedName      = $_.DistinguishedName
-                OperatingSystem        = $_.OperatingSystem
-                OperatingSystemVersion = $_.OperatingSystemVersion
-                Enabled                = $_.Enabled
-                LastLogonDate          = $_.LastLogonDate
-                PasswordLastSet        = $_.PasswordLastSet
-                Description            = $_.Description
-                IsCNO                  = [bool]$isCNO
-                IsVCO                  = [bool]$isVCO
+                Name                       = $_.Name
+                DistinguishedName          = $_.DistinguishedName
+                OperatingSystem            = $_.OperatingSystem
+                OperatingSystemVersion     = $_.OperatingSystemVersion
+                Enabled                    = $_.Enabled
+                LastLogonDate              = $_.LastLogonDate
+                PasswordLastSet            = $_.PasswordLastSet
+                Description                = $_.Description
+                IsCNO                      = [bool]$isCNO
+                IsVCO                      = [bool]$isVCO
+                TrustedForDelegation       = $_.TrustedForDelegation
+                TrustedToAuthForDelegation = $_.TrustedToAuthForDelegation
+                AllowedToDelegateTo        = $_.("msDS-AllowedToDelegateTo")
             }
         }
 }
