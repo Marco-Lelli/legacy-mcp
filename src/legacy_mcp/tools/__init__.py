@@ -17,6 +17,7 @@ from legacy_mcp.tools import (
     sites,
     users,
     groups,
+    computers,
     ous,
     gpo,
     trusts,
@@ -28,7 +29,7 @@ from legacy_mcp.tools import (
 _MODULES = [
     workspace_info,
     forest, domains, dcs, sysvol, sites,
-    users, groups, ous, gpo, trusts,
+    users, groups, computers, ous, gpo, trusts,
     fgpp, dns, pki,
 ]
 
