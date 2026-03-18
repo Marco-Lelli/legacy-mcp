@@ -327,6 +327,21 @@ Se non lo fa, chiederlo esplicitamente prima di qualsiasi altra query.
 
 ---
 
+## Client supportati
+
+**Testato e funzionante:**
+- Claude Desktop con piano Pro Anthropic
+
+**Compatibile, non ancora testato ufficialmente:**
+- GitHub Copilot in VS Code
+  (configurazione tramite .vscode/mcp.json)
+
+**In fase di valutazione architetturale:**
+- Microsoft 365 Copilot tramite Copilot Studio
+  (richiede server esposto su HTTPS — deployment Azure con APIM)
+
+---
+
 ## Struttura repository
 ```
 legacy-mcp/
@@ -342,7 +357,22 @@ legacy-mcp/
 │   ├── workspace/
 │   ├── modes/          # live.py e offline.py
 │   ├── storage/        # JSON → SQLite
-│   ├── tools/          # 13 moduli tool MCP
+│   ├── tools/          # 15 moduli tool MCP
+│   │   ├── workspace_info.py   # list_workspaces — entry point di sessione
+│   │   ├── forest.py
+│   │   ├── domains.py
+│   │   ├── dcs.py
+│   │   ├── sysvol.py
+│   │   ├── sites.py
+│   │   ├── users.py
+│   │   ├── groups.py
+│   │   ├── computers.py        # get_computers, get_computer_summary
+│   │   ├── ous.py
+│   │   ├── gpo.py
+│   │   ├── trusts.py
+│   │   ├── fgpp.py
+│   │   ├── dns.py
+│   │   └── pki.py
 │   ├── eventlog/
 │   └── service/        # Windows Service wrapper
 └── tests/
@@ -364,4 +394,12 @@ legacy-mcp/
 - 17 marzo 2025 — Gap analysis collector vs Webster, allineamento moduli PS,
   aggiunta Computers.psm1, pwdLastSet, adminCount, EventLog config, SYSVOL DFSR,
   NTP avanzato. Creazione README.txt collector. Repository GitHub privato creato
-  e primo push.
+  e primo push. Test su ambienti reali, fix BOM UTF-8 loader Python,
+  fix em dash UTF-8 in PowerShell (CP1252 parsing bug).
+- 18 marzo 2025 — Test approfonditi su 4 ambienti AD reali: 17 anomalie censite
+  e classificate (9 bug loader, 4 bug collector, 4 gap strutturali).
+  Fix atomica KNOWN_SECTIONS loader.py. Fix collector: EventLog RetentionDays,
+  schema OID filtering, MemberCount range retrieval, TrustedForDelegation.
+  Nuovo tool get_computers con get_computer_summary e filtri delegation/stale.
+  Definita architettura enterprise Azure (VM Windows, Blob Storage, Portal,
+  APIM, Copilot Studio). Due file CLAUDE separati: pubblico e privato.
