@@ -152,3 +152,84 @@ class TestListWorkspacesMultiForest:
         result = tools_multi.list_workspaces()
         for entry in result:
             assert entry["loaded"] is True
+
+
+# ---------------------------------------------------------------------------
+# reload_workspace
+# ---------------------------------------------------------------------------
+
+class TestReloadWorkspace:
+
+    def test_reload_returns_loaded_true(self, tools_single: _MockMCP) -> None:
+        """Happy path: reload succeeds and returns loaded=True with correct fields."""
+        result = tools_single.reload_workspace()
+        assert len(result) == 1
+        entry = result[0]
+        assert entry["name"] == "contoso.local"
+        assert entry["mode"] == "offline"
+        assert entry["relation"] == "standalone"
+        assert entry["loaded"] is True
+        assert entry["error"] is None
+
+    def test_reload_clears_engine_cache(self, single_forest_workspace: Workspace) -> None:
+        """reload_workspace resets _engine so JSON is re-read from disk."""
+        from legacy_mcp.modes.offline import OfflineConnector
+
+        mcp = _MockMCP()
+        workspace_info_module.register(mcp, single_forest_workspace)
+
+        # Prime the cache via list_workspaces.
+        mcp.list_workspaces()
+        conn = single_forest_workspace.connector("contoso.local")
+        assert isinstance(conn, OfflineConnector)
+        assert conn._engine is not None, "cache should be warm after list_workspaces"
+
+        # reload_workspace must clear the engine and reload successfully.
+        result = mcp.reload_workspace()
+        assert result[0]["loaded"] is True
+        # Engine was re-populated during the reload probe.
+        assert conn._engine is not None
+
+    def test_reload_missing_file_returns_error(self) -> None:
+        """reload_workspace reports error for a missing file and sets loaded=False."""
+        forest = ForestConfig(
+            name="ghost.local",
+            relation=ForestRelation.STANDALONE,
+            file="/nonexistent/path/ghost.json",
+        )
+        ws = Workspace(mode=WorkspaceMode.OFFLINE, forests=[forest])
+        ws._init_connectors()
+        mcp = _MockMCP()
+        workspace_info_module.register(mcp, ws)
+
+        result = mcp.reload_workspace()
+        assert result[0]["loaded"] is False
+        assert result[0]["error"] is not None
+        assert "not found" in result[0]["error"].lower() or "File not found" in result[0]["error"]
+
+    def test_reload_partial_failure_continues(self, tmp_path: Path) -> None:
+        """A missing-file forest does not prevent valid forests from reloading."""
+        forests = [
+            ForestConfig(
+                name="contoso.local",
+                relation=ForestRelation.SOURCE,
+                file=str(FIXTURE_PATH),
+            ),
+            ForestConfig(
+                name="ghost.local",
+                relation=ForestRelation.DESTINATION,
+                file=str(tmp_path / "nonexistent.json"),
+            ),
+        ]
+        ws = Workspace(mode=WorkspaceMode.OFFLINE, forests=forests)
+        ws._init_connectors()
+        mcp = _MockMCP()
+        workspace_info_module.register(mcp, ws)
+
+        result = mcp.reload_workspace()
+        by_name = {e["name"]: e for e in result}
+
+        assert by_name["contoso.local"]["loaded"] is True
+        assert by_name["contoso.local"]["error"] is None
+        assert by_name["ghost.local"]["loaded"] is False
+        assert by_name["ghost.local"]["error"] is not None
