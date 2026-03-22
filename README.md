@@ -34,10 +34,25 @@ Connects directly to Domain Controllers via WinRM and PowerShell.
 Real-time data, ideal for internal admins or consultants with direct
 network access.
 
+```mermaid
+flowchart LR
+    A[LegacyMCP Server] -->|WinRM read-only| B[Active Directory]
+    A -->|SQLite in-memory| C[MCP Tools]
+    C -->|Natural language| D[Claude / Copilot]
+```
+
 **Offline Mode**
 A PowerShell collector exports AD data to a structured JSON file.
 The MCP server loads and queries that data locally — no network access
 required during analysis. Perfect for remote consulting scenarios.
+
+```mermaid
+flowchart LR
+    A[PowerShell Collector] -->|JSON file| B[LegacyMCP Server]
+    B -->|SQLite in-memory| C[MCP Tools]
+    C -->|Natural language| D[Claude / Copilot]
+    E[Active Directory] -.->|read-only collection| A
+```
 
 ---
 
@@ -105,6 +120,14 @@ LegacyMCP is built around ten security principles that apply across every deploy
 3. **Sensitive data stays local** — in Offline Mode, AD data never leaves the client network toward the cloud. Analysis happens locally. JSON output files are classified Confidential/Restricted.
 
 4. **Strong authentication for exposed endpoints** — three deployment profiles with increasing security requirements: local-only, internal network, and internet-facing with WAF and OAuth2/OIDC.
+
+```mermaid
+flowchart TD
+    A[Profile A - Local] -->|localhost only| B[LegacyMCP Server]
+    C[Profile B - Internal] -->|HTTPS + API Key| B
+    D[Profile C - Internet] -->|WAF + OAuth2/OIDC + MFA| E[Azure APIM]
+    E --> B
+```
 
 5. **TLS on all non-localhost endpoints** — no plaintext traffic outside localhost under any deployment profile.
 
