@@ -12,11 +12,19 @@ if TYPE_CHECKING:
 def register(mcp: "FastMCP", workspace: "Workspace") -> None:
 
     @mcp.tool()
-    def get_domains(forest_name: str | None = None) -> list[dict[str, Any]]:
+    def get_domains(
+        forest_name: str | None = None,
+        offset: int = 0,
+        limit: int = 200,
+    ) -> dict[str, Any]:
         """Return all domains in the forest with their configuration:
-        DNS name, functional level, and FSMO role holders."""
+        DNS name, functional level, and FSMO role holders.
+
+        Returns a paginated result: {items, total, offset, limit, has_more}.
+        Default limit is 200. Bounded by AD architecture (typically 1-20 domains).
+        """
         conn = workspace.connector(forest_name)
-        return conn.query("domains")
+        return conn.query_page("domains", offset=offset, limit=limit)
 
     @mcp.tool()
     def get_default_password_policy(

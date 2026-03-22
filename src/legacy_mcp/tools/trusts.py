@@ -12,9 +12,17 @@ if TYPE_CHECKING:
 def register(mcp: "FastMCP", workspace: "Workspace") -> None:
 
     @mcp.tool()
-    def get_trusts(forest_name: str | None = None) -> list[dict[str, Any]]:
+    def get_trusts(
+        forest_name: str | None = None,
+        offset: int = 0,
+        limit: int = 200,
+    ) -> dict[str, Any]:
         """Return all trust relationships: type (External/Forest/Shortcut/Realm),
         direction (Bidirectional/Inbound/Outbound), transitivity,
-        SID filtering, and SIDHistory state."""
+        SID filtering, and SIDHistory state.
+
+        Returns a paginated result: {items, total, offset, limit, has_more}.
+        Default limit is 200. Bounded by AD architecture (typically <20 trusts).
+        """
         conn = workspace.connector(forest_name)
-        return conn.query("trusts")
+        return conn.query_page("trusts", offset=offset, limit=limit)

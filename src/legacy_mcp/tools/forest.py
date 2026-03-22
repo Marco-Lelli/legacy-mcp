@@ -28,8 +28,16 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         return conn.query("optional_features")
 
     @mcp.tool()
-    def get_schema_extensions(forest_name: str | None = None) -> list[dict[str, Any]]:
+    def get_schema_extensions(
+        forest_name: str | None = None,
+        offset: int = 0,
+        limit: int = 200,
+    ) -> dict[str, Any]:
         """Return custom schema classes and attributes added to the AD schema
-        beyond the default Microsoft base schema."""
+        beyond the default Microsoft base schema.
+
+        Returns a paginated result: {items, total, offset, limit, has_more}.
+        Default limit is 200. The collector caps collection at 500 objects.
+        """
         conn = workspace.connector(forest_name)
-        return conn.query("schema")
+        return conn.query_page("schema", offset=offset, limit=limit)
