@@ -30,11 +30,19 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         }
 
     @mcp.tool()
-    def get_privileged_accounts(forest_name: str | None = None) -> list[dict[str, Any]]:
+    def get_privileged_accounts(
+        forest_name: str | None = None,
+        offset: int = 0,
+        limit: int = 200,
+    ) -> dict[str, Any]:
         """Return accounts that are members of privileged groups
-        (Domain Admins, Enterprise Admins, Schema Admins, Administrators)."""
+        (Domain Admins, Enterprise Admins, Schema Admins, Administrators).
+
+        Returns a paginated result: {items, total, offset, limit, has_more}.
+        Default limit is 200.
+        """
         conn = workspace.connector(forest_name)
-        return conn.query("privileged_accounts")
+        return conn.query_page("privileged_accounts", offset=offset, limit=limit)
 
     @mcp.tool()
     def get_users(
@@ -45,7 +53,9 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         password_never_expires: bool | None = None,
         locked_out: bool | None = None,
         forest_name: str | None = None,
-    ) -> list[dict[str, Any]]:
+        offset: int = 0,
+        limit: int = 200,
+    ) -> dict[str, Any]:
         """Return AD user accounts with semantic filters to keep responses
         small on large environments (1000+ users).
 
@@ -83,6 +93,10 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
           3. Use get_users with specific filters for focused findings
              (e.g. stale_only=True, delegation_only=True, admin_count=True).
           4. Use get_user_by_name for point lookups on a specific account.
+
+        Returns a paginated result: {items, total, offset, limit, has_more}.
+        total reflects the filtered count before pagination.
+        Default limit is 200.
         """
         conn = workspace.connector(forest_name)
         users = conn.query("users")
@@ -131,7 +145,15 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         elif locked_out is False:
             users = [u for u in users if u.get("LockedOut") != "True"]
 
-        return users
+        total = len(users)
+        page = users[offset : offset + limit]
+        return {
+            "items":    page,
+            "total":    total,
+            "offset":   offset,
+            "limit":    limit,
+            "has_more": offset + len(page) < total,
+        }
 
     @mcp.tool()
     def get_user_by_name(

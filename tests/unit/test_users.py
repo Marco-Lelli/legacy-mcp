@@ -1,5 +1,5 @@
-"""Unit tests for the get_users, get_user_summary, and get_user_by_name
-MCP tools."""
+"""Unit tests for the get_users, get_user_summary, get_privileged_accounts,
+and get_user_by_name MCP tools."""
 
 from __future__ import annotations
 
@@ -47,6 +47,44 @@ def tools(workspace: Workspace) -> _MockMCP:
 
 
 # ---------------------------------------------------------------------------
+# get_users — contract and pagination
+# ---------------------------------------------------------------------------
+
+class TestGetUsersContractAndPagination:
+
+    def test_returns_dict_contract(self, tools: _MockMCP) -> None:
+        result = tools.get_users()
+        assert set(result.keys()) == {"items", "total", "offset", "limit", "has_more"}
+
+    def test_default_limit_and_offset(self, tools: _MockMCP) -> None:
+        result = tools.get_users()
+        assert result["limit"] == 200
+        assert result["offset"] == 0
+
+    def test_all_fit_in_default_page(self, tools: _MockMCP) -> None:
+        # 15 users < limit 200 -- has_more must be False.
+        result = tools.get_users()
+        assert result["has_more"] is False
+        assert len(result["items"]) == result["total"]
+
+    def test_pagination_limit_one(self, tools: _MockMCP) -> None:
+        first = tools.get_users(offset=0, limit=1)
+        assert len(first["items"]) == 1
+        assert first["has_more"] is True
+        assert first["total"] == 15
+
+    def test_total_reflects_filtered_count(self, tools: _MockMCP) -> None:
+        # total must reflect post-filter count, not the full table size.
+        result = tools.get_users(enabled=True)
+        assert result["total"] == 11
+        # Now paginate over that filtered set.
+        page = tools.get_users(enabled=True, offset=0, limit=5)
+        assert page["total"] == 11
+        assert len(page["items"]) == 5
+        assert page["has_more"] is True
+
+
+# ---------------------------------------------------------------------------
 # get_users — no filters
 # ---------------------------------------------------------------------------
 
@@ -54,11 +92,11 @@ class TestGetUsersNoFilter:
 
     def test_returns_all_users(self, tools: _MockMCP) -> None:
         result = tools.get_users()
-        assert len(result) == 15
+        assert result["total"] == 15
 
     def test_each_row_has_sam_account_name(self, tools: _MockMCP) -> None:
         result = tools.get_users()
-        for user in result:
+        for user in result["items"]:
             assert "SamAccountName" in user
 
 
@@ -69,24 +107,24 @@ class TestGetUsersNoFilter:
 class TestGetUsersEnabledFilter:
 
     def test_enabled_true(self, tools: _MockMCP) -> None:
-        result = tools.get_users(enabled=True)
         # a.rossi m.ferrari l.bianchi g.conti s.martini svc.backup svc.monitor
         # svc.deploy adm.rossi adm.ferrari Administrator = 11
-        assert len(result) == 11
-        for u in result:
+        result = tools.get_users(enabled=True)
+        assert result["total"] == 11
+        for u in result["items"]:
             assert u["Enabled"] == "True"
 
     def test_enabled_false(self, tools: _MockMCP) -> None:
-        result = tools.get_users(enabled=False)
         # r.greco f.esposito Guest krbtgt = 4
-        assert len(result) == 4
-        for u in result:
+        result = tools.get_users(enabled=False)
+        assert result["total"] == 4
+        for u in result["items"]:
             assert u["Enabled"] == "False"
 
     def test_enabled_true_and_false_sum_to_total(self, tools: _MockMCP) -> None:
-        total = len(tools.get_users())
-        enabled = len(tools.get_users(enabled=True))
-        disabled = len(tools.get_users(enabled=False))
+        total = tools.get_users()["total"]
+        enabled = tools.get_users(enabled=True)["total"]
+        disabled = tools.get_users(enabled=False)["total"]
         assert enabled + disabled == total
 
 
@@ -99,23 +137,23 @@ class TestGetUsersAdminCount:
     def test_admin_count_true_count(self, tools: _MockMCP) -> None:
         # adm.rossi, adm.ferrari, Administrator, krbtgt have AdminCount=1.
         result = tools.get_users(admin_count=True)
-        assert len(result) == 4
+        assert result["total"] == 4
 
     def test_admin_count_true_names(self, tools: _MockMCP) -> None:
         result = tools.get_users(admin_count=True)
-        names = {u["SamAccountName"] for u in result}
+        names = {u["SamAccountName"] for u in result["items"]}
         assert names == {"adm.rossi", "adm.ferrari", "Administrator", "krbtgt"}
 
     def test_admin_count_false_excludes_protected_accounts(self, tools: _MockMCP) -> None:
         result = tools.get_users(admin_count=False)
-        names = {u["SamAccountName"] for u in result}
+        names = {u["SamAccountName"] for u in result["items"]}
         assert "adm.rossi" not in names
         assert "krbtgt" not in names
 
     def test_admin_count_true_and_false_sum_to_total(self, tools: _MockMCP) -> None:
-        total = len(tools.get_users())
-        with_ac = len(tools.get_users(admin_count=True))
-        without_ac = len(tools.get_users(admin_count=False))
+        total = tools.get_users()["total"]
+        with_ac = tools.get_users(admin_count=True)["total"]
+        without_ac = tools.get_users(admin_count=False)["total"]
         assert with_ac + without_ac == total
 
 
@@ -126,9 +164,9 @@ class TestGetUsersAdminCount:
 class TestGetUsersStaleOnly:
 
     def test_stale_only_contains_never_logged_on(self, tools: _MockMCP) -> None:
-        # Guest and krbtgt have never logged on — always stale.
+        # Guest and krbtgt have never logged on -- always stale.
         result = tools.get_users(stale_only=True)
-        names = [u["SamAccountName"] for u in result]
+        names = [u["SamAccountName"] for u in result["items"]]
         assert "Guest" in names
         assert "krbtgt" in names
 
@@ -136,14 +174,14 @@ class TestGetUsersStaleOnly:
         # r.greco (2025-09-30) and f.esposito (2025-11-15) are well over
         # 90 days inactive from any plausible test execution date.
         result = tools.get_users(stale_only=True)
-        names = [u["SamAccountName"] for u in result]
+        names = [u["SamAccountName"] for u in result["items"]]
         assert "r.greco" in names
         assert "f.esposito" in names
 
     def test_stale_only_excludes_recently_active_accounts(self, tools: _MockMCP) -> None:
         # Users who logged on in early March 2026 are not stale yet.
         result = tools.get_users(stale_only=True)
-        names = [u["SamAccountName"] for u in result]
+        names = [u["SamAccountName"] for u in result["items"]]
         assert "a.rossi" not in names
         assert "adm.rossi" not in names
 
@@ -157,15 +195,15 @@ class TestGetUsersDelegationOnly:
     def test_delegation_only_count(self, tools: _MockMCP) -> None:
         # Only svc.deploy has TrustedForDelegation=True.
         result = tools.get_users(delegation_only=True)
-        assert len(result) == 1
+        assert result["total"] == 1
 
     def test_svc_deploy_in_delegation_results(self, tools: _MockMCP) -> None:
         result = tools.get_users(delegation_only=True)
-        assert result[0]["SamAccountName"] == "svc.deploy"
+        assert result["items"][0]["SamAccountName"] == "svc.deploy"
 
     def test_regular_user_excluded(self, tools: _MockMCP) -> None:
         result = tools.get_users(delegation_only=True)
-        names = [u["SamAccountName"] for u in result]
+        names = [u["SamAccountName"] for u in result["items"]]
         assert "a.rossi" not in names
         assert "adm.rossi" not in names
 
@@ -179,25 +217,25 @@ class TestGetUsersPasswordNeverExpires:
     def test_pne_true_count(self, tools: _MockMCP) -> None:
         # svc.backup, svc.monitor, svc.deploy, Administrator, Guest = 5
         result = tools.get_users(password_never_expires=True)
-        assert len(result) == 5
+        assert result["total"] == 5
 
     def test_pne_true_includes_service_accounts(self, tools: _MockMCP) -> None:
         result = tools.get_users(password_never_expires=True)
-        names = {u["SamAccountName"] for u in result}
+        names = {u["SamAccountName"] for u in result["items"]}
         assert "svc.backup" in names
         assert "svc.monitor" in names
         assert "svc.deploy" in names
 
     def test_pne_false_excludes_service_accounts(self, tools: _MockMCP) -> None:
         result = tools.get_users(password_never_expires=False)
-        names = {u["SamAccountName"] for u in result}
+        names = {u["SamAccountName"] for u in result["items"]}
         assert "svc.backup" not in names
         assert "svc.monitor" not in names
 
     def test_pne_true_and_false_sum_to_total(self, tools: _MockMCP) -> None:
-        total = len(tools.get_users())
-        pne_true = len(tools.get_users(password_never_expires=True))
-        pne_false = len(tools.get_users(password_never_expires=False))
+        total = tools.get_users()["total"]
+        pne_true = tools.get_users(password_never_expires=True)["total"]
+        pne_false = tools.get_users(password_never_expires=False)["total"]
         assert pne_true + pne_false == total
 
 
@@ -210,15 +248,15 @@ class TestGetUsersLockedOut:
     def test_locked_out_true_count(self, tools: _MockMCP) -> None:
         # Only g.conti is locked out in the fixture.
         result = tools.get_users(locked_out=True)
-        assert len(result) == 1
+        assert result["total"] == 1
 
     def test_locked_out_true_name(self, tools: _MockMCP) -> None:
         result = tools.get_users(locked_out=True)
-        assert result[0]["SamAccountName"] == "g.conti"
+        assert result["items"][0]["SamAccountName"] == "g.conti"
 
     def test_locked_out_false_excludes_locked(self, tools: _MockMCP) -> None:
         result = tools.get_users(locked_out=False)
-        names = [u["SamAccountName"] for u in result]
+        names = [u["SamAccountName"] for u in result["items"]]
         assert "g.conti" not in names
 
 
@@ -232,16 +270,44 @@ class TestGetUsersCombinedFilters:
         # AdminCount=1 AND enabled=True: adm.rossi, adm.ferrari, Administrator
         # (krbtgt is disabled)
         result = tools.get_users(admin_count=True, enabled=True)
-        assert len(result) == 3
-        names = {u["SamAccountName"] for u in result}
+        assert result["total"] == 3
+        names = {u["SamAccountName"] for u in result["items"]}
         assert "krbtgt" not in names
         assert "adm.rossi" in names
 
     def test_delegation_and_enabled(self, tools: _MockMCP) -> None:
         # svc.deploy is both delegation and enabled=True
         result = tools.get_users(delegation_only=True, enabled=True)
-        assert len(result) == 1
-        assert result[0]["SamAccountName"] == "svc.deploy"
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "svc.deploy"
+
+
+# ---------------------------------------------------------------------------
+# get_privileged_accounts
+# ---------------------------------------------------------------------------
+
+class TestGetPrivilegedAccounts:
+
+    def test_returns_dict_contract(self, tools: _MockMCP) -> None:
+        result = tools.get_privileged_accounts()
+        assert set(result.keys()) == {"items", "total", "offset", "limit", "has_more"}
+
+    def test_total_matches_fixture(self, tools: _MockMCP) -> None:
+        # Fixture has 7 privileged account entries.
+        result = tools.get_privileged_accounts()
+        assert result["total"] == 7
+
+    def test_default_limit_fits_all(self, tools: _MockMCP) -> None:
+        result = tools.get_privileged_accounts()
+        assert result["limit"] == 200
+        assert result["has_more"] is False
+        assert len(result["items"]) == 7
+
+    def test_items_have_expected_keys(self, tools: _MockMCP) -> None:
+        result = tools.get_privileged_accounts()
+        for item in result["items"]:
+            assert "SamAccountName" in item
+            assert "Group" in item
 
 
 # ---------------------------------------------------------------------------
