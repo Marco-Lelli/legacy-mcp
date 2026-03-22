@@ -29,6 +29,52 @@ class QueryEngine:
 
         return rows
 
+    def query_page(
+        self,
+        section: str,
+        offset: int = 0,
+        limit: int = 200,
+        **filters: Any,
+    ) -> dict[str, Any]:
+        """Return a paginated page from a section, optionally filtered.
+
+        Returns:
+            {
+                "items":    list of dicts for this page,
+                "total":    total matching rows (before pagination),
+                "offset":   current offset,
+                "limit":    current limit,
+                "has_more": whether more rows exist after this page,
+            }
+        """
+        try:
+            cursor = self.db.execute(f'SELECT * FROM "{section}"')
+        except sqlite3.OperationalError:
+            return {
+                "items": [],
+                "total": 0,
+                "offset": offset,
+                "limit": limit,
+                "has_more": False,
+            }
+
+        rows = [dict(row) for row in cursor.fetchall()]
+        rows = _deserialize_json_columns(rows)
+
+        for key, value in filters.items():
+            rows = [r for r in rows if str(r.get(key, "")).lower() == str(value).lower()]
+
+        total = len(rows)
+        page = rows[offset : offset + limit]
+
+        return {
+            "items":    page,
+            "total":    total,
+            "offset":   offset,
+            "limit":    limit,
+            "has_more": offset + len(page) < total,
+        }
+
     def count(self, section: str) -> int:
         try:
             cursor = self.db.execute(f'SELECT COUNT(*) FROM "{section}"')
