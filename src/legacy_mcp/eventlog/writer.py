@@ -58,6 +58,12 @@ def info(message: str) -> None:
     _write_windows_event(_EVENT_INFO, message, "info")
 
 
+def warn(message: str) -> None:
+    """Log a non-blocking warning."""
+    logger.warning(message)
+    _write_windows_event(_EVENT_WARN, message, "warn")
+
+
 def warn_dc_unreachable(dc: str, detail: str = "") -> None:
     """Log a DC that could not be reached (warning, non-blocking)."""
     msg = f"DC unreachable: {dc}"

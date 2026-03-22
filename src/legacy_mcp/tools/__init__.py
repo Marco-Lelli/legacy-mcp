@@ -24,6 +24,7 @@ from legacy_mcp.tools import (
     fgpp,
     dns,
     pki,
+    snapshot,
 )
 
 _MODULES = [
@@ -31,6 +32,7 @@ _MODULES = [
     forest, domains, dcs, sysvol, sites,
     users, groups, computers, ous, gpo, trusts,
     fgpp, dns, pki,
+    snapshot,
 ]
 
 
