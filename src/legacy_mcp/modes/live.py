@@ -525,6 +525,91 @@ _SCRIPTS: dict[str, str] = {
         "  Select-Object -First 500\n"
         "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
     ),
+    # ------------------------------------------------------------------
+    # ntp_config — W32Time registry settings per DC.
+    # Uses WMI StdRegProv (-ComputerName) to avoid WinRM double-hop.
+    # Fields: DC, NtpServer, Type, AnnounceFlags, MaxNeg/MaxPosPhaseCorrection,
+    #         SpecialPollInterval, VMICTimeProviderEnabled, Status.
+    # ------------------------------------------------------------------
+    "ntp_config": (
+        "$HKLM = [uint32]2147483650\n"
+        "$paramKey  = 'SYSTEM\\CurrentControlSet\\Services\\W32Time\\Parameters'\n"
+        "$configKey = 'SYSTEM\\CurrentControlSet\\Services\\W32Time\\Config'\n"
+        "$vmicKey   = 'SYSTEM\\CurrentControlSet\\Services\\W32Time"
+        "\\TimeProviders\\VMICTimeProvider'\n"
+        "$dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName\n"
+        "$results = foreach ($dcName in $dcs) {\n"
+        "  try {\n"
+        "    $reg = Get-WmiObject -Namespace root\\default -Class StdRegProv"
+        " -ComputerName $dcName -ErrorAction Stop\n"
+        "    $ntpServer   = ($reg.GetStringValue($HKLM, $paramKey,  'NtpServer')).sValue\n"
+        "    $type        = ($reg.GetStringValue($HKLM, $paramKey,  'Type')).sValue\n"
+        "    $announce    = ($reg.GetDWORDValue($HKLM,  $configKey, 'AnnounceFlags')).uValue\n"
+        "    $maxNeg      = ($reg.GetDWORDValue($HKLM,  $configKey, 'MaxNegPhaseCorrection')).uValue\n"
+        "    $maxPos      = ($reg.GetDWORDValue($HKLM,  $configKey, 'MaxPosPhaseCorrection')).uValue\n"
+        "    $pollInt     = ($reg.GetDWORDValue($HKLM,  $configKey, 'SpecialPollInterval')).uValue\n"
+        "    $vmicEnabled = ($reg.GetDWORDValue($HKLM,  $vmicKey,   'Enabled')).uValue\n"
+        "    [PSCustomObject]@{\n"
+        "      DC                      = $dcName\n"
+        "      NtpServer               = $ntpServer\n"
+        "      Type                    = $type\n"
+        "      AnnounceFlags           = $announce\n"
+        "      MaxNegPhaseCorrection   = $maxNeg\n"
+        "      MaxPosPhaseCorrection   = $maxPos\n"
+        "      SpecialPollInterval     = $pollInt\n"
+        "      VMICTimeProviderEnabled = [bool]$vmicEnabled\n"
+        "      Status                  = 'OK'\n"
+        "    }\n"
+        "  } catch {\n"
+        "    [PSCustomObject]@{\n"
+        "      DC                      = $dcName\n"
+        "      NtpServer               = $null\n"
+        "      Type                    = $null\n"
+        "      AnnounceFlags           = $null\n"
+        "      MaxNegPhaseCorrection   = $null\n"
+        "      MaxPosPhaseCorrection   = $null\n"
+        "      SpecialPollInterval     = $null\n"
+        "      VMICTimeProviderEnabled = $null\n"
+        "      Status                  = 'Unreachable'\n"
+        "    }\n"
+        "  }\n"
+        "}\n"
+        "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
+    ),
+    # ------------------------------------------------------------------
+    # eventlog_config — Application/System/Security log settings per DC.
+    # Uses Get-WinEvent -ComputerName (Event Log Remoting Protocol / RPC)
+    # to avoid WinRM double-hop.
+    # Fields: DC, LogName, MaxSizeBytes, OverflowAction (LogMode), Status.
+    # LogMode values: Circular / AutoBackup / Retain
+    # ------------------------------------------------------------------
+    "eventlog_config": (
+        "$logNames = @('Application', 'System', 'Security')\n"
+        "$dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName\n"
+        "$results = foreach ($dcName in $dcs) {\n"
+        "  foreach ($logName in $logNames) {\n"
+        "    try {\n"
+        "      $log = Get-WinEvent -ListLog $logName -ComputerName $dcName -ErrorAction Stop\n"
+        "      [PSCustomObject]@{\n"
+        "        DC             = $dcName\n"
+        "        LogName        = $logName\n"
+        "        MaxSizeBytes   = $log.MaximumSizeInBytes\n"
+        "        OverflowAction = $log.LogMode.ToString()\n"
+        "        Status         = 'OK'\n"
+        "      }\n"
+        "    } catch {\n"
+        "      [PSCustomObject]@{\n"
+        "        DC             = $dcName\n"
+        "        LogName        = $logName\n"
+        "        MaxSizeBytes   = $null\n"
+        "        OverflowAction = $null\n"
+        "        Status         = 'Unreachable'\n"
+        "      }\n"
+        "    }\n"
+        "  }\n"
+        "}\n"
+        "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
+    ),
 }
 
 
