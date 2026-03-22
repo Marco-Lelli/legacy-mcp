@@ -65,39 +65,14 @@ Sviluppato internamente da Impresoft 4ward, non pubblicato open source.
 
 Moduli pianificati:
 
-**DHCP Analysis**
-Discovery tramite Authorized DHCP Servers in AD (CN=NetServices)
-o lista precompilata di server fornita dall'utente.
-
-**GPO Analysis**
-Analisi approfondita delle Group Policy — basata su GPOzaurr.
-Va oltre l'inventario del layer base: analisi contenuto, conflitti,
-policy ridondanti o non applicate.
-
-**AD Security Analysis**
-Analisi della sicurezza AD ispirata alla logica di PingCastle.
-Findings con livello di rischio e indicazioni di remediation.
-
-**AD Health Check**
-Errori di configurazione, replication issues, best practice violations.
-Complementare all'AD Security Analysis — focalizzato su salute operativa
-più che su sicurezza.
-
-**PKI / AD CS — tre livelli progressivi**
-1. PKI Configuration Analysis — configurazione dettagliata di ogni CA,
-   template pubblicati, validity period, chain of trust,
-   CRL distribution points, AIA
-2. PKI Security Analysis — misconfigurations, best practice,
-   analisi configurazione in ottica sicurezza
-3. ESC Analysis — analisi template vulnerabili (ESC1-ESC8)
-   basata su documentazione pubblica Schroeder/Christensen.
-   Identificazione escalation path nei template AD CS.
-
-**Generazione documento DOCX**
-Output automatico da template aziendale Impresoft 4ward.
-I dati raccolti dal layer base e dai moduli proprietari
-vengono riversati in un documento strutturato.
-Zero formattazione manuale, zero copia-incolla.
+- **DHCP Analysis** — assessment infrastruttura DHCP
+- **GPO Analysis** — analisi approfondita Group Policy
+- **AD Security Analysis** — analisi postura di sicurezza AD
+- **AD Health Check** — verifica configurazioni e salute operativa
+- **PKI Configuration Analysis** — configurazione CA, template, chain of trust, CRL, AIA
+- **PKI Security Analysis** — analisi sicurezza PKI
+- **ESC Analysis** — analisi template vulnerabili ESC1-ESC8
+- **Generazione documento DOCX** — output da template aziendale Impresoft 4ward
 
 ---
 
@@ -244,6 +219,30 @@ Regole:
   si incrementa ogni N secondi
 - Contatore DC: DC contattati con successo vs DC totali nell'ultimo ciclo
 - Monitorabile con PerfMon, SCOM, e qualsiasi tool di monitoring Windows-based
+
+---
+
+## Security by Design — Principi architetturali
+
+1. **Read-only assoluto** — mai creare, modificare o cancellare oggetti AD. Decisione architetturale, non limitazione tecnica.
+
+2. **Minimo privilegio** — operare con i diritti minimi necessari. In Offline Mode nessuna credenziale AD.
+
+3. **Dati sensibili locali** — in Offline Mode i dati AD non escono dalla rete del cliente. Il JSON è classificato Confidential/Restricted.
+
+4. **Autenticazione forte per endpoint esposti** — tre profili A/B/C con requisiti di sicurezza crescenti.
+
+5. **TLS su tutti gli endpoint non-localhost** — nessun traffico in chiaro al di fuori di localhost.
+
+6. **Credenziali mai in chiaro** — gMSA, Azure Key Vault, Windows Credential Manager. Mai in config files, variabili d'ambiente o log.
+
+7. **Integrita' del codice** — collector PS1 firmato Authenticode, exe firmato per le release, hash SHA256 pubblicati per tutti gli artefatti di release.
+
+8. **Auditabilita' completa** — EventLog dedicato, ogni operazione loggata con chi ha richiesto cosa, quando, su quali oggetti. Compatibile con SIEM e Microsoft Sentinel.
+
+9. **Formato dati unificato** — snapshot Live Mode e JSON Offline Mode hanno lo stesso formato. Interoperabilita' completa tra le due modalita'.
+
+10. **Degradazione sicura** — dati parziali sempre espliciti. DC irraggiungibili segnalati, mai saltati silenziosamente.
 
 ---
 
