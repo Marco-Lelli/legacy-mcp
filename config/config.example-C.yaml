@@ -18,7 +18,8 @@ workspace:
 #   client_id: YOUR_CLIENT_ID
 #   audience:  api://legacymcp
 
-# Server binding
-# server:
-#   host: 127.0.0.1              # bind to localhost — WAF terminates TLS externally
-#   port: 8080
+# Server binding — used when starting with --transport streamable-http.
+# Bind to localhost: WAF (Azure App Gateway / nginx) terminates TLS externally.
+server:
+  host: 127.0.0.1
+  port: 8080

@@ -13,12 +13,36 @@ from legacy_mcp.workspace.workspace import Workspace
 from legacy_mcp import tools
 
 
-def create_server(config_path: str | Path) -> FastMCP:
+def create_server(
+    config_path: str | Path,
+    *,
+    host: str | None = None,
+    port: int | None = None,
+) -> FastMCP:
+    """Create and return the configured FastMCP server instance.
+
+    host and port, when provided, override any values in the config file's
+    optional ``server:`` block, which in turn override FastMCP defaults
+    (127.0.0.1:8000).  Pass them explicitly only for HTTP transports; stdio
+    ignores them entirely.
+    """
     config = load_config(config_path)
     workspace = Workspace.from_config(config)
 
+    # Resolve host/port: caller arg > config file > FastMCP built-in default.
+    server_cfg: dict = config.get("server", {})
+    resolved_host = host or server_cfg.get("host") or None
+    resolved_port = port or (int(server_cfg["port"]) if server_cfg.get("port") else None)
+
+    http_kwargs: dict = {}
+    if resolved_host is not None:
+        http_kwargs["host"] = resolved_host
+    if resolved_port is not None:
+        http_kwargs["port"] = resolved_port
+
     mcp = FastMCP(
         "LegacyMCP",
+        **http_kwargs,
         instructions=(
             "You are connected to an Active Directory assessment server. "
             "All operations are read-only. "
@@ -75,21 +99,38 @@ def create_server(config_path: str | Path) -> FastMCP:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="LegacyMCP — AD MCP Server")
+    parser = argparse.ArgumentParser(description="LegacyMCP - AD MCP Server")
     parser.add_argument(
         "--config",
         default="config/config.yaml",
         help="Path to configuration file (default: config/config.yaml)",
     )
+    parser.add_argument(
+        "--transport",
+        default="stdio",
+        choices=["stdio", "streamable-http", "sse"],
+        help="Transport protocol (default: stdio)",
+    )
+    parser.add_argument(
+        "--host",
+        default=None,
+        help="Bind host for HTTP transport, overrides config file (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Bind port for HTTP transport, overrides config file (default: 8000)",
+    )
     args = parser.parse_args()
 
     try:
-        mcp = create_server(args.config)
+        mcp = create_server(args.config, host=args.host, port=args.port)
     except (FileNotFoundError, ValueError) as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         sys.exit(1)
 
-    mcp.run()
+    mcp.run(transport=args.transport)
 
 
 if __name__ == "__main__":
