@@ -18,60 +18,243 @@ from legacy_mcp.eventlog import writer as eventlog
 # Sections not listed here are not yet implemented for Live Mode.
 
 _SCRIPTS: dict[str, str] = {
+    # ------------------------------------------------------------------
+    # forest — adds GlobalCatalogs (collection join) and SchemaVersion
+    # (requires separate RootDSE lookup; not available on Get-ADForest).
+    # ------------------------------------------------------------------
     "forest": (
-        "Get-ADForest | Select-Object Name,ForestMode,SchemaMaster,"
-        "DomainNamingMaster,Sites,Domains | ConvertTo-Json -Depth 5"
+        "$forest = Get-ADForest\n"
+        "$schemaVersion = (Get-ADObject (Get-ADRootDSE).schemaNamingContext"
+        " -Properties objectVersion).objectVersion\n"
+        "[PSCustomObject]@{\n"
+        "  Name              = $forest.Name\n"
+        "  ForestMode        = $forest.ForestMode.ToString()\n"
+        "  SchemaMaster      = $forest.SchemaMaster\n"
+        "  DomainNamingMaster = $forest.DomainNamingMaster\n"
+        "  Sites             = $forest.Sites -join ', '\n"
+        "  Domains           = $forest.Domains -join ', '\n"
+        "  GlobalCatalogs    = $forest.GlobalCatalogs -join ', '\n"
+        "  SchemaVersion     = $schemaVersion\n"
+        "} | ConvertTo-Json -Depth 5"
     ),
+    # ------------------------------------------------------------------
+    # domains — adds ChildDomains (joined) and Forest.
+    # ------------------------------------------------------------------
     "domains": (
-        "Get-ADDomain | Select-Object Name,DNSRoot,DomainMode,PDCEmulator,"
-        "RIDMaster,InfrastructureMaster | ConvertTo-Json -Depth 5"
+        "Get-ADDomain | ForEach-Object {\n"
+        "  [PSCustomObject]@{\n"
+        "    Name                 = $_.Name\n"
+        "    DNSRoot              = $_.DNSRoot\n"
+        "    DomainMode           = $_.DomainMode.ToString()\n"
+        "    PDCEmulator          = $_.PDCEmulator\n"
+        "    RIDMaster            = $_.RIDMaster\n"
+        "    InfrastructureMaster = $_.InfrastructureMaster\n"
+        "    ChildDomains         = $_.ChildDomains -join ', '\n"
+        "    Forest               = $_.Forest\n"
+        "  }\n"
+        "} | ConvertTo-Json -Depth 5"
     ),
+    # ------------------------------------------------------------------
+    # dcs — adds Site, OperatingSystemVersion, Enabled, Reachable.
+    # Test-Connection issues one ICMP ping per DC (same as collector).
+    # ------------------------------------------------------------------
     "dcs": (
-        "Get-ADDomainController -Filter * | Select-Object Name,HostName,"
-        "IPv4Address,OperatingSystem,IsGlobalCatalog,IsReadOnly"
-        " | ConvertTo-Json -Depth 5"
+        "Get-ADDomainController -Filter * | ForEach-Object {\n"
+        "  [PSCustomObject]@{\n"
+        "    Name                   = $_.Name\n"
+        "    HostName               = $_.HostName\n"
+        "    IPv4Address            = $_.IPv4Address\n"
+        "    Site                   = $_.Site\n"
+        "    OperatingSystem        = $_.OperatingSystem\n"
+        "    OperatingSystemVersion = $_.OperatingSystemVersion\n"
+        "    IsGlobalCatalog        = $_.IsGlobalCatalog\n"
+        "    IsReadOnly             = $_.IsReadOnly\n"
+        "    Enabled                = $_.Enabled\n"
+        "    Reachable              = (Test-Connection $_.HostName -Count 1 -Quiet)\n"
+        "  }\n"
+        "} | ConvertTo-Json -Depth 5"
     ),
+    # ------------------------------------------------------------------
+    # users — adds 11 fields; capped at 5000 (same limit as collector).
+    # ------------------------------------------------------------------
     "users": (
-        "Get-ADUser -Filter * -Properties Enabled,PasswordNeverExpires,"
-        "LastLogonDate | Select-Object SamAccountName,Enabled,"
-        "PasswordNeverExpires,LastLogonDate | ConvertTo-Json -Depth 3"
+        "Get-ADUser -Filter * -Properties Enabled,PasswordNeverExpires,LockedOut,"
+        "LastLogonDate,PasswordLastSet,Description,mail,adminCount,"
+        "TrustedForDelegation,TrustedToAuthForDelegation,'msDS-AllowedToDelegateTo' |\n"
+        "  Select-Object -First 5000 |\n"
+        "  ForEach-Object {\n"
+        "    [PSCustomObject]@{\n"
+        "      SamAccountName             = $_.SamAccountName\n"
+        "      DisplayName                = $_.DisplayName\n"
+        "      UserPrincipalName          = $_.UserPrincipalName\n"
+        "      DistinguishedName          = $_.DistinguishedName\n"
+        "      Mail                       = $_.mail\n"
+        "      Enabled                    = $_.Enabled\n"
+        "      PasswordNeverExpires       = $_.PasswordNeverExpires\n"
+        "      LockedOut                  = $_.LockedOut\n"
+        "      LastLogonDate              = $_.LastLogonDate\n"
+        "      PasswordLastSet            = $_.PasswordLastSet\n"
+        "      Description                = $_.Description\n"
+        "      AdminCount                 = $_.adminCount\n"
+        "      TrustedForDelegation       = $_.TrustedForDelegation\n"
+        "      TrustedToAuthForDelegation = $_.TrustedToAuthForDelegation\n"
+        "      AllowedToDelegateTo        = $_.'msDS-AllowedToDelegateTo'\n"
+        "    }\n"
+        "  } | ConvertTo-Json -Depth 3"
     ),
+    # ------------------------------------------------------------------
+    # groups — adds SamAccountName, DistinguishedName, AdminCount.
+    # MemberCount uses Get-ADGroupMember | Measure-Object to handle
+    # groups larger than the LDAP page boundary (returns -1 on error).
+    # ------------------------------------------------------------------
     "groups": (
-        "Get-ADGroup -Filter * -Properties Members | Select-Object "
-        "Name,GroupCategory,GroupScope | ConvertTo-Json -Depth 3"
+        "Get-ADGroup -Filter * -Properties adminCount | ForEach-Object {\n"
+        "  $count = try {\n"
+        "    (Get-ADGroupMember -Identity $_.DistinguishedName | Measure-Object).Count\n"
+        "  } catch { -1 }\n"
+        "  [PSCustomObject]@{\n"
+        "    Name              = $_.Name\n"
+        "    SamAccountName    = $_.SamAccountName\n"
+        "    DistinguishedName = $_.DistinguishedName\n"
+        "    GroupCategory     = $_.GroupCategory.ToString()\n"
+        "    GroupScope        = $_.GroupScope.ToString()\n"
+        "    MemberCount       = $count\n"
+        "    AdminCount        = $_.adminCount\n"
+        "  }\n"
+        "} | ConvertTo-Json -Depth 3"
     ),
+    # ------------------------------------------------------------------
+    # ous — adds BlockedInheritance (gPOptions bitmask) and LinkedGPOs.
+    # ------------------------------------------------------------------
     "ous": (
-        "Get-ADOrganizationalUnit -Filter * | Select-Object "
-        "Name,DistinguishedName | ConvertTo-Json -Depth 3"
+        "Get-ADOrganizationalUnit -Filter * -Properties gpLink,gPOptions | ForEach-Object {\n"
+        "  [PSCustomObject]@{\n"
+        "    Name               = $_.Name\n"
+        "    DistinguishedName  = $_.DistinguishedName\n"
+        "    BlockedInheritance = ($_.gPOptions -band 1) -eq 1\n"
+        "    LinkedGPOs         = $_.gpLink\n"
+        "  }\n"
+        "} | ConvertTo-Json -Depth 3"
     ),
+    # ------------------------------------------------------------------
+    # gpos — adds CreationTime, ModificationTime, Owner.
+    # Wrapped in try/catch: GPO cmdlets require GPMC / RSAT.
+    # ------------------------------------------------------------------
     "gpos": (
-        "Get-GPO -All | Select-Object DisplayName,Id,GpoStatus"
-        " | ConvertTo-Json -Depth 3"
+        "try {\n"
+        "  Get-GPO -All | ForEach-Object {\n"
+        "    [PSCustomObject]@{\n"
+        "      DisplayName      = $_.DisplayName\n"
+        "      Id               = $_.Id.ToString()\n"
+        "      GpoStatus        = $_.GpoStatus.ToString()\n"
+        "      CreationTime     = $_.CreationTime\n"
+        "      ModificationTime = $_.ModificationTime\n"
+        "      Owner            = $_.Owner\n"
+        "    }\n"
+        "  } | ConvertTo-Json -Depth 3\n"
+        "} catch { '[]' }"
     ),
+    # ------------------------------------------------------------------
+    # sites — adds Subnets via per-site Get-ADReplicationSubnet lookup.
+    # ------------------------------------------------------------------
     "sites": (
-        "Get-ADReplicationSite -Filter * | Select-Object Name,Description"
-        " | ConvertTo-Json -Depth 3"
+        "Get-ADReplicationSite -Filter * | ForEach-Object {\n"
+        "  $subnets = try {\n"
+        "    (Get-ADReplicationSubnet -Filter \"Site -eq '$($_.DistinguishedName)'\").Name"
+        " -join ', '\n"
+        "  } catch { '' }\n"
+        "  [PSCustomObject]@{\n"
+        "    Name        = $_.Name\n"
+        "    Description = $_.Description\n"
+        "    Subnets     = $subnets\n"
+        "  }\n"
+        "} | ConvertTo-Json -Depth 3"
     ),
+    # ------------------------------------------------------------------
+    # trusts — adds TrustAttributes, SIDFiltering flags, DisallowTransivity,
+    # DistinguishedName.
+    # ------------------------------------------------------------------
     "trusts": (
-        "Get-ADTrust -Filter * | Select-Object "
-        "Name,Direction,TrustType,SelectiveAuthentication"
-        " | ConvertTo-Json -Depth 3"
+        "Get-ADTrust -Filter * | ForEach-Object {\n"
+        "  [PSCustomObject]@{\n"
+        "    Name                    = $_.Name\n"
+        "    Direction               = $_.Direction.ToString()\n"
+        "    TrustType               = $_.TrustType.ToString()\n"
+        "    TrustAttributes         = $_.TrustAttributes\n"
+        "    SelectiveAuthentication = $_.SelectiveAuthentication\n"
+        "    SIDFilteringForestAware = $_.SIDFilteringForestAware\n"
+        "    SIDFilteringQuarantined = $_.SIDFilteringQuarantined\n"
+        "    DisallowTransivity      = $_.DisallowTransivity\n"
+        "    DistinguishedName       = $_.DistinguishedName\n"
+        "  }\n"
+        "} | ConvertTo-Json -Depth 3"
     ),
+    # ------------------------------------------------------------------
+    # fgpp — adds 8 fields; MaxPasswordAge/LockoutDuration converted to
+    # int days/minutes to match collector output. AppliesTo resolved via
+    # Get-ADFineGrainedPasswordPolicySubject (empty string on error).
+    # ------------------------------------------------------------------
     "fgpp": (
-        "Get-ADFineGrainedPasswordPolicy -Filter * | Select-Object "
-        "Name,Precedence,MinPasswordLength,LockoutThreshold"
-        " | ConvertTo-Json -Depth 3"
+        "Get-ADFineGrainedPasswordPolicy -Filter * | ForEach-Object {\n"
+        "  $pso = $_\n"
+        "  $appliesTo = try {\n"
+        "    (Get-ADFineGrainedPasswordPolicySubject $pso).Name -join ', '\n"
+        "  } catch { '' }\n"
+        "  [PSCustomObject]@{\n"
+        "    Name                        = $pso.Name\n"
+        "    Precedence                  = $pso.Precedence\n"
+        "    MinPasswordLength           = $pso.MinPasswordLength\n"
+        "    PasswordHistoryCount        = $pso.PasswordHistoryCount\n"
+        "    MaxPasswordAgeDays          = $pso.MaxPasswordAge.Days\n"
+        "    MinPasswordAgeDays          = $pso.MinPasswordAge.Days\n"
+        "    ComplexityEnabled           = $pso.ComplexityEnabled\n"
+        "    ReversibleEncryptionEnabled = $pso.ReversibleEncryptionEnabled\n"
+        "    LockoutThreshold            = $pso.LockoutThreshold\n"
+        "    LockoutDurationMinutes      = $pso.LockoutDuration.Minutes\n"
+        "    LockoutObservationMinutes   = $pso.LockoutObservationWindow.Minutes\n"
+        "    AppliesTo                   = $appliesTo\n"
+        "  }\n"
+        "} | ConvertTo-Json -Depth 3"
     ),
+    # ------------------------------------------------------------------
+    # dns — adds ReplicationScope, IsReverseLookupZone, IsAutoCreated, DC.
+    # Uses first available DC as target for Get-DnsServerZone; requires
+    # the DnsServer PS module (RSAT). Wrapped in try/catch.
+    # ------------------------------------------------------------------
     "dns": (
-        "Get-DnsServerZone | Select-Object ZoneName,ZoneType,IsDsIntegrated"
-        " | ConvertTo-Json -Depth 3"
+        "$dc = (Get-ADDomainController -Filter * |"
+        " Select-Object -First 1 -ExpandProperty HostName)\n"
+        "try {\n"
+        "  Get-DnsServerZone -ComputerName $dc | ForEach-Object {\n"
+        "    [PSCustomObject]@{\n"
+        "      ZoneName            = $_.ZoneName\n"
+        "      ZoneType            = $_.ZoneType.ToString()\n"
+        "      IsDsIntegrated      = $_.IsDsIntegrated\n"
+        "      ReplicationScope    = $_.ReplicationScope\n"
+        "      IsReverseLookupZone = $_.IsReverseLookupZone\n"
+        "      IsAutoCreated       = $_.IsAutoCreated\n"
+        "      DC                  = $dc\n"
+        "    }\n"
+        "  } | ConvertTo-Json -Depth 3\n"
+        "} catch { '[]' }"
     ),
+    # ------------------------------------------------------------------
+    # pki — uses RootDSE.configurationNamingContext (more reliable than
+    # Get-ADDomain) and scopes to CN=Enrollment Services. Adds ObjectClass.
+    # ------------------------------------------------------------------
     "pki": (
-        "Get-ADObject -SearchBase "
-        "('CN=Public Key Services,CN=Services,CN=Configuration,' + "
-        "(Get-ADDomain).DistinguishedName) "
-        "-Filter * | Select-Object Name,DistinguishedName"
-        " | ConvertTo-Json -Depth 3"
+        "$configDN = (Get-ADRootDSE).configurationNamingContext\n"
+        "$enrollmentDN = 'CN=Enrollment Services,CN=Public Key Services,"
+        "CN=Services,' + $configDN\n"
+        "try {\n"
+        "  Get-ADObject -SearchBase $enrollmentDN -Filter * | ForEach-Object {\n"
+        "    [PSCustomObject]@{\n"
+        "      Name              = $_.Name\n"
+        "      DistinguishedName = $_.DistinguishedName\n"
+        "      ObjectClass       = $_.ObjectClass\n"
+        "    }\n"
+        "  } | ConvertTo-Json -Depth 3\n"
+        "} catch { '[]' }"
     ),
 }
 
