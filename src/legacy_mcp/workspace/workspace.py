@@ -21,6 +21,7 @@ class ForestRelation(str, Enum):
     SOURCE = "source"       # migration scenario: source forest
     DESTINATION = "dest"    # migration scenario: destination forest
     TRUSTED = "trusted"
+    SNAPSHOT = "snapshot"   # dynamically loaded snapshot file
 
 
 @dataclass

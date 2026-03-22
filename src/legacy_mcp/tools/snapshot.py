@@ -150,6 +150,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
                 "forest": forest_name,
                 "mode": "live_snapshot",
                 "encryption": encryption,
+                "sections_collected": sections_collected,
             },
             **payload,
         }
@@ -221,4 +222,174 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             "sections_failed": sections_failed,
             "encryption": encryption,
             "timestamp": timestamp,
+        }
+
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def list_snapshots(
+        path: str = str(_DEFAULT_OUTPUT_DIR),
+    ) -> dict[str, Any]:
+        """List snapshot files available in a directory.
+
+        Reads the _metadata block from each JSON snapshot to report forest
+        name, timestamp, encryption, and section count without loading the
+        full data into memory.  Files with the .json.dpapi extension are
+        listed with encryption="dpapi" but are never decrypted.  If the
+        directory does not exist the tool returns total=0 without an error.
+
+        Parameters
+        ----------
+        path:
+            Directory to scan (default: C:\\LegacyMCP-Data\\snapshots\\).
+        """
+        scan_dir = Path(path)
+        if not scan_dir.exists() or not scan_dir.is_dir():
+            return {"snapshots": [], "total": 0, "path_scanned": str(scan_dir)}
+
+        entries: list[dict[str, Any]] = []
+        for f in sorted(scan_dir.iterdir()):
+            name = f.name
+            if name.endswith(".json.dpapi"):
+                enc: str = "dpapi"
+                meta: dict[str, Any] = {}
+            elif name.endswith(".json"):
+                enc = "none"
+                try:
+                    data = json.loads(f.read_text(encoding="utf-8-sig"))
+                    meta = data.get("_metadata", {})
+                except Exception:  # noqa: BLE001
+                    continue  # skip unreadable / non-snapshot JSON files
+            else:
+                continue
+
+            size_kb = round(f.stat().st_size / 1024, 1)
+            entries.append({
+                "path": str(f),
+                "forest": meta.get("forest"),
+                "timestamp": meta.get("timestamp"),
+                "encryption": enc,
+                "sections_collected": meta.get("sections_collected", 0),
+                "size_kb": size_kb,
+                "filename": name,
+            })
+
+        return {
+            "snapshots": entries,
+            "total": len(entries),
+            "path_scanned": str(scan_dir),
+        }
+
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def load_snapshot(
+        path: str,
+        forest_alias: str | None = None,
+        encryption: str = "none",
+    ) -> dict[str, Any]:
+        """Load a snapshot file into the workspace as a queryable forest.
+
+        After a successful load the snapshot appears in list_workspaces() and
+        can be queried with any existing tool by passing forest_alias as the
+        forest_name argument.
+
+        Parameters
+        ----------
+        path:
+            Full path to the snapshot JSON file.
+        forest_alias:
+            Name the loaded snapshot will be known as inside the workspace.
+            If omitted, the alias is derived from the _metadata as
+            "<forest>@<YYYY-MM-DD>", e.g. "contoso.local@2025-03-23".
+        encryption:
+            "none" (default) -- plaintext JSON.
+            "dpapi"          -- DPAPI-encrypted file; requires Windows +
+                               pywin32 (not yet implemented in the open-
+                               source layer, returns an error).
+        """
+        from legacy_mcp.workspace.workspace import ForestConfig, ForestRelation
+        from legacy_mcp.modes.offline import OfflineConnector
+
+        src = Path(path)
+
+        if not src.exists():
+            return {
+                "status": "error",
+                "forest_alias": None,
+                "sections_loaded": 0,
+                "message": f"File not found: {path}",
+            }
+
+        if encryption == "dpapi":
+            return {
+                "status": "error",
+                "forest_alias": None,
+                "sections_loaded": 0,
+                "message": (
+                    "DPAPI decryption for load_snapshot requires LegacyMCP "
+                    "Enterprise or manual pre-decryption."
+                ),
+            }
+
+        if encryption != "none":
+            return {
+                "status": "error",
+                "forest_alias": None,
+                "sections_loaded": 0,
+                "message": (
+                    f"Unknown encryption '{encryption}'. Use 'none' or 'dpapi'."
+                ),
+            }
+
+        try:
+            data = json.loads(src.read_text(encoding="utf-8-sig"))
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "status": "error",
+                "forest_alias": None,
+                "sections_loaded": 0,
+                "message": f"Failed to read snapshot: {exc}",
+            }
+
+        meta = data.get("_metadata", {})
+        forest_name = meta.get("forest") or src.stem.split("_")[0]
+        timestamp_str = meta.get("timestamp", "")
+        date_str = timestamp_str[:10] if len(timestamp_str) >= 10 else ""
+
+        if forest_alias is None:
+            forest_alias = (
+                f"{forest_name}@{date_str}" if date_str else forest_name
+            )
+
+        if forest_alias in workspace._connectors:
+            return {
+                "status": "error",
+                "forest_alias": forest_alias,
+                "sections_loaded": 0,
+                "message": (
+                    f"Forest alias '{forest_alias}' is already loaded in the "
+                    "workspace. Use a different alias or reload_workspace to "
+                    "refresh."
+                ),
+            }
+
+        sections_loaded = sum(1 for s in KNOWN_SECTIONS if data.get(s))
+
+        new_forest = ForestConfig(
+            name=forest_alias,
+            relation=ForestRelation.SNAPSHOT,
+            file=str(src),
+        )
+        workspace.forests.append(new_forest)
+        workspace._connectors[forest_alias] = OfflineConnector(new_forest)
+
+        return {
+            "status": "success",
+            "forest_alias": forest_alias,
+            "sections_loaded": sections_loaded,
+            "message": (
+                f"Snapshot loaded. Use '{forest_alias}' as forest_name to "
+                "query this snapshot."
+            ),
         }

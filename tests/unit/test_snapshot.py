@@ -1,4 +1,4 @@
-"""Unit tests for the create_snapshot MCP tool."""
+"""Unit tests for the create_snapshot, list_snapshots, and load_snapshot MCP tools."""
 
 from __future__ import annotations
 
@@ -275,3 +275,218 @@ class TestSnapshotPartialFailure:
         assert "_metadata" in data
         # The broken section must not appear in the output.
         assert "groups" not in data
+
+
+# ---------------------------------------------------------------------------
+# list_snapshots
+# ---------------------------------------------------------------------------
+
+def _make_snapshot(tools: _MockMCP, directory: Path, filename: str) -> Path:
+    """Helper: write a real snapshot into *directory* and return its path."""
+    out = directory / filename
+    tools.create_snapshot("contoso.local", output_path=str(out))
+    return out
+
+
+class TestListSnapshots:
+
+    @pytest.fixture()
+    def snap_dir(self, tmp_path: Path, tools: _MockMCP) -> Path:
+        """A temp directory pre-populated with two snapshot files."""
+        _make_snapshot(tools, tmp_path, "contoso_20250323_100000.json")
+        _make_snapshot(tools, tmp_path, "contoso_20250323_110000.json")
+        return tmp_path
+
+    def test_total_matches_file_count(
+        self, tools: _MockMCP, snap_dir: Path
+    ) -> None:
+        result = tools.list_snapshots(path=str(snap_dir))
+        assert result["total"] == 2
+
+    def test_snapshots_is_list(self, tools: _MockMCP, snap_dir: Path) -> None:
+        result = tools.list_snapshots(path=str(snap_dir))
+        assert isinstance(result["snapshots"], list)
+
+    def test_path_scanned_returned(self, tools: _MockMCP, snap_dir: Path) -> None:
+        result = tools.list_snapshots(path=str(snap_dir))
+        assert result["path_scanned"] == str(snap_dir)
+
+    def test_entry_fields_present(self, tools: _MockMCP, snap_dir: Path) -> None:
+        result = tools.list_snapshots(path=str(snap_dir))
+        for entry in result["snapshots"]:
+            for key in ("path", "forest", "timestamp", "encryption",
+                        "sections_collected", "size_kb", "filename"):
+                assert key in entry, f"missing key: {key}"
+
+    def test_forest_name_from_metadata(
+        self, tools: _MockMCP, snap_dir: Path
+    ) -> None:
+        result = tools.list_snapshots(path=str(snap_dir))
+        for entry in result["snapshots"]:
+            assert entry["forest"] == "contoso.local"
+
+    def test_encryption_none_for_json_files(
+        self, tools: _MockMCP, snap_dir: Path
+    ) -> None:
+        result = tools.list_snapshots(path=str(snap_dir))
+        for entry in result["snapshots"]:
+            assert entry["encryption"] == "none"
+
+    def test_sections_collected_positive(
+        self, tools: _MockMCP, snap_dir: Path
+    ) -> None:
+        result = tools.list_snapshots(path=str(snap_dir))
+        for entry in result["snapshots"]:
+            assert entry["sections_collected"] > 0
+
+    def test_size_kb_positive(self, tools: _MockMCP, snap_dir: Path) -> None:
+        result = tools.list_snapshots(path=str(snap_dir))
+        for entry in result["snapshots"]:
+            assert entry["size_kb"] > 0
+
+    def test_missing_directory_returns_empty(
+        self, tools: _MockMCP, tmp_path: Path
+    ) -> None:
+        nonexistent = tmp_path / "no_such_dir"
+        result = tools.list_snapshots(path=str(nonexistent))
+        assert result["total"] == 0
+        assert result["snapshots"] == []
+
+    def test_dpapi_file_listed_without_decryption(
+        self, tools: _MockMCP, tmp_path: Path
+    ) -> None:
+        """A .json.dpapi file must appear with encryption='dpapi'."""
+        # Create a fake .json.dpapi file (just bytes, not real DPAPI output).
+        fake = tmp_path / "contoso_20250323_120000.json.dpapi"
+        fake.write_bytes(b"encrypted-blob")
+        result = tools.list_snapshots(path=str(tmp_path))
+        dpapi_entries = [e for e in result["snapshots"] if e["encryption"] == "dpapi"]
+        assert len(dpapi_entries) == 1
+        assert dpapi_entries[0]["filename"] == fake.name
+
+    def test_non_json_files_ignored(
+        self, tools: _MockMCP, snap_dir: Path
+    ) -> None:
+        (snap_dir / "readme.txt").write_text("ignore me")
+        result = tools.list_snapshots(path=str(snap_dir))
+        filenames = [e["filename"] for e in result["snapshots"]]
+        assert "readme.txt" not in filenames
+
+
+# ---------------------------------------------------------------------------
+# load_snapshot
+# ---------------------------------------------------------------------------
+
+def _fresh_workspace() -> Workspace:
+    """Return a new workspace instance (function-scoped to avoid mutation leaks)."""
+    forest = ForestConfig(
+        name="contoso.local",
+        relation=ForestRelation.STANDALONE,
+        file=str(FIXTURE_PATH),
+    )
+    ws = Workspace(mode=WorkspaceMode.OFFLINE, forests=[forest])
+    ws._init_connectors()
+    return ws
+
+
+def _fresh_tools(ws: Workspace) -> _MockMCP:
+    mcp = _MockMCP()
+    snapshot_module.register(mcp, ws)
+    return mcp
+
+
+class TestLoadSnapshot:
+
+    @pytest.fixture()
+    def snap_file(self, tmp_path: Path) -> Path:
+        """A valid snapshot file produced by create_snapshot."""
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        out = tmp_path / "contoso_snap.json"
+        t.create_snapshot("contoso.local", output_path=str(out))
+        return out
+
+    def test_status_success(self, snap_file: Path, tmp_path: Path) -> None:
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        result = t.load_snapshot(path=str(snap_file))
+        assert result["status"] == "success"
+
+    def test_sections_loaded_positive(self, snap_file: Path) -> None:
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        result = t.load_snapshot(path=str(snap_file))
+        assert result["sections_loaded"] > 0
+
+    def test_alias_contains_forest_name(self, snap_file: Path) -> None:
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        result = t.load_snapshot(path=str(snap_file))
+        assert "contoso.local" in result["forest_alias"]
+
+    def test_alias_contains_date(self, snap_file: Path) -> None:
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        result = t.load_snapshot(path=str(snap_file))
+        # Auto-alias format: "<forest>@YYYY-MM-DD"
+        assert "@" in result["forest_alias"]
+
+    def test_custom_alias_used(self, snap_file: Path) -> None:
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        result = t.load_snapshot(path=str(snap_file), forest_alias="my-snap")
+        assert result["forest_alias"] == "my-snap"
+
+    def test_forest_added_to_workspace(self, snap_file: Path) -> None:
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        result = t.load_snapshot(path=str(snap_file), forest_alias="snap-test")
+        assert "snap-test" in ws._connectors
+        assert any(f.name == "snap-test" for f in ws.forests)
+
+    def test_forest_relation_is_snapshot(self, snap_file: Path) -> None:
+        from legacy_mcp.workspace.workspace import ForestRelation
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        t.load_snapshot(path=str(snap_file), forest_alias="snap-rel")
+        fc = next(f for f in ws.forests if f.name == "snap-rel")
+        assert fc.relation == ForestRelation.SNAPSHOT
+
+    def test_loaded_forest_queryable(self, snap_file: Path) -> None:
+        """After loading, the forest alias can be used to query data."""
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        t.load_snapshot(path=str(snap_file), forest_alias="snap-q")
+        conn = ws.connector("snap-q")
+        forest_info = conn.scalar("forest")
+        assert forest_info is not None
+        assert "Name" in forest_info
+
+    def test_missing_file_returns_error(self, tmp_path: Path) -> None:
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        result = t.load_snapshot(path=str(tmp_path / "nonexistent.json"))
+        assert result["status"] == "error"
+        assert "not found" in result["message"].lower()
+
+    def test_duplicate_alias_returns_error(self, snap_file: Path) -> None:
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        t.load_snapshot(path=str(snap_file), forest_alias="dup-alias")
+        # Second load with same alias must fail.
+        result = t.load_snapshot(path=str(snap_file), forest_alias="dup-alias")
+        assert result["status"] == "error"
+        assert "dup-alias" in result["message"]
+
+    def test_dpapi_returns_error(self, snap_file: Path) -> None:
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        result = t.load_snapshot(path=str(snap_file), encryption="dpapi")
+        assert result["status"] == "error"
+
+    def test_unknown_encryption_returns_error(self, snap_file: Path) -> None:
+        ws = _fresh_workspace()
+        t = _fresh_tools(ws)
+        result = t.load_snapshot(path=str(snap_file), encryption="aes256")
+        assert result["status"] == "error"
+        assert "aes256" in result["message"]
