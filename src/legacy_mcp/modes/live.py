@@ -256,6 +256,275 @@ _SCRIPTS: dict[str, str] = {
         "  } | ConvertTo-Json -Depth 3\n"
         "} catch { '[]' }"
     ),
+    # ------------------------------------------------------------------
+    # optional_features — AD Optional Features (e.g. Recycle Bin).
+    # ------------------------------------------------------------------
+    "optional_features": (
+        "Get-ADOptionalFeature -Filter * | ForEach-Object {\n"
+        "  [PSCustomObject]@{\n"
+        "    Name    = $_.Name\n"
+        "    Enabled = $_.EnabledScopes.Count -gt 0\n"
+        "    Scopes  = $_.EnabledScopes -join ', '\n"
+        "  }\n"
+        "} | ConvertTo-Json -Depth 3"
+    ),
+    # ------------------------------------------------------------------
+    # fsmo_roles — forest-level and domain-level FSMO role holders.
+    # Scalar section (single dict, not a list).
+    # ------------------------------------------------------------------
+    "fsmo_roles": (
+        "$forest = Get-ADForest\n"
+        "$domain = Get-ADDomain\n"
+        "[PSCustomObject]@{\n"
+        "  SchemaMaster         = $forest.SchemaMaster\n"
+        "  DomainNamingMaster   = $forest.DomainNamingMaster\n"
+        "  PDCEmulator          = $domain.PDCEmulator\n"
+        "  RIDMaster            = $domain.RIDMaster\n"
+        "  InfrastructureMaster = $domain.InfrastructureMaster\n"
+        "} | ConvertTo-Json -Depth 3"
+    ),
+    # ------------------------------------------------------------------
+    # default_password_policy — domain default password / lockout settings.
+    # Scalar section (single dict, not a list).
+    # ------------------------------------------------------------------
+    "default_password_policy": (
+        "$p = Get-ADDefaultDomainPasswordPolicy\n"
+        "$domain = (Get-ADDomain).DNSRoot\n"
+        "[PSCustomObject]@{\n"
+        "  Domain                      = $domain\n"
+        "  MinPasswordLength           = $p.MinPasswordLength\n"
+        "  PasswordHistoryCount        = $p.PasswordHistoryCount\n"
+        "  MaxPasswordAge              = $p.MaxPasswordAge.Days\n"
+        "  MinPasswordAge              = $p.MinPasswordAge.Days\n"
+        "  ComplexityEnabled           = $p.ComplexityEnabled\n"
+        "  ReversibleEncryptionEnabled = $p.ReversibleEncryptionEnabled\n"
+        "  LockoutThreshold            = $p.LockoutThreshold\n"
+        "  LockoutDuration             = $p.LockoutDuration.Minutes\n"
+        "  LockoutObservationWindow    = $p.LockoutObservationWindow.Minutes\n"
+        "} | ConvertTo-Json -Depth 3"
+    ),
+    # ------------------------------------------------------------------
+    # sysvol — DFSR replication state per DC. Degrades gracefully for
+    # unreachable DCs (WMI query may fail on remote DCs).
+    # ------------------------------------------------------------------
+    "sysvol": (
+        "Get-ADDomainController -Filter * | ForEach-Object {\n"
+        "  $dcName = $_.HostName\n"
+        "  try {\n"
+        "    $dfsr = Get-WmiObject -Namespace 'root\\MicrosoftDFS'"
+        " -Class DfsrReplicatedFolderInfo -ComputerName $dcName"
+        " -Filter \"ReplicatedFolderName='SYSVOL Share'\" -ErrorAction Stop\n"
+        "    [PSCustomObject]@{\n"
+        "      DC        = $dcName\n"
+        "      Mechanism = 'DFSR'\n"
+        "      State     = if ($dfsr) { $dfsr.State } else { 'Not Found' }\n"
+        "      Status    = 'OK'\n"
+        "    }\n"
+        "  } catch {\n"
+        "    [PSCustomObject]@{ DC = $dcName; Mechanism = 'Unknown';"
+        " State = 'Unreachable'; Status = 'Unreachable' }\n"
+        "  }\n"
+        "} | ConvertTo-Json -Depth 3"
+    ),
+    # ------------------------------------------------------------------
+    # site_links — AD replication site links topology.
+    # ------------------------------------------------------------------
+    "site_links": (
+        "Get-ADReplicationSiteLink -Filter * | ForEach-Object {\n"
+        "  [PSCustomObject]@{\n"
+        "    Name                        = $_.Name\n"
+        "    Cost                        = $_.Cost\n"
+        "    ReplicationFrequencyMinutes = $_.ReplicationFrequencyInMinutes\n"
+        "    Transport                   = $_.InterSiteTransportProtocol\n"
+        "    SitesIncluded               = $_.SitesIncluded -join ', '\n"
+        "  }\n"
+        "} | ConvertTo-Json -Depth 3"
+    ),
+    # ------------------------------------------------------------------
+    # privileged_accounts — unique users in privileged groups (recursive).
+    # De-duplicated by SamAccountName across all groups.
+    # ------------------------------------------------------------------
+    "privileged_accounts": (
+        "$seen = @{}\n"
+        "$groups = @('Domain Admins','Enterprise Admins','Schema Admins',"
+        "'Administrators','Account Operators','Backup Operators',"
+        "'Print Operators','Server Operators')\n"
+        "$results = foreach ($g in $groups) {\n"
+        "  try {\n"
+        "    Get-ADGroupMember -Identity $g -Recursive |\n"
+        "      Where-Object { $_.objectClass -eq 'user' } |\n"
+        "      ForEach-Object {\n"
+        "        if (-not $seen[$_.SamAccountName]) {\n"
+        "          $seen[$_.SamAccountName] = $true\n"
+        "          [PSCustomObject]@{ SamAccountName = $_.SamAccountName; Group = $g }\n"
+        "        }\n"
+        "      }\n"
+        "  } catch { }\n"
+        "}\n"
+        "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
+    ),
+    # ------------------------------------------------------------------
+    # privileged_groups — per-group membership list (recursive) for the
+    # 8 built-in privileged groups.
+    # ------------------------------------------------------------------
+    "privileged_groups": (
+        "$names = @('Domain Admins','Enterprise Admins','Schema Admins',"
+        "'Administrators','Account Operators','Backup Operators',"
+        "'Print Operators','Server Operators')\n"
+        "$results = foreach ($name in $names) {\n"
+        "  try {\n"
+        "    $members = Get-ADGroupMember -Identity $name -Recursive |\n"
+        "      Select-Object SamAccountName, objectClass, distinguishedName\n"
+        "    [PSCustomObject]@{ Group = $name; Members = @($members) }\n"
+        "  } catch {\n"
+        "    [PSCustomObject]@{ Group = $name; Members = @() }\n"
+        "  }\n"
+        "}\n"
+        "@($results) | ConvertTo-Json -Depth 5"
+    ),
+    # ------------------------------------------------------------------
+    # group_members — flat member list across ALL groups. Resolves
+    # Enabled for user and computer members via individual AD lookups.
+    # ------------------------------------------------------------------
+    "group_members": (
+        "$results = Get-ADGroup -Filter * | ForEach-Object {\n"
+        "  $groupName = $_.Name\n"
+        "  $groupDN   = $_.DistinguishedName\n"
+        "  try {\n"
+        "    Get-ADGroupMember -Identity $groupDN | ForEach-Object {\n"
+        "      $m = $_\n"
+        "      $enabled = $null\n"
+        "      if ($m.objectClass -eq 'user') {\n"
+        "        try { $enabled = (Get-ADUser -Identity $m.distinguishedName"
+        " -Properties Enabled).Enabled } catch { }\n"
+        "      } elseif ($m.objectClass -eq 'computer') {\n"
+        "        try { $enabled = (Get-ADComputer -Identity $m.distinguishedName"
+        " -Properties Enabled).Enabled } catch { }\n"
+        "      }\n"
+        "      [PSCustomObject]@{\n"
+        "        GroupName               = $groupName\n"
+        "        MemberSamAccountName    = $m.SamAccountName\n"
+        "        MemberDisplayName       = $m.name\n"
+        "        MemberObjectClass       = $m.objectClass\n"
+        "        MemberDistinguishedName = $m.distinguishedName\n"
+        "        MemberEnabled           = $enabled\n"
+        "      }\n"
+        "    }\n"
+        "  } catch { }\n"
+        "}\n"
+        "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
+    ),
+    # ------------------------------------------------------------------
+    # gpo_links — GPO links on the domain root and all OUs. Requires
+    # GPMC / GroupPolicy PS module (RSAT). Wrapped in try/catch.
+    # ------------------------------------------------------------------
+    "gpo_links": (
+        "try {\n"
+        "  $domainDN = (Get-ADDomain).DistinguishedName\n"
+        "  $ouDNs = Get-ADOrganizationalUnit -Filter *"
+        " | Select-Object -ExpandProperty DistinguishedName\n"
+        "  $targets = @($domainDN) + @($ouDNs)\n"
+        "  $results = $targets | ForEach-Object {\n"
+        "    $target = $_\n"
+        "    try {\n"
+        "      Get-GPInheritance -Target $target |\n"
+        "        Select-Object -ExpandProperty GpoLinks |\n"
+        "        Select-Object DisplayName, GpoId, Enabled, Enforced, Target, Order\n"
+        "    } catch { }\n"
+        "  }\n"
+        "  if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }\n"
+        "} catch { '[]' }"
+    ),
+    # ------------------------------------------------------------------
+    # blocked_inheritance — OUs with GPO inheritance blocked (gPOptions
+    # bitmask bit 0 set). Complement to the ous section BlockedInheritance
+    # field; provides a targeted flat list for quick security review.
+    # ------------------------------------------------------------------
+    "blocked_inheritance": (
+        "$results = Get-ADOrganizationalUnit -Filter * -Properties gPOptions |\n"
+        "  Where-Object { ($_.gPOptions -band 1) -eq 1 } |\n"
+        "  ForEach-Object {\n"
+        "    [PSCustomObject]@{\n"
+        "      Name              = $_.Name\n"
+        "      DistinguishedName = $_.DistinguishedName\n"
+        "    }\n"
+        "  }\n"
+        "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
+    ),
+    # ------------------------------------------------------------------
+    # dns_forwarders — forwarder IPs and UseRootHint per DC.
+    # Requires DnsServer PS module (RSAT). Degrades per DC.
+    # ------------------------------------------------------------------
+    "dns_forwarders": (
+        "try {\n"
+        "  $dcs = (Get-ADDomainController -Filter *).HostName\n"
+        "  $results = foreach ($dc in $dcs) {\n"
+        "    try {\n"
+        "      $fwd = Get-DnsServerForwarder -ComputerName $dc\n"
+        "      [PSCustomObject]@{\n"
+        "        DC          = $dc\n"
+        "        Forwarders  = ($fwd.IPAddress |"
+        " ForEach-Object { $_.IPAddressToString }) -join ', '\n"
+        "        UseRootHint = $fwd.UseRootHint\n"
+        "        Status      = 'OK'\n"
+        "      }\n"
+        "    } catch {\n"
+        "      [PSCustomObject]@{ DC = $dc; Forwarders = $null;"
+        " UseRootHint = $null; Status = 'Unreachable' }\n"
+        "    }\n"
+        "  }\n"
+        "  @($results) | ConvertTo-Json -Depth 3\n"
+        "} catch { '[]' }"
+    ),
+    # ------------------------------------------------------------------
+    # computers — full computer inventory; capped at 10 000 objects.
+    # IsCNO/IsVCO derived from ServicePrincipalNames / isCriticalSystemObject.
+    # ------------------------------------------------------------------
+    "computers": (
+        "Get-ADComputer -Filter * -Properties OperatingSystem,OperatingSystemVersion,"
+        "Enabled,LastLogonDate,PasswordLastSet,Description,"
+        "ServicePrincipalNames,isCriticalSystemObject,"
+        "TrustedForDelegation,TrustedToAuthForDelegation,'msDS-AllowedToDelegateTo' |\n"
+        "  Select-Object -First 10000 |\n"
+        "  ForEach-Object {\n"
+        "    $isCNO = [bool]($_.ServicePrincipalNames -like '*MSClusterVirtualServer*')\n"
+        "    $isVCO = [bool]((-not $isCNO) -and $_.isCriticalSystemObject)\n"
+        "    [PSCustomObject]@{\n"
+        "      Name                       = $_.Name\n"
+        "      DistinguishedName          = $_.DistinguishedName\n"
+        "      OperatingSystem            = $_.OperatingSystem\n"
+        "      OperatingSystemVersion     = $_.OperatingSystemVersion\n"
+        "      Enabled                    = $_.Enabled\n"
+        "      LastLogonDate              = $_.LastLogonDate\n"
+        "      PasswordLastSet            = $_.PasswordLastSet\n"
+        "      Description                = $_.Description\n"
+        "      IsCNO                      = $isCNO\n"
+        "      IsVCO                      = $isVCO\n"
+        "      TrustedForDelegation       = $_.TrustedForDelegation\n"
+        "      TrustedToAuthForDelegation = $_.TrustedToAuthForDelegation\n"
+        "      AllowedToDelegateTo        = $_.'msDS-AllowedToDelegateTo'\n"
+        "    }\n"
+        "  } | ConvertTo-Json -Depth 3"
+    ),
+    # ------------------------------------------------------------------
+    # schema — custom schema objects (non-Microsoft OIDs). Capped at 500.
+    # Filters out standard MS, US-DoD, and Microsoft enterprise OIDs.
+    # ------------------------------------------------------------------
+    "schema": (
+        "$schemaDN = (Get-ADRootDSE).schemaNamingContext\n"
+        "$results = Get-ADObject -SearchBase $schemaDN -Filter *"
+        " -Properties lDAPDisplayName,objectClass,adminDescription,governsID,attributeID |\n"
+        "  Where-Object {\n"
+        "    $oid = if ($_.governsID) { $_.governsID } else { $_.attributeID }\n"
+        "    $oid -and\n"
+        "    -not $oid.StartsWith('1.2.840.113556') -and\n"
+        "    -not $oid.StartsWith('2.16.840.1.101.2') -and\n"
+        "    -not $oid.StartsWith('1.3.6.1.4.1.311')\n"
+        "  } |\n"
+        "  Select-Object lDAPDisplayName,objectClass,adminDescription,governsID,attributeID |\n"
+        "  Select-Object -First 500\n"
+        "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
+    ),
 }
 
 
@@ -324,7 +593,10 @@ class LiveConnector:
             raise RuntimeError(
                 f"PowerShell error on {self.forest.dc}: {result.std_err.decode()}"
             )
-        return json.loads(result.std_out.decode())
+        raw = result.std_out.decode().strip()
+        if not raw or raw == "null":
+            return []
+        return json.loads(raw)
 
     def query(self, section: str, **filters: Any) -> list[dict[str, Any]]:
         """Execute the appropriate PS script for a given AD section."""
@@ -364,7 +636,7 @@ class LiveConnector:
 
         try:
             rows = self.run_ps(_SCRIPTS[section])
-        except RuntimeError:
+        except (RuntimeError, ValueError):
             return _empty
 
         if not isinstance(rows, list):
