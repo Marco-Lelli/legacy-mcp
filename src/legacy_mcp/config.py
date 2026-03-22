@@ -46,3 +46,11 @@ def _validate(config: dict[str, Any]) -> None:
     forests = config["workspace"].get("forests", [])
     if not forests:
         raise ValueError("Workspace must define at least one forest.")
+
+    server_cfg = config.get("server", {})
+    ssl_certfile = server_cfg.get("ssl_certfile")
+    ssl_keyfile = server_cfg.get("ssl_keyfile")
+    if bool(ssl_certfile) != bool(ssl_keyfile):
+        raise ValueError(
+            "server.ssl_certfile and server.ssl_keyfile must both be set or both be absent."
+        )

@@ -14,7 +14,9 @@ workspace:
 
 # Server binding — used when starting with --transport streamable-http.
 # Ignored in stdio mode (Claude Desktop default).
-# For TLS, terminate at a reverse proxy (nginx / IIS ARR) in front of uvicorn.
 server:
   host: 0.0.0.0   # bind on all interfaces; restrict to LAN via firewall
   port: 8000
+  # TLS — provide both or neither.
+  # ssl_certfile: certs/server.crt
+  # ssl_keyfile:  certs/server.key

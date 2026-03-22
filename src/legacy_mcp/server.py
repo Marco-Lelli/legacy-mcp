@@ -25,11 +25,16 @@ def create_server(
     optional ``server:`` block, which in turn override FastMCP defaults
     (127.0.0.1:8000).  Pass them explicitly only for HTTP transports; stdio
     ignores them entirely.
+
+    TLS (ssl_certfile / ssl_keyfile) is read exclusively from the config
+    file's server: block and stored on ``mcp._tls_certfile`` /
+    ``mcp._tls_keyfile`` so that ``main()`` can pass them directly to
+    uvicorn when needed (FastMCP does not expose SSL params itself).
     """
     config = load_config(config_path)
     workspace = Workspace.from_config(config)
 
-    # Resolve host/port: caller arg > config file > FastMCP built-in default.
+    # Resolve host/port/TLS: caller arg > config file > FastMCP built-in default.
     server_cfg: dict = config.get("server", {})
     resolved_host = host or server_cfg.get("host") or None
     resolved_port = port or (int(server_cfg["port"]) if server_cfg.get("port") else None)
@@ -95,7 +100,39 @@ def create_server(
     )
 
     tools.register_all(mcp, workspace)
+
+    # Attach resolved TLS paths so main() can pass them to uvicorn.
+    # FastMCP does not expose ssl_certfile/ssl_keyfile in its settings.
+    mcp._tls_certfile: str | None = server_cfg.get("ssl_certfile") or None
+    mcp._tls_keyfile: str | None = server_cfg.get("ssl_keyfile") or None
+
     return mcp
+
+
+def _run_with_tls(mcp: FastMCP, ssl_certfile: str, ssl_keyfile: str) -> None:
+    """Start a Streamable HTTP server with TLS via uvicorn directly.
+
+    FastMCP's run_streamable_http_async() does not forward ssl_certfile /
+    ssl_keyfile to uvicorn.Config, so we build the uvicorn server ourselves
+    using the same Starlette app that FastMCP would use.
+    """
+    import anyio
+    import uvicorn
+
+    async def _serve() -> None:
+        app = mcp.streamable_http_app()
+        config = uvicorn.Config(
+            app,
+            host=mcp.settings.host,
+            port=mcp.settings.port,
+            log_level=mcp.settings.log_level.lower(),
+            ssl_certfile=ssl_certfile,
+            ssl_keyfile=ssl_keyfile,
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
+
+    anyio.run(_serve)
 
 
 def main() -> None:
@@ -130,7 +167,13 @@ def main() -> None:
         print(f"[ERROR] {exc}", file=sys.stderr)
         sys.exit(1)
 
-    mcp.run(transport=args.transport)
+    ssl_certfile: str | None = getattr(mcp, "_tls_certfile", None)
+    ssl_keyfile: str | None = getattr(mcp, "_tls_keyfile", None)
+
+    if args.transport == "streamable-http" and ssl_certfile:
+        _run_with_tls(mcp, ssl_certfile, ssl_keyfile)
+    else:
+        mcp.run(transport=args.transport)
 
 
 if __name__ == "__main__":

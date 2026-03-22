@@ -20,6 +20,10 @@ workspace:
 
 # Server binding — used when starting with --transport streamable-http.
 # Bind to localhost: WAF (Azure App Gateway / nginx) terminates TLS externally.
+# For TLS direct (without WAF), provide ssl_certfile and ssl_keyfile.
 server:
   host: 127.0.0.1
   port: 8080
+  # TLS — provide both or neither.
+  # ssl_certfile: certs/server.crt
+  # ssl_keyfile:  certs/server.key
