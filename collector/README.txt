@@ -1,7 +1,7 @@
 ================================================================================
   Collect-ADData.ps1
   LegacyMCP Offline Collector - Active Directory Data Export
-  Version 1.1 - March 2025
+  Version 1.2 - March 2025
   Marco Lelli, Impresoft 4ward
 ================================================================================
 
@@ -262,9 +262,9 @@ OUTPUT FORMAT
   Top-level keys in the JSON:
     forest, optional_features, schema, domains, default_password_policy,
     dcs, fsmo_roles, eventlog_config, ntp_config, sysvol, sites, site_links,
-    users, privileged_accounts, groups, privileged_groups, ous, gpos,
-    gpo_links, blocked_inheritance, trusts, fgpp, dns, dns_forwarders,
-    computers, pki
+    users, privileged_accounts, groups, privileged_groups, group_members,
+    ous, gpos, gpo_links, blocked_inheritance, trusts, fgpp, dns,
+    dns_forwarders, computers, pki
 
   Sections that fail entirely (e.g., GPO cmdlets not available) are recorded
   as null with a warning printed to the console. The JSON remains valid and
@@ -291,6 +291,19 @@ OUTPUT FORMAT
     Enabled, LastLogonDate, PasswordLastSet, Description,
     IsCNO, IsVCO,
     TrustedForDelegation, TrustedToAuthForDelegation, AllowedToDelegateTo
+
+  group_members
+    GroupName, MemberSamAccountName, MemberDisplayName,
+    MemberObjectClass, MemberDistinguishedName, MemberEnabled
+    One row per direct member per group. MemberEnabled is null for
+    nested group members (objectClass = group). Groups with no members
+    produce no rows.
+
+  gpo_links
+    DisplayName, GpoId, Enabled, Enforced, Target, Order
+    One row per GPO link per target container (domain root or OU).
+    The same GPO linked to multiple OUs appears as multiple rows,
+    each with its own Target field.
 
   eventlog_config (per DC, per log)
     DC, LogName, MaxSizeBytes, OverflowAction
@@ -406,6 +419,18 @@ NOTES
 
 VERSION HISTORY
 ---------------
+
+  v1.2 - March 2025
+    - Added group_members section: flat table with one row per direct
+      member per group. Fields: GroupName, MemberSamAccountName,
+      MemberDisplayName, MemberObjectClass, MemberDistinguishedName,
+      MemberEnabled. MemberEnabled is resolved via Get-ADUser /
+      Get-ADComputer and is null for nested group members. Handles
+      LDAP range retrieval for large groups via Get-ADGroupMember.
+    - Fixed gpo_links collection: now iterates all OUs with
+      Get-GPInheritance instead of domain root only. Returns all GPO
+      links across the entire domain, one row per link per target OU.
+      Previously only links on the domain root were collected.
 
   v1.1 - March 2025
     - Fixed EventLog collection: removed RetentionDays field (property
