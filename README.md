@@ -79,20 +79,46 @@ ADDS_Inventory script (https://github.com/CarlWebster/Active-Directory-V3)
 
 ## Enterprise layer
 
-Impresoft 4ward maintains a proprietary enterprise layer on top of
-LegacyMCP Core:
+Impresoft 4ward maintains a proprietary enterprise layer on top of LegacyMCP Core:
 
-- **DHCP Analysis** — autodiscovery via Authorized DHCP Servers or manual list
-- **GPO Analysis** — deep analysis powered by GPOzaurr
-- **AD Security Analysis** — inspired by PingCastle
-- **AD Health Check** — misconfigurations, replication issues, best practices
-- **PKI Configuration Analysis** — detailed CA config, templates, CRL, AIA,
-  chain of trust
-- **PKI Security Analysis** — misconfigurations, security best practices
-- **ESC Analysis** — certificate template vulnerability assessment (ESC1-ESC8)
+- **DHCP Analysis** — DHCP infrastructure assessment
+- **GPO Analysis** — deep Group Policy analysis
+- **AD Security Analysis** — security posture assessment
+- **AD Health Check** — misconfiguration and operational health review
+- **PKI Configuration Analysis** — CA infrastructure and certificate template review
+- **PKI Security Analysis** — PKI security assessment
+- **ESC Analysis** — certificate template vulnerability assessment
 - **DOCX generation** — automated assessment documents from corporate templates
 
 Interested? Get in touch.
+
+---
+
+## Security by Design
+
+LegacyMCP is built around ten security principles that apply across every deployment scenario:
+
+1. **Read-only by design** — LegacyMCP never creates, modifies, or deletes any AD object. This is an architectural decision, not a limitation.
+
+2. **Least privilege** — the tool operates with the minimum rights required. In Offline Mode, no live AD credentials are needed at all.
+
+3. **Sensitive data stays local** — in Offline Mode, AD data never leaves the client network toward the cloud. Analysis happens locally. JSON output files are classified Confidential/Restricted.
+
+4. **Strong authentication for exposed endpoints** — three deployment profiles with increasing security requirements: local-only, internal network, and internet-facing with WAF and OAuth2/OIDC.
+
+5. **TLS on all non-localhost endpoints** — no plaintext traffic outside localhost under any deployment profile.
+
+6. **Credentials never in plaintext** — gMSA for service accounts, Azure Key Vault for enterprise deployments, Windows Credential Manager for explicit credentials. Never in config files, environment variables, or logs.
+
+7. **Code integrity** — signed PowerShell collector, signed executable releases, published SHA256 hashes for all release artifacts.
+
+8. **Full auditability** — dedicated Windows EventLog, every operation logged with who requested what, when, and on which objects. SIEM and Sentinel compatible.
+
+9. **Unified data format** — Live Mode snapshots and Offline Mode JSON files share the same format, enabling temporal comparisons and full interoperability between modes.
+
+10. **Safe degradation** — partial data is always explicit. Unreachable domain controllers are flagged, never silently skipped.
+
+See [DISCLAIMER.md](DISCLAIMER.md) for terms of use.
 
 ---
 
