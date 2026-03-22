@@ -31,6 +31,17 @@ class OfflineConnector:
         engine = self._ensure_loaded()
         return engine.query(section, **filters)
 
+    def query_page(
+        self,
+        section: str,
+        offset: int = 0,
+        limit: int = 200,
+        **filters: Any,
+    ) -> dict[str, Any]:
+        """Return a paginated page from a section. See QueryEngine.query_page."""
+        engine = self._ensure_loaded()
+        return engine.query_page(section, offset=offset, limit=limit, **filters)
+
     def scalar(self, section: str) -> dict[str, Any] | None:
         """Return a single dict from a section (e.g. forest-level info)."""
         results = self.query(section)
