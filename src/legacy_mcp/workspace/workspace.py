@@ -33,6 +33,7 @@ class ForestConfig:
     # Live Mode
     dc: str | None = None
     credentials: str = "gmsa"  # "gmsa" | "env" | "prompt"
+    timeout_seconds: int = 30
 
 
 @dataclass
@@ -51,6 +52,7 @@ class Workspace:
                 file=f.get("file"),
                 dc=f.get("dc"),
                 credentials=f.get("credentials", "gmsa"),
+                timeout_seconds=int(f.get("timeout_seconds", 30)),
             )
             for f in config["workspace"]["forests"]
         ]
