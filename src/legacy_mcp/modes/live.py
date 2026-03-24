@@ -32,17 +32,16 @@ def _patch_winkerberos_spn() -> None:
         return
     if getattr(_wkrb, "_spn_separator_patched", False):
         return
-    _orig = _wkrb.authGSSClientInit
+    _orig_init = _wkrb.authGSSClientInit
 
-    def _fixed(spn: str, *args: Any, **kwargs: Any) -> Any:
+    def _fixed_init(spn: str, *args: Any, **kwargs: Any) -> Any:
         if "@" in spn and "/" not in spn:
-            print(f"[winkerberos patch] SPN fix: {spn!r} -> {spn.replace('@', '/', 1)!r}", flush=True)
             spn = spn.replace("@", "/", 1)
-        else:
-            print(f"[winkerberos patch] SPN unchanged: {spn!r}", flush=True)
-        return _orig(spn, *args, **kwargs)
+        if kwargs.get("principal") == "":
+            kwargs["principal"] = None
+        return _orig_init(spn, *args, **kwargs)
 
-    _wkrb.authGSSClientInit = _fixed
+    _wkrb.authGSSClientInit = _fixed_init
     _wkrb._spn_separator_patched = True
 
 
