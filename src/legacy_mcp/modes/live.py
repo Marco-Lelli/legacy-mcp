@@ -12,6 +12,44 @@ from legacy_mcp.eventlog import writer as eventlog
 
 
 # ---------------------------------------------------------------------------
+# winkerberos SPN separator fix
+# ---------------------------------------------------------------------------
+# pywinrm's vendored requests-kerberos builds the Kerberos SPN with '@' as
+# separator (e.g. HTTP@dc01.contoso.local). Windows SSPI rejects this and
+# returns "InitializeSecurityContext: The logon attempt failed". The correct
+# format for SSPI is HTTP/dc01.contoso.local.
+#
+# We patch winkerberos.authGSSClientInit once at import time to normalise the
+# separator. The vendor module imports winkerberos as 'kerberos' and accesses
+# authGSSClientInit via attribute lookup on the module object at call time, so
+# patching the module attribute is sufficient -- no venv files are modified.
+
+
+def _patch_winkerberos_spn() -> None:
+    try:
+        import winkerberos as _wkrb  # type: ignore[import]
+    except ImportError:
+        return
+    if getattr(_wkrb, "_spn_separator_patched", False):
+        return
+    _orig = _wkrb.authGSSClientInit
+
+    def _fixed(spn: str, *args: Any, **kwargs: Any) -> Any:
+        if "@" in spn and "/" not in spn:
+            print(f"[winkerberos patch] SPN fix: {spn!r} -> {spn.replace('@', '/', 1)!r}", flush=True)
+            spn = spn.replace("@", "/", 1)
+        else:
+            print(f"[winkerberos patch] SPN unchanged: {spn!r}", flush=True)
+        return _orig(spn, *args, **kwargs)
+
+    _wkrb.authGSSClientInit = _fixed
+    _wkrb._spn_separator_patched = True
+
+
+_patch_winkerberos_spn()
+
+
+# ---------------------------------------------------------------------------
 # PowerShell script library
 # ---------------------------------------------------------------------------
 # Keyed by section name (matches KNOWN_SECTIONS in storage/loader.py).
@@ -643,6 +681,8 @@ class LiveConnector:
                 target=self.forest.dc,
                 auth=self._resolve_auth(),
                 transport="kerberos" if self.forest.credentials == "gmsa" else "ntlm",
+                kerberos_hostname_override=self.forest.dc,
+                service="WSMAN",
                 # read_timeout_sec must be strictly greater than operation_timeout_sec.
                 operation_timeout_sec=self.forest.timeout_seconds,
                 read_timeout_sec=self.forest.timeout_seconds + 1,
