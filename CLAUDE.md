@@ -131,41 +131,57 @@ abilita query comparative:
 
 ## Autenticazione al MCP Server
 
-LegacyMCP supporta tre profili di deployment con configurazione di sicurezza diversa.
+LegacyMCP supporta tre profili di deployment con requisiti di sicurezza crescenti.
 Il codice è unico — cambia il file di configurazione e le istruzioni di deployment.
 
-### Profilo A — Offline Mode locale
-Il MCP server gira sulla macchina del consulente.
-Non esposto in rete — superficie di attacco zero.
-Autenticazione: API key locale nel file di configurazione,
-o solo localhost senza autenticazione esplicita.
+| Profilo | Scenario | Layer | Autenticazione |
+|---------|----------|-------|----------------|
+| A | stdio locale sul PC del consulente | Core | Nessuna |
+| B — LAN condivisa | Server in rete interna, team condiviso | Core | API key di team |
+| B — LAN con audit | Server in rete interna, accesso nominale | Enterprise | Entra ID nominale |
+| C | Server esposto su internet | Enterprise | OAuth2/OIDC Entra ID obbligatorio |
 
-### Profilo B — Live Mode in rete interna
-Il MCP server gira su un server dentro la rete del cliente.
-Accessibile solo dalla LAN aziendale.
-Autenticazione: HTTPS su porta 443 con certificato interno,
-API key o integrazione con Entra ID / AD FS per SSO aziendale.
-Il gMSA gestisce l'accesso ad AD — l'autenticazione al MCP è separata.
+### Profilo A — stdio locale
+Il MCP server gira sulla macchina del consulente come processo locale.
+Comunicazione via stdio — nessuna rete coinvolta, superficie di attacco zero.
+Nessuna autenticazione necessaria: chi ha accesso alla macchina ha già
+accesso a tutto.
 
-### Profilo C — Live Mode esposto su internet
-Scenario sconsigliato senza adeguate protezioni — esporre un MCP server AD
-su internet è una superficie di attacco seria.
+Il JSON prodotto dal collector è classificato Confidential/Restricted.
+Responsabilità del consulente:
+- Disco cifrato (BitLocker)
+- Non sincronizzare il JSON su cloud non autorizzati (OneDrive personale,
+  Dropbox, ecc.)
+- Trasporto sicuro se il file deve spostarsi — non email in chiaro,
+  non USB non cifrata
+- Eliminazione sicura al termine dell'engagement
 
+LegacyMCP non cifra il JSON — non è un vault. La sicurezza a riposo
+è demandata al sistema operativo e alle policy aziendali.
+
+### Profilo B — LAN condivisa (layer Core)
+Il MCP server gira su un server in rete interna, accessibile al team.
+Autenticazione tramite API key di team condivisa nel config.yaml.
+TLS obbligatorio — nessun traffico in chiaro al di fuori di localhost.
+
+### Profilo B — LAN con audit (layer Enterprise)
+Come il Profilo B Core, ma con autenticazione nominale tramite Entra ID.
+Ogni operazione è tracciata per utente — prerequisito per ambienti
+con requisiti di audit o compliance.
+
+### Profilo C — internet (layer Enterprise)
+Scenario possibile ma da affrontare con le dovute cautele.
 Requisiti minimi per rendere lo scenario accettabile:
-- WAF (Web Application Firewall) obbligatorio davanti al MCP server
-  — opzione naturale in ambito Microsoft: Azure Application Gateway con WAF,
-  integrato con Entra ID e Microsoft Sentinel
-  — alternative: Cloudflare WAF, AWS WAF
-- TLS termination sul WAF — il MCP server parla HTTP interno
-- HTTPS con certificato valido
-- OAuth2 / OIDC con Entra ID come provider di identità
+- WAF obbligatorio davanti al MCP server
+  (Azure Application Gateway con WAF, Cloudflare WAF, AWS WAF)
+- TLS termination sul WAF
+- OAuth2/OIDC con Entra ID come provider di identità
 - MFA obbligatorio
-- IP allowlisting — se i consulenti operano da paesi noti, bloccare tutto il resto
+- IP allowlisting se i consulenti operano da paesi noti
 - Rate limiting
 - Logging centralizzato di tutto il traffico in ingresso
 
-Senza WAF: sconsigliato.
-Con WAF e configurazione completa: accettabile con le dovute cautele.
+Senza WAF e OAuth2/OIDC: sconsigliato.
 
 ---
 
