@@ -86,6 +86,13 @@ Richiede credenziali con diritti adeguati e accesso di rete ai DC.
 Ideale per amministratori interni o consulenti con accesso diretto alla rete.
 I dati sono freschi e interrogabili in tempo reale.
 
+**Prerequisiti infrastrutturali:**
+- Listener WinRM HTTPS su porta 5986 con certificato valido sul DC
+- TLS 1.2 abilitato via registry (non default su Windows Server 2012 R2,
+  verificare su tutte le versioni precedenti a 2016)
+- CA interna non scaduta se il certificato DC è emesso internamente
+- Server MCP su member server dedicato, mai sul Domain Controller
+
 ### Offline Mode
 Un collector PowerShell raccoglie i dati AD e li esporta in un file JSON strutturato.
 Il MCP server carica il JSON e lo converte internamente in SQLite per interrogazioni
@@ -260,6 +267,10 @@ Regole:
 
 10. **Degradazione sicura** — dati parziali sempre espliciti. DC irraggiungibili segnalati, mai saltati silenziosamente.
 
+11. **Server MCP mai su Domain Controller** — i DC devono eseguire solo
+    i servizi necessari al ruolo AD. Il server MCP va su un member server
+    dedicato. Questa è una regola architetturale, non una raccomandazione.
+
 ---
 
 ## Cosa NON fare
@@ -271,6 +282,10 @@ Regole:
 - Non modificare mai oggetti AD nel layer open source — sola lettura assoluta
 - Non usare PowerShell precedente a 5.1
 - Non esporre il MCP server su internet senza WAF e autenticazione forte con MFA
+- Non installare il server MCP su un Domain Controller — i DC devono
+  eseguire solo i servizi necessari al ruolo AD. Il server MCP va su
+  un member server dedicato. Installare su un DC viola il principio
+  di separazione dei ruoli e aumenta la superficie di attacco.
 - Nei file PowerShell usare esclusivamente caratteri ASCII — niente em dash, virgolette
   curve, o qualsiasi carattere non-ASCII. Usare trattini semplici (-) e virgolette dritte.
   Motivo: PowerShell su Windows legge i file senza BOM in codepage ANSI (CP1252) e
