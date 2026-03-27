@@ -3,12 +3,30 @@
 from __future__ import annotations
 
 import json
+import random
+import time
+import requests.adapters
+import requests.exceptions
+import urllib3
+import urllib3.exceptions
+from base64 import b64encode
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from legacy_mcp.workspace.workspace import ForestConfig
 
 from legacy_mcp.eventlog import writer as eventlog
+
+
+class _SSLAdapter(requests.adapters.HTTPAdapter):
+    """Custom SSL adapter to inject a specific SSL context into requests."""
+    def __init__(self, ssl_context: "ssl.SSLContext", **kwargs: Any) -> None:
+        self.ssl_context = ssl_context
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
+        kwargs["ssl_context"] = self.ssl_context
+        super().init_poolmanager(*args, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -657,6 +675,59 @@ def _looks_like_timeout(exc: Exception) -> bool:
     return "timeout" in name or "timed out" in msg or "timeout" in msg
 
 
+_WINRM_MAX_RETRIES: int = 3
+_WINRM_RETRY_BASE_DELAY: float = 1.0   # seconds
+_WINRM_RETRY_MAX_DELAY: float = 12.0   # cap
+
+
+def _winrm_backoff(attempt: int) -> float:
+    """Exponential backoff with ±20% jitter."""
+    delay = min(_WINRM_RETRY_BASE_DELAY * (2 ** attempt), _WINRM_RETRY_MAX_DELAY)
+    jitter = random.uniform(-delay * 0.2, delay * 0.2)
+    return max(0.0, delay + jitter)
+
+
+def _is_transient_winrm_error(exc: Exception, _seen: set | None = None) -> bool:
+    """Return True if exc is or wraps a transient WinRM connection error.
+
+    Performs recursive unwrap of the exception chain (args[0], __cause__,
+    __context__) to handle ConnectionResetError buried inside
+    requests.exceptions.ConnectionError or urllib3.exceptions.ProtocolError.
+    A 'seen' set prevents infinite loops on circular exception chains.
+    """
+    _TRANSIENT = (
+        ConnectionResetError,
+        ConnectionAbortedError,
+        BrokenPipeError,
+        EOFError,
+    )
+    _WRAPPERS = (
+        requests.exceptions.ConnectionError,
+        requests.exceptions.ChunkedEncodingError,
+        urllib3.exceptions.ProtocolError,
+        urllib3.exceptions.NewConnectionError,
+    )
+    if _seen is None:
+        _seen = set()
+    exc_id = id(exc)
+    if exc_id in _seen:
+        return False
+    _seen.add(exc_id)
+
+    if isinstance(exc, _TRANSIENT):
+        return True
+    if isinstance(exc, _WRAPPERS):
+        # unwrap args[0]
+        cause = exc.args[0] if exc.args else None
+        if isinstance(cause, Exception) and _is_transient_winrm_error(cause, _seen):
+            return True
+        # unwrap __cause__ and __context__
+        for chained in (exc.__cause__, exc.__context__):
+            if isinstance(chained, Exception) and _is_transient_winrm_error(chained, _seen):
+                return True
+    return False
+
+
 def _build_script(section: str) -> str:
     """Return the PowerShell script for *section*, or an error stub."""
     return _SCRIPTS.get(section, f"Write-Error 'Unknown section: {section}'")
@@ -675,16 +746,38 @@ class LiveConnector:
 
     def _ensure_connected(self) -> Any:
         if self._session is None:
+            import ssl
             import winrm  # type: ignore[import]
+            target = f"https://{self.forest.dc}:5986/wsman"
             self._session = winrm.Session(
-                target=self.forest.dc,
+                target=target,
                 auth=self._resolve_auth(),
-                transport="kerberos" if self.forest.credentials == "gmsa" else "ntlm",
+                transport="kerberos",
                 kerberos_hostname_override=self.forest.dc,
                 service="WSMAN",
+                server_cert_validation="ignore",
                 # read_timeout_sec must be strictly greater than operation_timeout_sec.
                 operation_timeout_sec=self.forest.timeout_seconds,
                 read_timeout_sec=self.forest.timeout_seconds + 1,
+            )
+            # Windows Server 2012 R2 uses cipher suites incompatible with
+            # Python 3.11 default SECLEVEL=2. Inject a custom SSL context.
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            ssl_context.set_ciphers("ALL:@SECLEVEL=0")
+            self._session.protocol.transport.build_session()
+            self._session.protocol.transport.session.mount(
+                "https://",
+                requests.adapters.HTTPAdapter(
+                    pool_connections=1,
+                    pool_maxsize=1,
+                ),
+            )
+            self._session.protocol.transport.session.verify = False
+            self._session.protocol.transport.session.mount(
+                "https://",
+                _SSLAdapter(ssl_context),
             )
         return self._session
 
@@ -697,30 +790,72 @@ class LiveConnector:
         return (user, password)
 
     def run_ps(self, script: str) -> Any:
-        """Run a PowerShell script and return parsed JSON output."""
-        session = self._ensure_connected()
-        try:
-            result = session.run_ps(script)
-        except Exception as exc:
-            if _looks_like_timeout(exc):
-                eventlog.warn_dc_unreachable(
-                    self.forest.dc or "",
-                    f"WinRM timeout after {self.forest.timeout_seconds}s: {exc}",
-                )
-                raise RuntimeError(
-                    f"WinRM timeout on DC '{self.forest.dc}' "
-                    f"(timeout={self.forest.timeout_seconds}s): {exc}"
-                ) from exc
-            raise
+        """Run a PowerShell script and return parsed JSON output.
 
-        if result.status_code != 0:
-            raise RuntimeError(
-                f"PowerShell error on {self.forest.dc}: {result.std_err.decode()}"
-            )
-        raw = result.std_out.decode().strip()
-        if not raw or raw == "null":
-            return []
-        return json.loads(raw)
+        Retries up to _WINRM_MAX_RETRIES times on transient WinRM errors
+        (ConnectionResetError, ConnectionAbortedError, etc.) with exponential
+        backoff. Opens and closes the WinRM shell explicitly on every attempt
+        to avoid shell leaks that cause MaxShellsPerUser exhaustion on
+        Windows Server 2012 R2.
+        """
+        # Encoding identical to winrm.Session.run_ps()
+        encoded_ps = b64encode(script.encode("utf_16_le")).decode("ascii")
+        command = "powershell -encodedcommand {0}".format(encoded_ps)
+
+        last_exc: Exception | None = None
+        for attempt in range(_WINRM_MAX_RETRIES + 1):
+            session = self._ensure_connected()
+            shell_id: Any = None
+            try:
+                shell_id = session.protocol.open_shell()
+                command_id = session.protocol.run_command(shell_id, command, ())
+                stdout, stderr, status_code = session.protocol.get_command_output(
+                    shell_id, command_id
+                )
+                session.protocol.cleanup_command(shell_id, command_id)
+                session.protocol.close_shell(shell_id)
+                shell_id = None
+            except Exception as exc:
+                if shell_id is not None:
+                    try:
+                        session.protocol.close_shell(shell_id)
+                    except Exception:
+                        pass
+                if _is_transient_winrm_error(exc):
+                    self._session = None
+                    last_exc = exc
+                    if attempt < _WINRM_MAX_RETRIES:
+                        time.sleep(_winrm_backoff(attempt))
+                        continue
+                    raise RuntimeError(
+                        f"WinRM transient error on DC '{self.forest.dc}' "
+                        f"after {_WINRM_MAX_RETRIES} retries: {exc}"
+                    ) from exc
+                if _looks_like_timeout(exc):
+                    eventlog.warn_dc_unreachable(
+                        self.forest.dc or "",
+                        f"WinRM timeout after {self.forest.timeout_seconds}s: {exc}",
+                    )
+                    raise RuntimeError(
+                        f"WinRM timeout on DC '{self.forest.dc}' "
+                        f"(timeout={self.forest.timeout_seconds}s): {exc}"
+                    ) from exc
+                raise
+            else:
+                if status_code != 0:
+                    raise RuntimeError(
+                        f"PowerShell error on {self.forest.dc}: {stderr.decode()}"
+                    )
+                raw = stdout.decode().strip()
+                if not raw or raw == "null":
+                    return []
+                return json.loads(raw)
+
+        # Unreachable: the loop raises before exhausting retries on transient
+        # errors, and non-transient errors raise immediately inside the loop.
+        raise RuntimeError(  # pragma: no cover
+            f"WinRM retries exhausted on DC '{self.forest.dc}': {last_exc}"
+        )
 
     def query(self, section: str, **filters: Any) -> list[dict[str, Any]]:
         """Execute the appropriate PS script for a given AD section."""
