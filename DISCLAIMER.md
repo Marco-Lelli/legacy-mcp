@@ -27,6 +27,23 @@ of any kind, express or implied. The authors and
 contributors accept no responsibility for damages
 arising from the use or misuse of this software.
 
+## Active Development
+
+LegacyMCP is under active development. The software may exhibit
+unexpected behavior, incomplete features, or breaking changes between
+versions. It is not yet recommended for production environments without
+prior validation in a test setup.
+
+If you encounter unexpected behavior, please open an issue at:
+https://github.com/Marco-Lelli/legacy-mcp/issues
+
+Include the following in your report:
+- LegacyMCP version (git commit hash)
+- Operating system and Python version
+- Target Windows Server version
+- Steps to reproduce the issue
+- Relevant log output
+
 ## Data Handling
 
 The JSON files produced by the LegacyMCP collector
