@@ -1,7 +1,7 @@
 ================================================================================
   Collect-ADData.ps1
   LegacyMCP Offline Collector - Active Directory Data Export
-  Version 1.2 - March 2025
+  Version 1.3 - March 2026
   Marco Lelli, Impresoft 4ward
 ================================================================================
 
@@ -419,6 +419,15 @@ NOTES
 
 VERSION HISTORY
 ---------------
+
+  v1.3 - March 2026
+    - Pre-check: if the output file already exists, it is renamed with a
+      timestamp suffix (e.g. ad-data_20260327_143000.json) before the new
+      export is written. Prevents silent overwrite of previous exports.
+    - Export uses -NoClobber to enforce that the rename happened correctly.
+    - Post-check: after writing, the output file is read back and parsed as
+      JSON to verify integrity. If validation fails, the corrupt file is
+      renamed to *_corrupt.json and an exception is thrown.
 
   v1.2 - March 2025
     - Added group_members section: flat table with one row per direct

@@ -475,7 +475,34 @@ $data["pki"] = Invoke-Section "PKI / CA Discovery" {
 }
 
 # --- Export ---
+
+# Pre-check: if output file already exists, rename it before overwriting.
+# This prevents silent data loss if the collector is run twice on the same path
+# (e.g. append pipelines, automation scripts, repeated manual runs).
+if (Test-Path -LiteralPath $OutputPath) {
+    $timestamp  = Get-Date -Format "yyyyMMdd_HHmmss"
+    $backupPath = [System.IO.Path]::ChangeExtension($OutputPath, $null).TrimEnd('.') `
+                  + "_backup_$timestamp.json"
+    Rename-Item -LiteralPath $OutputPath -NewName (Split-Path $backupPath -Leaf)
+    Write-Status "Export pre-check" "WARN"
+    Write-Warning "Output file already existed — renamed to: $(Split-Path $backupPath -Leaf)"
+}
+
 Write-Host ""
 Write-Host "Exporting to $OutputPath ..."
-$data | ConvertTo-Json -Depth 20 -Compress | Out-File -FilePath $OutputPath -Encoding UTF8
-Write-Host "Done. File size: $([Math]::Round((Get-Item $OutputPath).Length / 1KB, 1)) KB"
+$jsonContent = $data | ConvertTo-Json -Depth 20 -Compress
+$jsonContent | Out-File -FilePath $OutputPath -Encoding UTF8 -NoClobber
+
+# Post-check: verify the written file is valid JSON.
+# Catches serialization errors (e.g. ConvertTo-Json truncation, encoding issues).
+try {
+    $written = Get-Content -LiteralPath $OutputPath -Raw -Encoding UTF8
+    $null = $written | ConvertFrom-Json
+    Write-Host "Done. File size: $([Math]::Round((Get-Item $OutputPath).Length / 1KB, 1)) KB"
+    Write-Status "Export integrity" "OK"
+} catch {
+    $corruptPath = [System.IO.Path]::ChangeExtension($OutputPath, $null).TrimEnd('.') + "_corrupt.json"
+    Rename-Item -LiteralPath $OutputPath -NewName (Split-Path $corruptPath -Leaf)
+    Write-Status "Export integrity" "FAIL"
+    throw "JSON validation failed — output renamed to: $(Split-Path $corruptPath -Leaf). Error: $_"
+}
