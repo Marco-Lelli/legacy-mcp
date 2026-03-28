@@ -412,6 +412,15 @@ legacy-mcp/
 
 ---
 
+## Git Operations
+
+- Always run `git status` and show the full list of staged files before any commit
+- Never run `git commit` or `git push` without explicit user confirmation
+- Always use absolute paths in configuration files (YAML, JSON) unless explicitly requested otherwise
+- Always run `python -m pytest` after code changes before committing
+
+---
+
 ## Cronologia del progetto
 
 - 13 marzo 2025 — Prima idea

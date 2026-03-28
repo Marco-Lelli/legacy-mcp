@@ -20,8 +20,8 @@ config/config.yaml
 config/config-*.yaml
 !config/config.example-*.yaml
 
-# Claude Code local settings
-.claude/
+# Claude Code local settings (only local overrides, not project config)
+.claude/settings.local.json
 
 # IDE
 .vscode/

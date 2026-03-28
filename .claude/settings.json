@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "pre-commit": "python -m pytest --tb=short -q && git status"
+  }
+}
