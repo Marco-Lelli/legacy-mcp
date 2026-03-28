@@ -1,5 +1,9 @@
 # LegacyMCP
 
+<p align="center">
+  <img src="docs/images/logo.png" alt="LegacyMCP" width="200"/>
+</p>
+
 > Active Directory MCP Server for AI-powered assessment
 
 LegacyMCP brings the power of AI to Active Directory on-premises environments.
