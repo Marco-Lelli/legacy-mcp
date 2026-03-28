@@ -192,6 +192,94 @@ Senza WAF e OAuth2/OIDC: sconsigliato.
 
 ---
 
+## Deployment Profiles
+
+Il campo `profile` nel config.yaml determina:
+- Il mode di default per tutti i forest del workspace
+- Se l'override per singolo forest è permesso
+- I requisiti di autenticazione al server MCP
+
+| Profile | Default mode | Override | Auth | Notes |
+|---------|--------------|----------|------|-------|
+| A | offline | no | nessuna | PC del consulente |
+| B-core | live | yes | API key di team | LAN condivisa |
+| B-enterprise | live | yes | Nominale per utente | LAN con audit |
+| C | offline | no | Forte — obbligatoria | Internet / SaaS |
+
+### config.yaml — profile field
+
+Esempio Profile B-core con forest eterogenei (live + offline + snapshot storico):
+
+```yaml
+profile: B-core
+
+workspace:
+  forests:
+    - name: contoso.local
+      module: ad-core
+      dc: dc01.contoso.local
+      credentials: gmsa
+
+    - name: contoso.local-pki
+      module: ad-pki
+      mode: offline           # override: questo modulo non supporta live
+      file: data/contoso-pki.json
+
+    - name: contoso.local-snapshot-2025
+      relation: snapshot
+      module: ad-core
+      mode: offline
+      file: data/contoso-snapshot-20250318.json
+
+server:
+  host: 0.0.0.0   # Profile B: bind su tutte le interfacce
+  port: 8000
+```
+
+### server.host
+
+Per deployment in rete (Profile B) impostare `server.host: 0.0.0.0` nel config.yaml.
+Il default `127.0.0.1` è corretto solo per Profile A (localhost).
+In Profile B, uvicorn si lega a localhost per default e non è raggiungibile
+dalla rete senza questo campo esplicito.
+
+---
+
+## Module System
+
+Ogni forest nel workspace dichiara opzionalmente il campo `module`,
+che identifica il tipo di dati contenuti nel JSON.
+
+Esempi: `ad-core`, `ad-pki`, `ad-gpo`, `ad-dhcp`.
+
+I moduli sono indipendenti — nessuna dipendenza forzata tra di loro.
+Un workspace può contenere forest con moduli diversi.
+
+Il layer Core include il modulo `ad-core`, che copre l'intero inventario AD
+come definito da ADDS_Inventory.ps1 di Carl Webster.
+
+Moduli aggiuntivi sono disponibili nel layer enterprise.
+Ogni JSON include un blocco `_metadata` con `module`, `collected_at`
+e `collector_version`.
+
+---
+
+## Snapshots as Bridge Between Profiles
+
+Gli snapshot prodotti in Profile B sono riutilizzabili in Profile A e Profile C.
+
+- **Profile B → Profile A**: esporta uno snapshot dal workspace live,
+  caricalo in Profile A per consultazione locale o confronto storico.
+- **Profile B → Profile C**: lo snapshot è il formato di trasporto verso
+  il Portal in Profile C. I dati non lasciano mai la rete del cliente
+  finché non vengono esportati come JSON.
+
+Lo snapshot è il meccanismo di continuità tra profili — produce un JSON
+nello stesso formato del collector offline, caricabile in qualsiasi
+workspace con `mode: offline`.
+
+---
+
 ## Principio architetturale fondamentale — Degradazione elegante
 
 LegacyMCP opera spesso in ambienti parzialmente raggiungibili — DC in sedi remote,
