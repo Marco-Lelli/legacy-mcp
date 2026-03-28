@@ -1,14 +1,19 @@
-# LegacyMCP — Profile A: Offline Mode (local, consultant's machine)
+# LegacyMCP — Profile A: Local (consultant's machine)
+# Default mode: offline. Per-forest mode override: not allowed.
 # No network access required during analysis.
 # Copy to config/config.yaml and edit paths before use.
 
-mode: offline
+profile: A
 
 workspace:
   forests:
     - name: contoso.local
       relation: standalone        # standalone | source | dest | trusted
+      module: ad-core             # optional: identifies the data module
       file: data/contoso.json     # path to collector output JSON
 
-# Optional: override via environment variables prefixed with LEGACYMCP_
-# LEGACYMCP_MODE=offline
+# Server binding: Profile A runs locally — default 127.0.0.1 is correct.
+# For Profile B (shared LAN), set host: 0.0.0.0 to bind on all interfaces.
+# server:
+#   host: 127.0.0.1
+#   port: 8000

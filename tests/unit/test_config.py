@@ -125,6 +125,104 @@ def test_create_server_defaults_without_server_block(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Deployment profile tests
+# ---------------------------------------------------------------------------
+
+
+def test_profile_A_loads(tmp_path: Path) -> None:
+    """Profile A loads and sets effective mode to offline."""
+    cfg = {
+        "profile": "A",
+        "workspace": {
+            "forests": [{"name": "contoso.local", "file": "data/contoso.json"}]
+        },
+    }
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.dump(cfg))
+    config = load_config(p)
+    assert config["profile"] == "A"
+    assert config["mode"] == "offline"
+
+
+def test_profile_A_live_forest_raises(tmp_path: Path) -> None:
+    """Profile A does not allow per-forest mode override."""
+    cfg = {
+        "profile": "A",
+        "workspace": {
+            "forests": [{"name": "live-forest", "mode": "live", "dc": "dc01.contoso.local"}]
+        },
+    }
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.dump(cfg))
+    with pytest.raises(ValueError, match="mode override is not allowed"):
+        load_config(p)
+
+
+def test_profile_C_live_forest_raises(tmp_path: Path) -> None:
+    """Profile C does not allow per-forest mode override."""
+    cfg = {
+        "profile": "C",
+        "workspace": {
+            "forests": [{"name": "live-forest", "mode": "live", "dc": "dc01.contoso.local"}]
+        },
+    }
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.dump(cfg))
+    with pytest.raises(ValueError, match="mode override is not allowed"):
+        load_config(p)
+
+
+def test_profile_Bcore_offline_forest_ok(tmp_path: Path) -> None:
+    """Profile B-core allows per-forest mode override to offline."""
+    cfg = {
+        "profile": "B-core",
+        "workspace": {
+            "forests": [
+                {"name": "live-forest", "dc": "dc01.contoso.local"},
+                {"name": "offline-forest", "mode": "offline", "file": "data/offline.json"},
+            ]
+        },
+    }
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.dump(cfg))
+    config = load_config(p)
+    assert config["profile"] == "B-core"
+    assert config["mode"] == "live"
+    assert config["workspace"]["forests"][1]["mode"] == "offline"
+
+
+def test_profile_invalid_raises(tmp_path: Path) -> None:
+    """Invalid profile value raises ValueError."""
+    cfg = {
+        "profile": "X",
+        "workspace": {
+            "forests": [{"name": "contoso.local", "file": "data/contoso.json"}]
+        },
+    }
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.dump(cfg))
+    with pytest.raises(ValueError, match="Invalid profile"):
+        load_config(p)
+
+
+def test_retrocompat_mode_field_warns(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Legacy 'mode' field without 'profile' loads with a deprecation warning."""
+    import logging
+    cfg = {
+        "mode": "offline",
+        "workspace": {
+            "forests": [{"name": "contoso.local", "file": "data/contoso.json"}]
+        },
+    }
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.dump(cfg))
+    with caplog.at_level(logging.WARNING, logger="legacy_mcp.config"):
+        config = load_config(p)
+    assert config["mode"] == "offline"
+    assert "Deprecated" in caplog.text
+
+
+# ---------------------------------------------------------------------------
 # TLS / SSL config tests
 # ---------------------------------------------------------------------------
 

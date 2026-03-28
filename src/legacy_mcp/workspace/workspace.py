@@ -29,6 +29,7 @@ class ForestConfig:
     name: str
     relation: ForestRelation = ForestRelation.STANDALONE
     mode: WorkspaceMode | None = None  # per-forest override; None = inherit workspace mode
+    module: str | None = None          # optional module identifier (e.g. "ad-core", "ad-pki")
     # Offline Mode
     file: str | None = None
     # Live Mode
@@ -51,6 +52,7 @@ class Workspace:
                 name=f["name"],
                 relation=ForestRelation(f.get("relation", "standalone")),
                 mode=WorkspaceMode(f["mode"]) if f.get("mode") else None,
+                module=f.get("module"),
                 file=f.get("file"),
                 dc=f.get("dc"),
                 credentials=f.get("credentials", "gmsa"),

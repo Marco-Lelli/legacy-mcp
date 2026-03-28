@@ -1,19 +1,34 @@
-# LegacyMCP — Profile B: Live Mode (internal network)
-# MCP server runs on a server inside the customer network.
-# Requires WinRM access to Domain Controllers.
-# Use gMSA for authentication — no password management.
+# LegacyMCP — Profile B-core: Shared LAN
+# Default mode: live. Per-forest mode override: allowed.
+# MCP server runs on a dedicated member server inside the customer network.
+# NEVER run on a Domain Controller.
+# Requires WinRM HTTPS access to Domain Controllers on port 5986.
 
-mode: live
+profile: B-core
 
 workspace:
   forests:
     - name: contoso.local
       relation: standalone
+      module: ad-core
       dc: dc01.contoso.local      # target Domain Controller
       credentials: gmsa           # gmsa | env (LEGACYMCP_AD_USER / LEGACYMCP_AD_PASSWORD)
 
-# Server binding — used when starting with --transport streamable-http.
-# Ignored in stdio mode (Claude Desktop default).
+    # Per-forest override: module or snapshot that does not support live
+    # - name: contoso.local-pki
+    #   module: ad-pki
+    #   mode: offline              # override: this forest uses offline
+    #   file: data/contoso-pki.json
+
+    # Historical snapshot loaded alongside a live forest
+    # - name: contoso.local-snapshot
+    #   relation: snapshot
+    #   module: ad-core
+    #   mode: offline
+    #   file: data/contoso-snapshot-20260101.json
+
+# Server binding — Profile B requires host: 0.0.0.0 to be reachable on the network.
+# Restrict access at the firewall level. TLS strongly recommended.
 server:
   host: 0.0.0.0   # bind on all interfaces; restrict to LAN via firewall
   port: 8000

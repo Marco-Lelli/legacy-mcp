@@ -1,26 +1,20 @@
-# LegacyMCP — Profile C: Live Mode (internet-facing)
-# WARNING: Only deploy with a WAF in front. See CLAUDE.md for requirements.
-# Minimum requirements: WAF + TLS + OAuth2/OIDC (Entra ID) + MFA + rate limiting.
+# LegacyMCP — Profile C: Remote / SaaS
+# Default mode: offline. Per-forest mode override: not allowed.
+# JSON files are uploaded via LegacyMCP Portal. No direct AD access from the server.
+# Authentication required. See deployment-profiles.md for deployment requirements.
+# WARNING: Only deploy with a reverse proxy and authentication in front.
 
-mode: live
+profile: C
 
 workspace:
   forests:
     - name: contoso.local
       relation: standalone
-      dc: dc01.contoso.local
-      credentials: gmsa
+      module: ad-core
+      file: data/contoso.json    # JSON uploaded via LegacyMCP Portal
 
-# Authentication (OAuth2 / Entra ID)
-# auth:
-#   provider: entra               # entra | none (never use none on profile C)
-#   tenant_id: YOUR_TENANT_ID
-#   client_id: YOUR_CLIENT_ID
-#   audience:  api://legacymcp
-
-# Server binding — used when starting with --transport streamable-http.
-# Bind to localhost: WAF (Azure App Gateway / nginx) terminates TLS externally.
-# For TLS direct (without WAF), provide ssl_certfile and ssl_keyfile.
+# Server binding — Profile C: bind to localhost, proxy terminates TLS externally.
+# For TLS direct (without reverse proxy), provide ssl_certfile and ssl_keyfile.
 server:
   host: 127.0.0.1
   port: 8080
