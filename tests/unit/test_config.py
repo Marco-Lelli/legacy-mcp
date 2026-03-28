@@ -210,6 +210,46 @@ def test_create_server_tls_attached(tmp_path: Path) -> None:
     assert mcp._tls_keyfile == "certs/server.key"
 
 
+# ---------------------------------------------------------------------------
+# Per-forest mode override tests
+# ---------------------------------------------------------------------------
+
+
+def test_mixed_mode_config_valid(tmp_path: Path) -> None:
+    """Global offline + one forest with mode: live passes config validation."""
+    cfg = {
+        "mode": "offline",
+        "workspace": {
+            "forests": [
+                {"name": "offline-forest", "file": "data/offline.json"},
+                {"name": "live-forest", "mode": "live", "dc": "dc01.live.local"},
+            ]
+        },
+    }
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.dump(cfg))
+    config = load_config(p)
+    forests = config["workspace"]["forests"]
+    assert forests[0].get("mode") is None
+    assert forests[1]["mode"] == "live"
+
+
+def test_forest_invalid_mode_raises(tmp_path: Path) -> None:
+    """Per-forest mode with an invalid value raises ValueError."""
+    cfg = {
+        "mode": "offline",
+        "workspace": {
+            "forests": [
+                {"name": "bad-forest", "mode": "hybrid", "file": "data/x.json"},
+            ]
+        },
+    }
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.dump(cfg))
+    with pytest.raises(ValueError, match="invalid mode"):
+        load_config(p)
+
+
 def test_create_server_no_tls_attributes_are_none(tmp_path: Path) -> None:
     """Without ssl config, _tls_certfile and _tls_keyfile are None."""
     from legacy_mcp.server import create_server

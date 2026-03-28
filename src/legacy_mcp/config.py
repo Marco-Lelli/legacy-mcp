@@ -47,6 +47,15 @@ def _validate(config: dict[str, Any]) -> None:
     if not forests:
         raise ValueError("Workspace must define at least one forest.")
 
+    valid_modes = {"live", "offline"}
+    for f in forests:
+        forest_mode = f.get("mode")
+        if forest_mode is not None and forest_mode not in valid_modes:
+            raise ValueError(
+                f"Forest '{f.get('name', '?')}': invalid mode '{forest_mode}'."
+                " Must be 'live' or 'offline'."
+            )
+
     server_cfg = config.get("server", {})
     ssl_certfile = server_cfg.get("ssl_certfile")
     ssl_keyfile = server_cfg.get("ssl_keyfile")

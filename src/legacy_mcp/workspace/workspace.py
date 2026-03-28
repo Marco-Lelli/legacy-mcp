@@ -28,6 +28,7 @@ class ForestRelation(str, Enum):
 class ForestConfig:
     name: str
     relation: ForestRelation = ForestRelation.STANDALONE
+    mode: WorkspaceMode | None = None  # per-forest override; None = inherit workspace mode
     # Offline Mode
     file: str | None = None
     # Live Mode
@@ -49,6 +50,7 @@ class Workspace:
             ForestConfig(
                 name=f["name"],
                 relation=ForestRelation(f.get("relation", "standalone")),
+                mode=WorkspaceMode(f["mode"]) if f.get("mode") else None,
                 file=f.get("file"),
                 dc=f.get("dc"),
                 credentials=f.get("credentials", "gmsa"),
@@ -61,17 +63,17 @@ class Workspace:
         return workspace
 
     def _init_connectors(self) -> None:
-        if self.mode == WorkspaceMode.OFFLINE:
-            from legacy_mcp.modes.offline import OfflineConnector
-            for forest in self.forests:
+        for forest in self.forests:
+            effective_mode = forest.mode if forest.mode is not None else self.mode
+            if effective_mode == WorkspaceMode.OFFLINE:
+                from legacy_mcp.modes.offline import OfflineConnector
                 if not forest.file:
                     raise ValueError(
                         f"Forest '{forest.name}' requires 'file' in offline mode."
                     )
                 self._connectors[forest.name] = OfflineConnector(forest)
-        else:
-            from legacy_mcp.modes.live import LiveConnector
-            for forest in self.forests:
+            else:
+                from legacy_mcp.modes.live import LiveConnector
                 if not forest.dc:
                     raise ValueError(
                         f"Forest '{forest.name}' requires 'dc' in live mode."
