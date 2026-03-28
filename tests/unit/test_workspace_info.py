@@ -233,3 +233,60 @@ class TestReloadWorkspace:
         assert by_name["contoso.local"]["error"] is None
         assert by_name["ghost.local"]["loaded"] is False
         assert by_name["ghost.local"]["error"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Per-forest mode override — regression test for B-core mixed workspace
+# ---------------------------------------------------------------------------
+
+class TestPerForestModeOverride:
+    """list_workspaces must report the effective per-forest mode, not the global
+    workspace mode.  Regression: previously both forests reported workspace.mode
+    ("live") even when a forest had an explicit mode: offline override."""
+
+    def test_bcore_offline_forest_reports_offline(self) -> None:
+        """Profile B-core (global live) + one forest with mode=offline override:
+        list_workspaces must report mode='offline' for the offline forest."""
+        forests = [
+            ForestConfig(
+                name="house.local-live",
+                dc="PUPP.house.local",
+                # no mode override — inherits global live
+            ),
+            ForestConfig(
+                name="house.local-offline",
+                mode=WorkspaceMode.OFFLINE,   # explicit override
+                file=str(FIXTURE_PATH),
+            ),
+        ]
+        ws = Workspace(mode=WorkspaceMode.LIVE, forests=forests)
+        ws._init_connectors()
+        mcp = _MockMCP()
+        workspace_info_module.register(mcp, ws)
+
+        result = mcp.list_workspaces()
+        by_name = {e["name"]: e for e in result}
+
+        assert by_name["house.local-live"]["mode"] == "live"
+        assert by_name["house.local-offline"]["mode"] == "offline"
+
+    def test_bcore_offline_forest_probed_not_live(self) -> None:
+        """The offline forest override is probed (file checked) not treated as live."""
+        forests = [
+            ForestConfig(
+                name="house.local-offline",
+                mode=WorkspaceMode.OFFLINE,
+                file=str(FIXTURE_PATH),
+            ),
+        ]
+        ws = Workspace(mode=WorkspaceMode.LIVE, forests=forests)
+        ws._init_connectors()
+        mcp = _MockMCP()
+        workspace_info_module.register(mcp, ws)
+
+        result = mcp.list_workspaces()
+        entry = result[0]
+        # Must be probed as offline: loaded=True and no 'dc' key
+        assert entry["mode"] == "offline"
+        assert entry["loaded"] is True
+        assert "dc" not in entry

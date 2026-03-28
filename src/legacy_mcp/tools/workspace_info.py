@@ -43,14 +43,15 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         """
         results = []
         for forest in workspace.forests:
+            effective_mode = forest.mode if forest.mode is not None else workspace.mode
             entry: dict[str, Any] = {
                 "name": forest.name,
-                "mode": workspace.mode.value,
+                "mode": effective_mode.value,
                 "relation": forest.relation.value,
                 "loaded": False,
                 "error": None,
             }
-            if workspace.mode.value == "offline":
+            if effective_mode.value == "offline":
                 # Probe the connector — triggers lazy JSON load and
                 # SQLite import; result is cached for subsequent calls.
                 _probe_forest(workspace, forest, entry)
@@ -75,14 +76,15 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         """
         results = []
         for forest in workspace.forests:
+            effective_mode = forest.mode if forest.mode is not None else workspace.mode
             entry: dict[str, Any] = {
                 "name": forest.name,
-                "mode": workspace.mode.value,
+                "mode": effective_mode.value,
                 "relation": forest.relation.value,
                 "loaded": False,
                 "error": None,
             }
-            if workspace.mode.value == "offline":
+            if effective_mode.value == "offline":
                 try:
                     # Clear the cached engine so the next probe re-reads from disk.
                     conn = workspace.connector(forest.name)
