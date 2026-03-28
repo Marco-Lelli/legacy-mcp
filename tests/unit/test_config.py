@@ -205,6 +205,21 @@ def test_profile_invalid_raises(tmp_path: Path) -> None:
         load_config(p)
 
 
+def test_server_snapshot_path_parsed(tmp_path: Path) -> None:
+    """snapshot_path in server: block is accessible in the loaded config."""
+    cfg = {
+        "profile": "A",
+        "workspace": {
+            "forests": [{"name": "contoso.local", "file": "data/contoso.json"}]
+        },
+        "server": {"snapshot_path": r"C:\LegacyMCP-Data\snapshots"},
+    }
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.dump(cfg))
+    config = load_config(p)
+    assert config["server"]["snapshot_path"] == r"C:\LegacyMCP-Data\snapshots"
+
+
 def test_retrocompat_mode_field_warns(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """Legacy 'mode' field without 'profile' loads with a deprecation warning."""
     import logging

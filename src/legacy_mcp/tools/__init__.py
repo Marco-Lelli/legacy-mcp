@@ -36,6 +36,9 @@ _MODULES = [
 ]
 
 
-def register_all(mcp: "FastMCP", workspace: "Workspace") -> None:
+def register_all(mcp: "FastMCP", workspace: "Workspace", *, snapshot_path: str | None = None) -> None:
     for module in _MODULES:
-        module.register(mcp, workspace)
+        if module is snapshot:
+            module.register(mcp, workspace, snapshot_path=snapshot_path)
+        else:
+            module.register(mcp, workspace)

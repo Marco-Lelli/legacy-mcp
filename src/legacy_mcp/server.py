@@ -99,7 +99,7 @@ def create_server(
         ),
     )
 
-    tools.register_all(mcp, workspace)
+    tools.register_all(mcp, workspace, snapshot_path=server_cfg.get("snapshot_path") or None)
 
     # Attach resolved TLS paths so main() can pass them to uvicorn.
     # FastMCP does not expose ssl_certfile/ssl_keyfile in its settings.

@@ -32,6 +32,7 @@ workspace:
 server:
   host: 0.0.0.0   # bind on all interfaces; restrict to LAN via firewall
   port: 8000
+  snapshot_path: C:\LegacyMCP-Data\snapshots\   # default output dir for create_snapshot
   # TLS — provide both or neither.
   # ssl_certfile: certs/server.crt
   # ssl_keyfile:  certs/server.key

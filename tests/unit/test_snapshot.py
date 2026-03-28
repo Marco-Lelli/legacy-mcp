@@ -490,3 +490,63 @@ class TestLoadSnapshot:
         result = t.load_snapshot(path=str(snap_file), encryption="aes256")
         assert result["status"] == "error"
         assert "aes256" in result["message"]
+
+
+# ---------------------------------------------------------------------------
+# Configurable snapshot_path
+# ---------------------------------------------------------------------------
+
+class TestSnapshotPathConfig:
+    """snapshot_path passed to register() must be used as the default output
+    directory for create_snapshot and as the default scan path for list_snapshots."""
+
+    def test_create_snapshot_uses_configured_path(self, workspace: Workspace, tmp_path: Path) -> None:
+        """create_snapshot without output_path writes to the configured snapshot_path."""
+        snap_dir = tmp_path / "configured_snaps"
+        mcp = _MockMCP()
+        snapshot_module.register(mcp, workspace, snapshot_path=str(snap_dir))
+
+        result = mcp.create_snapshot("contoso.local")
+        assert result["status"] == "success"
+        assert str(snap_dir) in result["path"]
+        assert snap_dir.exists()
+
+    def test_create_snapshot_file_created_in_configured_path(self, workspace: Workspace, tmp_path: Path) -> None:
+        """The snapshot file is actually present inside the configured directory."""
+        snap_dir = tmp_path / "configured_snaps"
+        mcp = _MockMCP()
+        snapshot_module.register(mcp, workspace, snapshot_path=str(snap_dir))
+
+        result = mcp.create_snapshot("contoso.local")
+        assert Path(result["path"]).parent == snap_dir
+
+    def test_list_snapshots_default_uses_configured_path(self, workspace: Workspace, tmp_path: Path) -> None:
+        """list_snapshots() without arguments scans the configured snapshot_path."""
+        snap_dir = tmp_path / "configured_snaps"
+        snap_dir.mkdir()
+        mcp = _MockMCP()
+        snapshot_module.register(mcp, workspace, snapshot_path=str(snap_dir))
+
+        result = mcp.list_snapshots()
+        assert result["path_scanned"] == str(snap_dir)
+
+    def test_output_path_overrides_configured_path(self, workspace: Workspace, tmp_path: Path) -> None:
+        """Explicit output_path takes precedence over the configured snapshot_path."""
+        snap_dir = tmp_path / "configured_snaps"
+        explicit = tmp_path / "explicit" / "snap.json"
+        mcp = _MockMCP()
+        snapshot_module.register(mcp, workspace, snapshot_path=str(snap_dir))
+
+        result = mcp.create_snapshot("contoso.local", output_path=str(explicit))
+        assert result["status"] == "success"
+        assert result["path"] == str(explicit)
+        assert not snap_dir.exists()  # configured dir never created
+
+    def test_default_snapshot_path_used_when_not_configured(self, workspace: Workspace, tmp_path: Path) -> None:
+        """When snapshot_path is None, _DEFAULT_OUTPUT_DIR is used as fallback."""
+        from legacy_mcp.tools.snapshot import _DEFAULT_OUTPUT_DIR
+        mcp = _MockMCP()
+        snapshot_module.register(mcp, workspace)  # no snapshot_path
+
+        result = mcp.list_snapshots()
+        assert result["path_scanned"] == str(_DEFAULT_OUTPUT_DIR)

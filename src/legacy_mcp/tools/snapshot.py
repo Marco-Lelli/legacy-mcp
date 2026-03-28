@@ -21,7 +21,8 @@ _SCALAR_SECTIONS = {"forest", "default_password_policy", "fsmo_roles"}
 _DEFAULT_OUTPUT_DIR = Path(r"C:\LegacyMCP-Data\snapshots")
 
 
-def register(mcp: "FastMCP", workspace: "Workspace") -> None:
+def register(mcp: "FastMCP", workspace: "Workspace", *, snapshot_path: str | None = None) -> None:
+    effective_snapshot_dir = Path(snapshot_path) if snapshot_path else _DEFAULT_OUTPUT_DIR
 
     @mcp.tool()
     def create_snapshot(
@@ -102,7 +103,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             )
             ts_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
             ext = ".json.dpapi" if encryption == "dpapi" else ".json"
-            dest = _DEFAULT_OUTPUT_DIR / f"{safe_name}_{ts_suffix}{ext}"
+            dest = effective_snapshot_dir / f"{safe_name}_{ts_suffix}{ext}"
 
         # ------------------------------------------------------------------
         # Resolve connector.
@@ -228,7 +229,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
 
     @mcp.tool()
     def list_snapshots(
-        path: str = str(_DEFAULT_OUTPUT_DIR),
+        path: str = str(effective_snapshot_dir),
     ) -> dict[str, Any]:
         """List snapshot files available in a directory.
 

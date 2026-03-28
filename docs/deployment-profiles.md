@@ -242,6 +242,7 @@ It is loadable in any offline workspace regardless of the profile that produced 
 | `mode` | global | `live`, `offline` | — | Deprecated — use `profile` |
 | `server.host` | server | any IP / `0.0.0.0` | `127.0.0.1` | Set `0.0.0.0` for Profile B |
 | `server.port` | server | integer | `8000` | — |
+| `server.snapshot_path` | server | directory path | `C:\LegacyMCP-Data\snapshots\` | Default output dir for `create_snapshot` when `output_path` is not specified |
 | `server.ssl_certfile` | server | file path | — | Both or neither with ssl_keyfile |
 | `server.ssl_keyfile` | server | file path | — | Both or neither with ssl_certfile |
 | `forest.module` | per forest | free string | — | Optional metadata, e.g. `ad-core` |
