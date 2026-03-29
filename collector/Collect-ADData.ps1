@@ -296,10 +296,10 @@ $data["groups"] = Invoke-Section "Groups" {
         }
 }
 
-# --- Group Members (flat table — one row per member per group) ---
+# --- Group Members (flat table -- one row per member per group) ---
 # Iterates all AD groups. For each group, emits one row per direct member
 # with identity and object class. Nested group membership is NOT expanded
-# here — use privileged_groups for recursive expansion of sensitive groups.
+# here -- use privileged_groups for recursive expansion of sensitive groups.
 # Groups with no members produce no rows (not an error).
 # MemberEnabled is null for members that are not user or computer objects.
 $data["group_members"] = Invoke-Section "Group Members" {
@@ -371,7 +371,7 @@ $data["gpos"] = Invoke-Section "GPO Inventory" {
 # --- GPO Links ---
 # Collects GPO links from the domain root and every OU.
 # The previous implementation queried only the domain root, which missed
-# all OU-level links — the majority in most environments.
+# all OU-level links -- the majority in most environments.
 # Get-GPInheritance.GpoLinks returns DIRECT links on each target only
 # (not inherited), so the same GPO linked to multiple OUs appears as
 # multiple rows, each with its own Target field.
@@ -544,5 +544,5 @@ try {
     $corruptPath = [System.IO.Path]::ChangeExtension($OutputPath, $null).TrimEnd('.') + "_corrupt.json"
     Rename-Item -LiteralPath $OutputPath -NewName (Split-Path $corruptPath -Leaf)
     Write-Status "Export integrity" "FAIL"
-    throw "JSON validation failed — output renamed to: $(Split-Path $corruptPath -Leaf). Error: $_"
+    throw "JSON validation failed -- output renamed to: $(Split-Path $corruptPath -Leaf). Error: $_"
 }
