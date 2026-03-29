@@ -484,31 +484,54 @@ $data["pki"] = Invoke-Section "PKI / CA Discovery" {
 # Pre-check: if output file already exists, rename it before overwriting.
 # This prevents silent data loss if the collector is run twice on the same path
 # (e.g. append pipelines, automation scripts, repeated manual runs).
-if (Test-Path -LiteralPath $OutputPath) {
-    $timestamp  = Get-Date -Format "yyyyMMdd_HHmmss"
-    $backupPath = [System.IO.Path]::ChangeExtension($OutputPath, $null).TrimEnd('.') `
-                  + "_backup_$timestamp.json"
-    Rename-Item -LiteralPath $OutputPath -NewName (Split-Path $backupPath -Leaf)
-    Write-Status "Export pre-check" "WARN"
-    Write-Warning "Output file already existed — renamed to: $(Split-Path $backupPath -Leaf)"
+try {
+    if (Test-Path -LiteralPath $OutputPath) {
+        $timestamp  = Get-Date -Format "yyyyMMdd_HHmmss"
+        $backupPath = [System.IO.Path]::ChangeExtension($OutputPath, $null).TrimEnd('.') `
+                      + "_backup_$timestamp.json"
+        Rename-Item -LiteralPath $OutputPath -NewName (Split-Path $backupPath -Leaf)
+        Write-Status "Export pre-check" "WARN"
+        Write-Warning "Output file already existed — renamed to: $(Split-Path $backupPath -Leaf)"
+    }
+} catch {
+    Write-Status "Export pre-check" "FAIL"
+    throw "Failed to rename existing output file: $_"
 }
 
-$metadata = [ordered]@{
-    module             = "ad-core"
-    version            = "1.0"
-    forest             = $data["forest"].Name
-    collected_at       = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-    collector_version  = "1.4"
-    collected_by       = "$env:USERDOMAIN\$env:USERNAME"
+# Build metadata and export object.
+try {
+    $forestName = if ($data["forest"] -and $data["forest"].Name) {
+        $data["forest"].Name
+    } else {
+        "unknown"
+    }
+
+    $metadata = [ordered]@{
+        module            = "ad-core"
+        version           = "1.0"
+        forest            = $forestName
+        collected_at      = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        collector_version = "1.4"
+        collected_by      = "$env:USERDOMAIN\$env:USERNAME"
+    }
+
+    $export = [ordered]@{ _metadata = $metadata }
+    foreach ($key in $data.Keys) { $export[$key] = $data[$key] }
+} catch {
+    Write-Status "Build metadata" "FAIL"
+    throw "Failed to build export object: $_"
 }
 
-$export = [ordered]@{ _metadata = $metadata }
-foreach ($key in $data.Keys) { $export[$key] = $data[$key] }
-
-Write-Host ""
-Write-Host "Exporting to $OutputPath ..."
-$jsonContent = $export | ConvertTo-Json -Depth 20 -Compress
-$jsonContent | Out-File -FilePath $OutputPath -Encoding UTF8 -NoClobber
+# Write file.
+try {
+    Write-Host ""
+    Write-Host "Exporting to $OutputPath ..."
+    $jsonContent = $export | ConvertTo-Json -Depth 20 -Compress
+    $jsonContent | Out-File -FilePath $OutputPath -Encoding UTF8 -NoClobber
+} catch {
+    Write-Status "Write file" "FAIL"
+    throw "Failed to write output file '$OutputPath': $_"
+}
 
 # Post-check: verify the written file is valid JSON.
 # Catches serialization errors (e.g. ConvertTo-Json truncation, encoding issues).

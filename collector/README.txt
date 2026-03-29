@@ -426,6 +426,11 @@ VERSION HISTORY
       (UTC ISO 8601), collector_version ("1.4"), collected_by (DOMAIN\username).
     - Format is identical to the _metadata produced by LegacyMCP Live Mode
       snapshots, enabling interoperability between offline and live workflows.
+    - Fixed silent failure in export section: all four export blocks (pre-check,
+      build metadata, write file, post-check) are now wrapped in explicit
+      try/catch with Write-Status reporting and descriptive throw messages.
+      Previously a failure in any block would terminate the script without
+      a clear error message due to $ErrorActionPreference = "Stop".
 
   v1.3 - March 2026
     - Pre-check: if the output file already exists, it is renamed with a
