@@ -491,7 +491,7 @@ try {
                       + "_backup_$timestamp.json"
         Rename-Item -LiteralPath $OutputPath -NewName (Split-Path $backupPath -Leaf)
         Write-Status "Export pre-check" "WARN"
-        Write-Warning "Output file already existed — renamed to: $(Split-Path $backupPath -Leaf)"
+        Write-Warning "Output file already existed - renamed to: $(Split-Path $backupPath -Leaf)"
     }
 } catch {
     Write-Status "Export pre-check" "FAIL"
