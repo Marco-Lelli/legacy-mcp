@@ -1,7 +1,7 @@
 ================================================================================
   Collect-ADData.ps1
   LegacyMCP Offline Collector - Active Directory Data Export
-  Version 1.3 - March 2026
+  Version 1.4 - March 2026
   Marco Lelli, Impresoft 4ward
 ================================================================================
 
@@ -419,6 +419,13 @@ NOTES
 
 VERSION HISTORY
 ---------------
+
+  v1.4 - March 2026
+    - Added _metadata block as the first key of the output JSON. Fields:
+      module ("ad-core"), version ("1.0"), forest (forest name), collected_at
+      (UTC ISO 8601), collector_version ("1.4"), collected_by (DOMAIN\username).
+    - Format is identical to the _metadata produced by LegacyMCP Live Mode
+      snapshots, enabling interoperability between offline and live workflows.
 
   v1.3 - March 2026
     - Pre-check: if the output file already exists, it is renamed with a

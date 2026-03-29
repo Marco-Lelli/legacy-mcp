@@ -10,6 +10,11 @@
     and exports it as a single JSON file for offline analysis.
     Read-only. No changes are made to the AD environment.
 
+    The output JSON includes a _metadata block as the first key, containing
+    module, version, forest, collected_at (UTC ISO 8601), collector_version,
+    and collected_by. This block is required by LegacyMCP for temporal
+    comparisons and audit tracing in Profile B-enterprise.
+
 .PARAMETER OutputPath
     Path to the output JSON file. Default: .\ad-data.json
 
@@ -488,9 +493,21 @@ if (Test-Path -LiteralPath $OutputPath) {
     Write-Warning "Output file already existed — renamed to: $(Split-Path $backupPath -Leaf)"
 }
 
+$metadata = [ordered]@{
+    module             = "ad-core"
+    version            = "1.0"
+    forest             = $data["forest"].Name
+    collected_at       = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    collector_version  = "1.4"
+    collected_by       = "$env:USERDOMAIN\$env:USERNAME"
+}
+
+$export = [ordered]@{ _metadata = $metadata }
+foreach ($key in $data.Keys) { $export[$key] = $data[$key] }
+
 Write-Host ""
 Write-Host "Exporting to $OutputPath ..."
-$jsonContent = $data | ConvertTo-Json -Depth 20 -Compress
+$jsonContent = $export | ConvertTo-Json -Depth 20 -Compress
 $jsonContent | Out-File -FilePath $OutputPath -Encoding UTF8 -NoClobber
 
 # Post-check: verify the written file is valid JSON.
