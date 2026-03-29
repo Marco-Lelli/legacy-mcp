@@ -25,12 +25,15 @@ _EVENT_ERROR = 3000
 
 logger = logging.getLogger(_SOURCE)
 
+_warned = False  # emit the registration warning at most once per process
+
 
 def _write_windows_event(event_id: int, message: str, event_type: str) -> None:
+    global _warned
     if sys.platform != "win32":
         return
     try:
-        import win32evtlog
+        import win32evtlog  # noqa: F401
         import win32evtlogutil
         import win32con
 
@@ -47,9 +50,16 @@ def _write_windows_event(event_id: int, message: str, event_type: str) -> None:
             strings=[message],
             data=None,
         )
-    except Exception:
-        # EventLog not registered or pywin32 unavailable — fall back to stderr
-        pass
+    except Exception as e:
+        if not _warned:
+            _warned = True
+            print(
+                f"[LegacyMCP] WARNING: EventLog write failed -- "
+                f"source 'LegacyMCP' may not be registered. "
+                f"Run scripts/Register-EventLog.ps1 as Administrator. "
+                f"Error: {e}",
+                file=sys.stderr,
+            )
 
 
 def info(message: str) -> None:
