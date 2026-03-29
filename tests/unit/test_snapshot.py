@@ -130,17 +130,27 @@ class TestSnapshotOutputFormat:
     def test_metadata_block_present(self, snapshot_data: dict) -> None:
         assert "_metadata" in snapshot_data
 
-    def test_metadata_generated_by(self, snapshot_data: dict) -> None:
-        assert snapshot_data["_metadata"]["generated_by"] == "LegacyMCP"
+    def test_metadata_module(self, snapshot_data: dict) -> None:
+        assert snapshot_data["_metadata"]["module"] == "ad-core"
 
     def test_metadata_forest(self, snapshot_data: dict) -> None:
         assert snapshot_data["_metadata"]["forest"] == "contoso.local"
 
+    def test_metadata_collected_at_present(self, snapshot_data: dict) -> None:
+        assert "collected_at" in snapshot_data["_metadata"]
+
+    def test_metadata_collected_at_utc_format(self, snapshot_data: dict) -> None:
+        """collected_at must be UTC ISO 8601 ending in Z."""
+        assert snapshot_data["_metadata"]["collected_at"].endswith("Z")
+
+    def test_metadata_collector_version_live(self, snapshot_data: dict) -> None:
+        assert snapshot_data["_metadata"]["collector_version"].startswith("legacymcp-live-")
+
+    def test_metadata_collected_by_present(self, snapshot_data: dict) -> None:
+        assert "collected_by" in snapshot_data["_metadata"]
+
     def test_metadata_encryption(self, snapshot_data: dict) -> None:
         assert snapshot_data["_metadata"]["encryption"] == "none"
-
-    def test_metadata_mode(self, snapshot_data: dict) -> None:
-        assert snapshot_data["_metadata"]["mode"] == "live_snapshot"
 
     def test_metadata_version(self, snapshot_data: dict) -> None:
         assert snapshot_data["_metadata"]["version"] == "1.0"

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
 
 from legacy_mcp.storage.loader import KNOWN_SECTIONS
 from legacy_mcp.eventlog import writer as eventlog
+from legacy_mcp import __version__ as _server_version
 
 # Sections the collector emits as a single dict rather than a list.
 _SCALAR_SECTIONS = {"forest", "default_password_policy", "fsmo_roles"}
@@ -143,13 +145,22 @@ def register(mcp: "FastMCP", workspace: "Workspace", *, snapshot_path: str | Non
 
         sections_collected = len(payload)
 
+        forest_cfg = next((f for f in workspace.forests if f.name == forest_name), None)
+        forest_module = (forest_cfg.module if forest_cfg else None) or "ad-core"
+        collected_by = (
+            os.environ.get("LEGACYMCP_AD_USER")
+            or os.environ.get("USERNAME")
+            or ""
+        )
+
         snapshot: dict[str, Any] = {
             "_metadata": {
-                "generated_by": "LegacyMCP",
+                "module": forest_module,
                 "version": "1.0",
-                "timestamp": timestamp,
                 "forest": forest_name,
-                "mode": "live_snapshot",
+                "collected_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "collector_version": f"legacymcp-live-{_server_version}",
+                "collected_by": collected_by,
                 "encryption": encryption,
                 "sections_collected": sections_collected,
             },
@@ -268,7 +279,7 @@ def register(mcp: "FastMCP", workspace: "Workspace", *, snapshot_path: str | Non
             entries.append({
                 "path": str(f),
                 "forest": meta.get("forest"),
-                "timestamp": meta.get("timestamp"),
+                "timestamp": meta.get("collected_at") or meta.get("timestamp"),
                 "encryption": enc,
                 "sections_collected": meta.get("sections_collected", 0),
                 "size_kb": size_kb,
@@ -355,7 +366,7 @@ def register(mcp: "FastMCP", workspace: "Workspace", *, snapshot_path: str | Non
 
         meta = data.get("_metadata", {})
         forest_name = meta.get("forest") or src.stem.split("_")[0]
-        timestamp_str = meta.get("timestamp", "")
+        timestamp_str = meta.get("collected_at") or meta.get("timestamp", "")
         date_str = timestamp_str[:10] if len(timestamp_str) >= 10 else ""
 
         if forest_alias is None:
