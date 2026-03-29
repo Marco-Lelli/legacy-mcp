@@ -18,6 +18,18 @@ no persistent network access required.
 - **Domain Admin** rights on the target domain, or **Enterprise Admin**
   for a full forest collection
 
+### EventLog registration (Windows only)
+
+Run once as Administrator before starting the server:
+
+```powershell
+.\scripts\Register-EventLog.ps1
+```
+
+This registers the LegacyMCP event source in the Windows Event Log.
+Required for the server to log startup, shutdown, and security events.
+Safe to run multiple times.
+
 ---
 
 ## Installation

@@ -323,13 +323,17 @@ Regole:
 - I DC irraggiungibili generano eventi di Warning
 - Gli errori bloccanti generano eventi di Error
 - Compatibile con SIEM, Microsoft Sentinel, e qualsiasi NPM del cliente
+- **Setup richiesto**: il source "LegacyMCP" deve essere registrato una volta
+  con `scripts/Register-EventLog.ps1` (richiede Administrator).
+  Se non registrato, il server continua a funzionare ma emette un warning
+  a stderr alla prima scrittura EventLog fallita.
 
 ### Performance Counter — Heartbeat
-- LegacyMCP espone un Performance Counter dedicato
-- Contatore heartbeat: parte da zero all'avvio del servizio,
-  si incrementa ogni N secondi
-- Contatore DC: DC contattati con successo vs DC totali nell'ultimo ciclo
-- Monitorabile con PerfMon, SCOM, e qualsiasi tool di monitoring Windows-based
+- **Non ancora implementato** — pianificato per una release futura.
+- Descrizione funzionale: contatore heartbeat incrementale, contatore DC
+  contattati con successo vs totali, monitorabile con PerfMon e SCOM.
+- Implementazione richiede win32pdh (pywin32) e registrazione del counter
+  come prerequisito di installazione (analoga a EventLog).
 
 ---
 
