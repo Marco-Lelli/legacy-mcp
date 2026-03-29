@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-03-29
+
+### Added
+- Collector v1.4: `_metadata` block as first key in every JSON output
+  (module, version, forest, collected_at UTC, collector_version, collected_by)
+- `scripts/Register-EventLog.ps1`: idempotent setup script for Windows
+  EventLog source registration, must be run once as Administrator
+- Visible warning to stderr when EventLog write fails due to unregistered
+  source (shown once per process via `_warned` flag)
+- Performance Counter: planned feature, documented in CLAUDE.md as roadmap
+
+### Fixed
+- Collector export section: added `try/catch` around `_metadata` build and
+  `$export` construction -- previously crashed silently without output file
+- Collector encoding: replaced em dash `—` with `--` in PS1 string literals
+  to avoid PowerShell 5.1 parsing errors on Windows-1252 systems
+- Live Mode snapshot `_metadata`: aligned fields with collector v1.4 format
+  (module, collected_at UTC with Z suffix, collector_version, collected_by)
+  removed legacy fields `generated_by` and `mode`
+
+### Changed
+- 257 unit tests (unchanged)
+- `list_snapshots` and `load_snapshot` now read `collected_at` with fallback
+  to `timestamp` for backward compatibility with pre-v0.1.2 snapshots
+
 ## [0.1.1] - 2026-03-28
 
 ### Added
