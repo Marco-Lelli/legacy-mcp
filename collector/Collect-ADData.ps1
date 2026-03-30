@@ -3,7 +3,7 @@
 
 <#
 .SYNOPSIS
-    LegacyMCP Offline Data Collector - exports AD data to a structured JSON file.
+    LegacyMCP Offline Data Collector v1.5 - exports AD data to a structured JSON file.
 
 .DESCRIPTION
     Collects Active Directory data across all sections covered by LegacyMCP Core
@@ -12,28 +12,57 @@
 
     The output JSON includes a _metadata block as the first key, containing
     module, version, forest, collected_at (UTC ISO 8601), collector_version,
-    and collected_by. This block is required by LegacyMCP for temporal
-    comparisons and audit tracing in Profile B-enterprise.
+    collected_by, and collection_summary (section counts and log file path).
+    This block is required by LegacyMCP for temporal comparisons and audit
+    tracing in Profile B-enterprise.
+
+    A companion .log file is written alongside the JSON with one timestamped
+    entry per section. Use -Verbose to include per-section duration timing.
 
 .PARAMETER OutputPath
-    Path to the output JSON file. Default: .\ad-data.json
+    Path to the output JSON file.
+    Default: .\<forest>_ad-data.json (resolved from the forest name at runtime).
+    The companion log file is written to the same directory with the same stem
+    and a .log extension (e.g. contoso.local_ad-data.log).
+
+    If the file already exists, it is renamed with a timestamp suffix before
+    the new export is written. The original data is never silently overwritten.
+    Use a dedicated folder to keep exports organized by customer and date.
 
 .PARAMETER Server
-    Domain Controller to query. Defaults to the closest DC via auto-discovery.
+    FQDN or NetBIOS name of the Domain Controller to query.
+    If omitted, PowerShell auto-discovers the closest DC for the current
+    user's domain.
 
 .PARAMETER Credential
-    PSCredential to use. If omitted, uses the current user context (gMSA or logged-in user).
+    Credentials to use for all AD queries.
+    If omitted, the script uses the current user context (recommended when
+    running as a domain user with appropriate rights, or as a gMSA).
+
+    To build a credential object interactively:
+        $cred = Get-Credential
+
+.EXAMPLE
+    .\Collect-ADData.ps1
+
+    Exports to .\<forest>_ad-data.json in the current directory.
+    Log written to .\<forest>_ad-data.log.
 
 .EXAMPLE
     .\Collect-ADData.ps1 -OutputPath C:\export\contoso.json
 
 .EXAMPLE
     .\Collect-ADData.ps1 -Server dc01.contoso.local -OutputPath C:\export\contoso.json
+
+.EXAMPLE
+    .\Collect-ADData.ps1 -Verbose
+
+    Adds per-section duration timing to the log file and console.
 #>
 
 [CmdletBinding()]
 param(
-    [string]$OutputPath = ".\ad-data.json",
+    [string]$OutputPath = "",
     [string]$Server,
     [System.Management.Automation.PSCredential]$Credential
 )
@@ -41,28 +70,122 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$script:sectionsOK    = 0
+$script:sectionsWarn  = 0
+$script:sectionsError = 0
+$script:LogPath       = $null
+
 $commonParams = @{}
 if ($Server)     { $commonParams["Server"]     = $Server }
 if ($Credential) { $commonParams["Credential"] = $Credential }
 
-function Write-Status([string]$Section, [string]$State) {
-    $symbol = if ($State -eq "OK") { "[OK]" } elseif ($State -eq "WARN") { "[WARN]" } else { "[FAIL]" }
-    Write-Host "$symbol  $Section"
+# ---------------------------------------------------------------------------
+# Write-CollectorLog
+# Writes a timestamped entry to the log file and to the appropriate console
+# stream. Increments session counters for INFO, WARN, and ERROR levels.
+# VERBOSE entries are written to file only when -Verbose is active.
+# ---------------------------------------------------------------------------
+function Write-CollectorLog {
+    param(
+        [string]$Level,
+        [string]$Section,
+        [string]$Message
+    )
+    $timestamp    = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $levelField   = "[$Level]".PadRight(10)
+    $sectionField = $Section.PadRight(18)
+    $line         = "[$timestamp] $levelField $sectionField $Message"
+
+    if ($script:LogPath) {
+        if ($Level -ne "VERBOSE" -or $VerbosePreference -ne "SilentlyContinue") {
+            $line | Out-File -FilePath $script:LogPath -Encoding UTF8 -Append
+        }
+    }
+
+    switch ($Level) {
+        "INFO" {
+            Write-Host $line -ForegroundColor Green
+            $script:sectionsOK++
+        }
+        "WARN" {
+            Write-Warning $line
+            $script:sectionsWarn++
+        }
+        "ERROR" {
+            Write-Error $line -ErrorAction Continue
+            $script:sectionsError++
+        }
+        "VERBOSE" {
+            Write-Verbose $line
+        }
+    }
 }
 
+# ---------------------------------------------------------------------------
+# Invoke-Section
+# Executes a data-collection scriptblock with timing and error handling.
+# On success: logs VERBOSE with duration, returns the result.
+# On failure: logs ERROR with exception message, returns $null.
+# The caller is responsible for logging INFO with the section count.
+# ---------------------------------------------------------------------------
 function Invoke-Section([string]$Name, [scriptblock]$Block) {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         $result = & $Block
-        Write-Status $Name "OK"
+        $sw.Stop()
+        Write-CollectorLog -Level VERBOSE -Section $Name `
+            -Message "duration: $([math]::Round($sw.Elapsed.TotalSeconds, 1))s"
         return $result
     } catch {
-        Write-Status $Name "WARN"
-        Write-Warning "$Name`: $_"
+        $sw.Stop()
+        Write-CollectorLog -Level ERROR -Section $Name `
+            -Message "exception: $($_.Exception.Message)"
         return $null
     }
 }
 
+# ---------------------------------------------------------------------------
+# Resolve output paths
+# A lightweight Get-ADForest call provides the forest name before collection
+# starts so that OutputPath and LogPath can be resolved for the session header.
+# The full Forest section runs again during collection -- this is acceptable.
+# ---------------------------------------------------------------------------
+$startTime = Get-Date
+
+$forestNameEarly = try { (Get-ADForest @commonParams).Name } catch { "unknown" }
+$dcNameEarly = if ($Server) {
+    $Server
+} else {
+    try { (Get-ADDomainController -Discover @commonParams).HostName } catch { "auto" }
+}
+
+if (-not $OutputPath) {
+    $OutputPath = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) `
+        "$($forestNameEarly)_ad-data.json"
+}
+$OutputPath     = [System.IO.Path]::GetFullPath($OutputPath)
+$script:LogPath = [System.IO.Path]::ChangeExtension($OutputPath, ".log")
+
+# ---------------------------------------------------------------------------
+# Session header
+# ---------------------------------------------------------------------------
+$sep = "=" * 80
+@(
+    $sep,
+    "LegacyMCP Collector v1.5 -- raccolta avviata",
+    "Forest : $forestNameEarly",
+    "DC     : $dcNameEarly",
+    "Output : $OutputPath",
+    "Log    : $($script:LogPath)",
+    "Start  : $(Get-Date $startTime -Format 'yyyy-MM-dd HH:mm:ss')",
+    $sep
+) | Out-File -FilePath $script:LogPath -Encoding UTF8
+
 $data = [ordered]@{}
+
+# ---------------------------------------------------------------------------
+# Data collection
+# ---------------------------------------------------------------------------
 
 # --- Forest ---
 $data["forest"] = Invoke-Section "Forest" {
@@ -70,11 +193,18 @@ $data["forest"] = Invoke-Section "Forest" {
         DomainNamingMaster, Sites, Domains, GlobalCatalogs,
         @{N="SchemaVersion"; E={ (Get-ADObject (Get-ADRootDSE @commonParams).schemaNamingContext -Properties objectVersion @commonParams).objectVersion }}
 }
+if ($null -ne $data["forest"]) {
+    Write-CollectorLog -Level INFO -Section "Forest" -Message "collected: $($data['forest'].Name)"
+}
 
 # --- Optional Features ---
 $data["optional_features"] = Invoke-Section "Optional Features" {
     Get-ADOptionalFeature -Filter * @commonParams | Select-Object Name, EnabledScopes,
         @{N="Enabled"; E={ $_.EnabledScopes.Count -gt 0 }}
+}
+if ($null -ne $data["optional_features"]) {
+    Write-CollectorLog -Level INFO -Section "Optional Features" `
+        -Message "collected: $(@($data['optional_features']).Count)"
 }
 
 # --- Schema Extensions ---
@@ -98,12 +228,19 @@ $data["schema"] = Invoke-Section "Schema Extensions" {
         Select-Object lDAPDisplayName, objectClass, adminDescription, governsID, attributeID |
         Select-Object -First 500
 }
+if ($null -ne $data["schema"]) {
+    Write-CollectorLog -Level INFO -Section "Schema Extensions" `
+        -Message "collected: $(@($data['schema']).Count) custom extensions"
+}
 
 # --- Domains ---
 $data["domains"] = Invoke-Section "Domains" {
     Get-ADDomain @commonParams | Select-Object Name, DNSRoot, DomainMode,
         PDCEmulator, RIDMaster, InfrastructureMaster, ChildDomains,
         @{N="Forest"; E={ $_.Forest }}
+}
+if ($null -ne $data["domains"]) {
+    Write-CollectorLog -Level INFO -Section "Domains" -Message "collected"
 }
 
 # --- Default Password Policy ---
@@ -114,6 +251,9 @@ $data["default_password_policy"] = Invoke-Section "Default Password Policy" {
         ReversibleEncryptionEnabled,
         @{N="Domain"; E={ (Get-ADDomain @commonParams).DNSRoot }}
 }
+if ($null -ne $data["default_password_policy"]) {
+    Write-CollectorLog -Level INFO -Section "Default Password Policy" -Message "collected"
+}
 
 # --- Domain Controllers ---
 $data["dcs"] = Invoke-Section "Domain Controllers" {
@@ -121,6 +261,10 @@ $data["dcs"] = Invoke-Section "Domain Controllers" {
         IPv4Address, Site, OperatingSystem, OperatingSystemVersion,
         IsGlobalCatalog, IsReadOnly, Enabled,
         @{N="Reachable"; E={ Test-Connection $_.HostName -Count 1 -Quiet }}
+}
+if ($null -ne $data["dcs"]) {
+    Write-CollectorLog -Level INFO -Section "Domain Controllers" `
+        -Message "collected: $(@($data['dcs']).Count)"
 }
 
 # --- FSMO Roles ---
@@ -134,6 +278,9 @@ $data["fsmo_roles"] = Invoke-Section "FSMO Roles" {
         RIDMaster              = $domain.RIDMaster
         InfrastructureMaster   = $domain.InfrastructureMaster
     }
+}
+if ($null -ne $data["fsmo_roles"]) {
+    Write-CollectorLog -Level INFO -Section "FSMO Roles" -Message "collected"
 }
 
 # --- EventLog Config ---
@@ -155,6 +302,10 @@ $data["eventlog_config"] = Invoke-Section "EventLog Config" {
         }
     }
     $results
+}
+if ($null -ne $data["eventlog_config"]) {
+    Write-CollectorLog -Level INFO -Section "EventLog Config" `
+        -Message "collected: $(@($data['eventlog_config']).Count) entries"
 }
 
 # --- NTP Config (per DC from registry) ---
@@ -190,6 +341,10 @@ $data["ntp_config"] = Invoke-Section "NTP Config" {
         }
     }
 }
+if ($null -ne $data["ntp_config"]) {
+    Write-CollectorLog -Level INFO -Section "NTP Config" `
+        -Message "collected: $(@($data['ntp_config']).Count) DCs"
+}
 
 # --- SYSVOL ---
 $data["sysvol"] = Invoke-Section "SYSVOL" {
@@ -208,11 +363,19 @@ $data["sysvol"] = Invoke-Section "SYSVOL" {
         }
     }
 }
+if ($null -ne $data["sysvol"]) {
+    Write-CollectorLog -Level INFO -Section "SYSVOL" `
+        -Message "collected: $(@($data['sysvol']).Count) DCs"
+}
 
 # --- Sites ---
 $data["sites"] = Invoke-Section "Sites" {
     Get-ADReplicationSite -Filter * @commonParams | Select-Object Name, Description,
         @{N="Subnets"; E={ (Get-ADReplicationSubnet -Filter "Site -eq '$($_.DistinguishedName)'" @commonParams).Name -join ", " }}
+}
+if ($null -ne $data["sites"]) {
+    Write-CollectorLog -Level INFO -Section "Sites" `
+        -Message "collected: $(@($data['sites']).Count)"
 }
 
 # --- Site Links ---
@@ -220,6 +383,10 @@ $data["site_links"] = Invoke-Section "Site Links" {
     Get-ADReplicationSiteLink -Filter * @commonParams | Select-Object Name, Cost,
         ReplicationFrequencyInMinutes, SitesIncluded,
         @{N="Transport"; E={ $_.InterSiteTransportProtocol }}
+}
+if ($null -ne $data["site_links"]) {
+    Write-CollectorLog -Level INFO -Section "Site Links" `
+        -Message "collected: $(@($data['site_links']).Count)"
 }
 
 # --- Users ---
@@ -249,6 +416,13 @@ $data["users"] = Invoke-Section "Users" {
             }
         }
 }
+if ($null -ne $data["users"]) {
+    $usersArr = @($data["users"])
+    $enabled  = @($usersArr | Where-Object { $_.Enabled -eq $true }).Count
+    $disabled = $usersArr.Count - $enabled
+    Write-CollectorLog -Level INFO -Section "Users" `
+        -Message "collected: $($usersArr.Count)  (enabled: $enabled, disabled: $disabled)"
+}
 
 # --- Privileged Accounts ---
 $data["privileged_accounts"] = Invoke-Section "Privileged Accounts" {
@@ -272,6 +446,10 @@ $data["privileged_accounts"] = Invoke-Section "Privileged Accounts" {
         } catch { }
     }
 }
+if ($null -ne $data["privileged_accounts"]) {
+    Write-CollectorLog -Level INFO -Section "Privileged Accounts" `
+        -Message "collected: $(@($data['privileged_accounts']).Count)"
+}
 
 # --- Groups ---
 $data["groups"] = Invoke-Section "Groups" {
@@ -294,6 +472,10 @@ $data["groups"] = Invoke-Section "Groups" {
                 AdminCount        = $_.adminCount
             }
         }
+}
+if ($null -ne $data["groups"]) {
+    Write-CollectorLog -Level INFO -Section "Groups" `
+        -Message "collected: $(@($data['groups']).Count)"
 }
 
 # --- Group Members (flat table -- one row per member per group) ---
@@ -333,6 +515,10 @@ $data["group_members"] = Invoke-Section "Group Members" {
         } catch { }
     }
 }
+if ($null -ne $data["group_members"]) {
+    Write-CollectorLog -Level INFO -Section "Group Members" `
+        -Message "collected: $(@($data['group_members']).Count) entries"
+}
 
 # --- Privileged Groups (with members) ---
 $data["privileged_groups"] = Invoke-Section "Privileged Groups" {
@@ -348,6 +534,10 @@ $data["privileged_groups"] = Invoke-Section "Privileged Groups" {
         }
     }
 }
+if ($null -ne $data["privileged_groups"]) {
+    Write-CollectorLog -Level INFO -Section "Privileged Groups" `
+        -Message "collected: $(@($data['privileged_groups']).Count) groups"
+}
 
 # --- OUs ---
 $data["ous"] = Invoke-Section "OUs" {
@@ -355,6 +545,10 @@ $data["ous"] = Invoke-Section "OUs" {
         Select-Object Name, DistinguishedName,
             @{N="BlockedInheritance"; E={ ($_.gPOptions -band 1) -eq 1 }},
             @{N="LinkedGPOs";         E={ $_.gpLink }}
+}
+if ($null -ne $data["ous"]) {
+    Write-CollectorLog -Level INFO -Section "OUs" `
+        -Message "collected: $(@($data['ous']).Count)"
 }
 
 # --- GPO Inventory ---
@@ -366,6 +560,10 @@ $data["gpos"] = Invoke-Section "GPO Inventory" {
         Write-Warning "GPO cmdlets not available - skipping GPO inventory"
         @()
     }
+}
+if ($null -ne $data["gpos"]) {
+    Write-CollectorLog -Level INFO -Section "GPO Inventory" `
+        -Message "collected: $(@($data['gpos']).Count)"
 }
 
 # --- GPO Links ---
@@ -391,12 +589,20 @@ $data["gpo_links"] = Invoke-Section "GPO Links" {
         }
     } catch { @() }
 }
+if ($null -ne $data["gpo_links"]) {
+    Write-CollectorLog -Level INFO -Section "GPO Links" `
+        -Message "collected: $(@($data['gpo_links']).Count)"
+}
 
-# --- Blocked Inheritance OUs ---
+# --- Blocked Inheritance ---
 $data["blocked_inheritance"] = Invoke-Section "Blocked Inheritance" {
     Get-ADOrganizationalUnit -Filter * -Properties gPOptions @commonParams |
         Where-Object { ($_.gPOptions -band 1) -eq 1 } |
         Select-Object Name, DistinguishedName
+}
+if ($null -ne $data["blocked_inheritance"]) {
+    Write-CollectorLog -Level INFO -Section "Blocked Inheritance" `
+        -Message "collected: $(@($data['blocked_inheritance']).Count)"
 }
 
 # --- Trusts ---
@@ -404,6 +610,10 @@ $data["trusts"] = Invoke-Section "Trusts" {
     Get-ADTrust -Filter * @commonParams | Select-Object Name, Direction, TrustType,
         TrustAttributes, SelectiveAuthentication, SIDFilteringForestAware,
         SIDFilteringQuarantined, DisallowTransivity, DistinguishedName
+}
+if ($null -ne $data["trusts"]) {
+    Write-CollectorLog -Level INFO -Section "Trusts" `
+        -Message "collected: $(@($data['trusts']).Count)"
 }
 
 # --- Fine-Grained Password Policies ---
@@ -414,6 +624,10 @@ $data["fgpp"] = Invoke-Section "FGPP" {
         LockoutObservationWindow, ReversibleEncryptionEnabled,
         @{N="AppliesTo"; E={ ($_ | Get-ADFineGrainedPasswordPolicySubject @commonParams).Name -join ", " }}
 }
+if ($null -ne $data["fgpp"]) {
+    Write-CollectorLog -Level INFO -Section "FGPP" `
+        -Message "collected: $(@($data['fgpp']).Count)"
+}
 
 # --- DNS ---
 $data["dns"] = Invoke-Section "DNS Zones" {
@@ -423,6 +637,10 @@ $data["dns"] = Invoke-Section "DNS Zones" {
         Get-DnsServerZone -ComputerName $dc | Select-Object ZoneName, ZoneType,
             IsDsIntegrated, ReplicationScope, IsReverseLookupZone, IsAutoCreated
     } catch { @() }
+}
+if ($null -ne $data["dns"]) {
+    Write-CollectorLog -Level INFO -Section "DNS Zones" `
+        -Message "collected: $(@($data['dns']).Count)"
 }
 
 # --- DNS Forwarders ---
@@ -438,6 +656,10 @@ $data["dns_forwarders"] = Invoke-Section "DNS Forwarders" {
             }
         }
     } catch { @() }
+}
+if ($null -ne $data["dns_forwarders"]) {
+    Write-CollectorLog -Level INFO -Section "DNS Forwarders" `
+        -Message "collected: $(@($data['dns_forwarders']).Count) DCs"
 }
 
 # --- Computers ---
@@ -468,6 +690,13 @@ $data["computers"] = Invoke-Section "Computers" {
             }
         }
 }
+if ($null -ne $data["computers"]) {
+    $computersArr   = @($data["computers"])
+    $enabledComp    = @($computersArr | Where-Object { $_.Enabled -eq $true }).Count
+    $disabledComp   = $computersArr.Count - $enabledComp
+    Write-CollectorLog -Level INFO -Section "Computers" `
+        -Message "collected: $($computersArr.Count)  (enabled: $enabledComp, disabled: $disabledComp)"
+}
 
 # --- PKI / CA Discovery ---
 $data["pki"] = Invoke-Section "PKI / CA Discovery" {
@@ -478,8 +707,14 @@ $data["pki"] = Invoke-Section "PKI / CA Discovery" {
             Select-Object Name, DistinguishedName, ObjectClass
     } catch { @() }
 }
+if ($null -ne $data["pki"]) {
+    Write-CollectorLog -Level INFO -Section "PKI / CA Discovery" `
+        -Message "collected: $(@($data['pki']).Count) CAs"
+}
 
-# --- Export ---
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
 
 # Pre-check: if output file already exists, rename it before overwriting.
 # This prevents silent data loss if the collector is run twice on the same path
@@ -490,11 +725,11 @@ try {
         $backupPath = [System.IO.Path]::ChangeExtension($OutputPath, $null).TrimEnd('.') `
                       + "_backup_$timestamp.json"
         Rename-Item -LiteralPath $OutputPath -NewName (Split-Path $backupPath -Leaf)
-        Write-Status "Export pre-check" "WARN"
+        Write-Host "[WARN] Output file already existed - renamed to: $(Split-Path $backupPath -Leaf)" `
+            -ForegroundColor Yellow
         Write-Warning "Output file already existed - renamed to: $(Split-Path $backupPath -Leaf)"
     }
 } catch {
-    Write-Status "Export pre-check" "FAIL"
     throw "Failed to rename existing output file: $_"
 }
 
@@ -503,22 +738,27 @@ try {
     $forestName = if ($data["forest"] -and $data["forest"].Name) {
         $data["forest"].Name
     } else {
-        "unknown"
+        $forestNameEarly
     }
 
     $metadata = [ordered]@{
-        module            = "ad-core"
-        version           = "1.0"
-        forest            = $forestName
-        collected_at      = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        collector_version = "1.4"
-        collected_by      = "$env:USERDOMAIN\$env:USERNAME"
+        module             = "ad-core"
+        version            = "1.0"
+        forest             = $forestName
+        collected_at       = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        collector_version  = "1.5"
+        collected_by       = "$env:USERDOMAIN\$env:USERNAME"
+        collection_summary = [ordered]@{
+            sections_ok    = $script:sectionsOK
+            sections_warn  = $script:sectionsWarn
+            sections_error = $script:sectionsError
+            log_file       = $script:LogPath
+        }
     }
 
     $export = [ordered]@{ _metadata = $metadata }
     foreach ($key in $data.Keys) { $export[$key] = $data[$key] }
 } catch {
-    Write-Status "Build metadata" "FAIL"
     throw "Failed to build export object: $_"
 }
 
@@ -529,7 +769,6 @@ try {
     $jsonContent = $export | ConvertTo-Json -Depth 20 -Compress
     $jsonContent | Out-File -FilePath $OutputPath -Encoding UTF8 -NoClobber
 } catch {
-    Write-Status "Write file" "FAIL"
     throw "Failed to write output file '$OutputPath': $_"
 }
 
@@ -539,10 +778,27 @@ try {
     $written = Get-Content -LiteralPath $OutputPath -Raw -Encoding UTF8
     $null = $written | ConvertFrom-Json
     Write-Host "Done. File size: $([Math]::Round((Get-Item $OutputPath).Length / 1KB, 1)) KB"
-    Write-Status "Export integrity" "OK"
 } catch {
     $corruptPath = [System.IO.Path]::ChangeExtension($OutputPath, $null).TrimEnd('.') + "_corrupt.json"
     Rename-Item -LiteralPath $OutputPath -NewName (Split-Path $corruptPath -Leaf)
-    Write-Status "Export integrity" "FAIL"
     throw "JSON validation failed -- output renamed to: $(Split-Path $corruptPath -Leaf). Error: $_"
 }
+
+# ---------------------------------------------------------------------------
+# Session footer
+# ---------------------------------------------------------------------------
+$endTime       = Get-Date
+$duration      = New-TimeSpan -Start $startTime -End $endTime
+$durationStr   = "$([int]$duration.TotalMinutes)m $($duration.Seconds)s"
+$totalSections = $script:sectionsOK + $script:sectionsWarn + $script:sectionsError
+
+@(
+    "",
+    $sep,
+    "Raccolta completata -- $forestName",
+    "Sezioni OK : $($script:sectionsOK)/$totalSections",
+    "Warnings   : $($script:sectionsWarn)",
+    "Errors     : $($script:sectionsError)",
+    "End        : $(Get-Date $endTime -Format 'yyyy-MM-dd HH:mm:ss')  (duration: $durationStr)",
+    $sep
+) | Out-File -FilePath $script:LogPath -Encoding UTF8 -Append

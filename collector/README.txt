@@ -1,7 +1,7 @@
 ================================================================================
   Collect-ADData.ps1
   LegacyMCP Offline Collector - Active Directory Data Export
-  Version 1.4 - March 2026
+  Version 1.5 - March 2026
   Marco Lelli, Impresoft 4ward
 ================================================================================
 
@@ -109,11 +109,20 @@ PARAMETERS
 
   -OutputPath <string>
       Path to the output JSON file.
-      Default: .\ad-data.json
+      Default: .\<forest>_ad-data.json  (e.g. contoso.local_ad-data.json)
+      The forest name is resolved at runtime from the target environment.
+
+      BREAKING CHANGE from v1.4: the default filename is now <forest>_ad-data.json
+      instead of ad-data.json. Callers using -OutputPath explicitly are not affected.
+
+      A companion log file is written to the same directory with the same stem
+      and a .log extension (e.g. contoso.local_ad-data.log). The log contains
+      one timestamped entry per section with counts, and per-section duration
+      timings when -Verbose is active.
 
       If the file already exists, it is renamed with a timestamp suffix
-      (e.g. ad-data_backup_20260329_143022.json) before the new export
-      is written. The original data is never silently overwritten.
+      (e.g. contoso.local_ad-data_backup_20260329_143022.json) before the new
+      export is written. The original data is never silently overwritten.
       Use a dedicated folder to keep exports organized by customer and date.
 
   -Server <string>
@@ -141,8 +150,18 @@ EXAMPLES
 
       .\Collect-ADData.ps1
 
-      Runs against the current user's domain. Output saved to .\ad-data.json
-      in the current directory.
+      Runs against the current user's domain. Output saved to
+      .\<forest>_ad-data.json (e.g. contoso.local_ad-data.json).
+      Log saved alongside as contoso.local_ad-data.log.
+
+
+  --- Basic usage with verbose timing ---
+
+      .\Collect-ADData.ps1 -Verbose
+
+      Same as above, but adds per-section duration timings to both the console
+      and the log file. Useful for diagnosing slow sections (e.g. group_members
+      in large environments).
 
 
   --- Specify output path ---
@@ -421,6 +440,26 @@ NOTES
 
 VERSION HISTORY
 ---------------
+
+  v1.5 - March 2026
+    - BREAKING CHANGE: default output filename is now <forest>_ad-data.json
+      (e.g. contoso.local_ad-data.json) instead of ad-data.json. Callers
+      using -OutputPath explicitly are not affected.
+    - Added companion log file: written alongside the JSON with the same stem
+      and a .log extension. Contains one timestamped entry per section with
+      counts. With -Verbose, includes per-section duration timings.
+    - Added Write-CollectorLog function: uniform logging to file and console
+      with levels INFO (green), WARN, ERROR (non-terminating), VERBOSE.
+      Increments session counters $script:sectionsOK, sectionsWarn,
+      sectionsError.
+    - Added session header and footer to the log file: forest name, DC,
+      output and log paths, start/end timestamps, duration, and section
+      summary (OK/Warn/Error counts).
+    - Added collection_summary to _metadata in the output JSON: fields
+      sections_ok, sections_warn, sections_error, log_file. Allows
+      LegacyMCP to surface collection completeness in tool responses.
+    - Per-section duration measurement via System.Diagnostics.Stopwatch.
+    - Confirmed [CmdletBinding()] present -- -Verbose works as a native switch.
 
   v1.4 - March 2026
     - Added _metadata block as the first key of the output JSON. Fields:

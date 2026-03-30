@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2026-03-30
+
+### Added
+- Collector v1.5: file logging with append mode and session header/footer
+- Collector v1.5: native `-Verbose` support for detailed per-section output
+- Collector v1.5: `_metadata.collection_summary` block with sections_ok/warn/error counts and log_file path
+
+### Changed
+- **BREAKING**: collector default output filename changed from `ad-data.json`
+  to `<domain>_ad-data.json` (e.g. `formula.it_ad-data.json`).
+  Users passing `-OutputPath` explicitly are not affected.
+- Log file derived automatically from output path: same stem, `.log` extension,
+  same directory as the script.
+
+### Fixed
+- Collector log and JSON files now always created in the script directory,
+  not in the user profile when PowerShell working directory differs from
+  script location.
+
 ## [0.1.2] - 2026-03-29
 
 ### Added
