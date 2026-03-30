@@ -111,7 +111,9 @@ PARAMETERS
       Path to the output JSON file.
       Default: .\ad-data.json
 
-      The file is overwritten if it already exists.
+      If the file already exists, it is renamed with a timestamp suffix
+      (e.g. ad-data_backup_20260329_143022.json) before the new export
+      is written. The original data is never silently overwritten.
       Use a dedicated folder to keep exports organized by customer and date.
 
   -Server <string>
