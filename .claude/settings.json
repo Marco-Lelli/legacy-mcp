@@ -1,5 +1,15 @@
 {
   "hooks": {
-    "pre-commit": "python -m pytest --tb=short -q && git status"
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command' | grep -q 'git commit' && { python -m pytest --tb=short -q && git status; }"
+          }
+        ]
+      }
+    ]
   }
 }
