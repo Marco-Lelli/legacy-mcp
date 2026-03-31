@@ -18,18 +18,6 @@ no persistent network access required.
 - **Domain Admin** rights on the target domain, or **Enterprise Admin**
   for a full forest collection
 
-### EventLog registration (Windows only)
-
-Run once as Administrator before starting the server:
-
-```powershell
-.\scripts\Register-EventLog.ps1
-```
-
-This registers the LegacyMCP event source in the Windows Event Log.
-Required for the server to log startup, shutdown, and security events.
-Safe to run multiple times.
-
 ---
 
 ## Installation
@@ -50,6 +38,20 @@ Verify the entry point works:
 ```bash
 legacy-mcp --help
 ```
+
+---
+
+### Optional: register Windows Event Log
+
+Run once as Administrator before starting the server:
+
+```powershell
+.\scripts\Register-EventLog.ps1
+```
+
+This registers the LegacyMCP event source in the Windows Event Log.
+Required for the server to log startup, shutdown, and security events.
+Safe to run multiple times.
 
 ---
 
@@ -98,23 +100,17 @@ without running the collector.
 
 **1. Copy the example config:**
 
-```bash
-cp config/config.example-offline.yaml config/config.yaml
+**Windows:**
+```
+copy config\config.example-A.yaml config\config.yaml
 ```
 
-The example already points to the contoso fixture. If the file does not
-exist, create `config/config.yaml` with this content:
-
-```yaml
-mode: offline
-workspace:
-  forests:
-    - name: contoso.local
-      relation: standalone
-      file: C:/path/to/legacy-mcp/tests/fixtures/contoso-sample.json
+**macOS / Linux:**
+```
+cp config/config.example-A.yaml config/config.yaml
 ```
 
-Use forward slashes in the file path even on Windows.
+> When editing `config.yaml`, use forward slashes in file paths even on Windows.
 
 **2. Restart Claude Desktop** to pick up the new config.
 

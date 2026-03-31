@@ -10,7 +10,8 @@ workspace:
     - name: contoso.local
       relation: standalone        # standalone | source | dest | trusted
       module: ad-core             # optional: identifies the data module
-      file: data/contoso.json     # path to collector output JSON
+      # Quick start: points to the included sample fixture
+      file: tests/fixtures/contoso-sample.json     # path to collector output JSON
 
 # Server binding: Profile A runs locally — default 127.0.0.1 is correct.
 # For Profile B (shared LAN), set host: 0.0.0.0 to bind on all interfaces.
