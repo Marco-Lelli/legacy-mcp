@@ -156,7 +156,7 @@ Steps:
   4. Verify the SHA256 hash before use (see below).
 
 SHA256 hash of nssm.exe (nssm-2.24, win64):
-  *** PLACEHOLDER -- replace with actual hash after download ***
+  F689EE9AF94B00E9E3F0BB072B34CAAF207F32DCB4F5782FC9CA351DF9A06C97
   Expected: <sha256-of-nssm-2.24-win64-nssm.exe>
 
   Verify with PowerShell:
