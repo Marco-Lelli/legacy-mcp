@@ -6,9 +6,10 @@ LegacyMCP handles sensitive Active Directory data and connects to critical
 infrastructure. The collector exports full AD inventories — user accounts,
 group memberships, password policies, trust relationships, PKI topology —
 and the MCP server exposes that data to an AI model via tool calls.
-This document describes the security testing plan for the project: what
-is tested, how, and with what result. Results will be added as testing is
-performed against stable releases.
+This document describes the public security testing plan for the project:
+what is tested, at a high level, and how findings will be handled.
+Detailed operational procedures, test platforms, and internal runbooks are
+kept outside the public repository.
 
 ---
 
@@ -56,6 +57,20 @@ performed against stable releases.
 - **Profile C — internet-exposed endpoint:** WAF rule coverage, OAuth2/OIDC
   token validation, MFA enforcement, IP allowlist effectiveness, rate
   limiting under external load
+
+---
+
+## Testing Approach
+
+Security testing is performed progressively as the platform matures,
+starting from local and offline scenarios, then extending to live internal
+deployments, and finally to internet-exposed enterprise scenarios.
+Detailed test cases, tooling choices, execution sequences, and internal test
+infrastructure are maintained in a private runbook outside the public repo.
+
+Testing covers validation, robustness, authentication, transport security,
+error handling, and safe degradation across the supported deployment
+profiles.
 
 ---
 

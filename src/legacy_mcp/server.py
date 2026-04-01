@@ -9,6 +9,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from legacy_mcp.config import load_config
+from legacy_mcp.config_registry import read_registry_config
 from legacy_mcp.workspace.workspace import Workspace
 from legacy_mcp import tools
 
@@ -139,12 +140,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="LegacyMCP - AD MCP Server")
     parser.add_argument(
         "--config",
-        default="config/config.yaml",
+        default=None,
         help="Path to configuration file (default: config/config.yaml)",
     )
     parser.add_argument(
         "--transport",
-        default="stdio",
+        default=None,
         choices=["stdio", "streamable-http", "sse"],
         help="Transport protocol (default: stdio)",
     )
@@ -161,8 +162,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Priority: CLI > Windows registry > built-in default.
+    registry = read_registry_config()
+
+    config_path = args.config or registry.get("config_path") or "config/config.yaml"
+    transport = args.transport or registry.get("transport") or "stdio"
+    host = args.host or None          # registry host not supported; kept in config.yaml
+    port = args.port or registry.get("port") or None
+
     try:
-        mcp = create_server(args.config, host=args.host, port=args.port)
+        mcp = create_server(config_path, host=host, port=port)
     except (FileNotFoundError, ValueError) as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         sys.exit(1)
@@ -170,10 +179,10 @@ def main() -> None:
     ssl_certfile: str | None = getattr(mcp, "_tls_certfile", None)
     ssl_keyfile: str | None = getattr(mcp, "_tls_keyfile", None)
 
-    if args.transport == "streamable-http" and ssl_certfile:
+    if transport == "streamable-http" and ssl_certfile:
         _run_with_tls(mcp, ssl_certfile, ssl_keyfile)
     else:
-        mcp.run(transport=args.transport)
+        mcp.run(transport=transport)
 
 
 if __name__ == "__main__":
