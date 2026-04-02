@@ -41,3 +41,7 @@ CLAUDE-ENTERPRISE.md
 # OS
 Thumbs.db
 desktop.ini
+
+# Logs
+logs/
+*.log
