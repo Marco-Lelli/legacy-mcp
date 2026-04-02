@@ -9,18 +9,19 @@
     EventLog source, and (for Profile B) installs the NSSM Windows service.
     Finishes with a self-check via Config-LegacyMCP.ps1 -Validate.
 
-.PARAMETER Profile
+.PARAMETER DeployProfile
     A  -- local stdio mode (consultant's machine, no service)
     B  -- shared LAN mode (Windows service via NSSM, requires Administrator)
 
 .EXAMPLE
-    .\Install-LegacyMCP.ps1 -Profile A
-    .\Install-LegacyMCP.ps1 -Profile B
+    .\Install-LegacyMCP.ps1 -DeployProfile A
+    .\Install-LegacyMCP.ps1 -DeployProfile B -ServiceAccount CONTOSO\legacymcp$
 #>
 
 param(
     [ValidateSet('A','B')]
-    [string]$Profile = 'A'
+    [string]$DeployProfile = 'A',
+    [string]$ServiceAccount = ''
 )
 
 Set-StrictMode -Version Latest
@@ -101,7 +102,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 }
 
 # Administrator check for Profile B
-if ($Profile -eq 'B') {
+if ($DeployProfile -eq 'B') {
     $currentPrincipal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
     $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $isAdmin) {
@@ -112,8 +113,16 @@ if ($Profile -eq 'B') {
     }
 }
 
+# ServiceAccount required for Profile B
+if ($DeployProfile -eq 'B' -and -not $ServiceAccount) {
+    Write-Fail '-ServiceAccount is required for Profile B. LocalSystem has no Kerberos identity -- Live Mode would not work.'
+    Write-Fail 'Example (gMSA):    .\Install-LegacyMCP.ps1 -Profile B -ServiceAccount CONTOSO\legacymcp$'
+    Write-Fail 'Example (user):    .\Install-LegacyMCP.ps1 -Profile B -ServiceAccount CONTOSO\svc-legacymcp'
+    $preflightFail = $true
+}
+
 # NSSM available for Profile B
-if ($Profile -eq 'B') {
+if ($DeployProfile -eq 'B') {
     if (-not (Test-Path $NssmExe)) {
         Write-Fail "nssm.exe not found at: $NssmExe"
         Write-Fail 'Download nssm-2.24.zip from https://nssm.cc and place nssm.exe in installer\tools\'
@@ -150,7 +159,7 @@ Write-Info 'Installing LegacyMCP package (pip install -e .) ...'
 Write-OK 'Package installed.'
 
 # Copy config template if config.yaml does not exist
-$ConfigExampleKey = if ($Profile -eq 'B') { 'config.example-B.yaml' } else { 'config.example-A.yaml' }
+$ConfigExampleKey = if ($DeployProfile -eq 'B') { 'config.example-B.yaml' } else { 'config.example-A.yaml' }
 $ConfigExample    = Join-Path $InstallPath "config\$ConfigExampleKey"
 
 if (-not (Test-Path $ConfigPath)) {
@@ -182,12 +191,12 @@ if (-not (Test-Path $RegRoot)) {
     New-Item -Path $RegRoot -Force | Out-Null
 }
 
-$transport = if ($Profile -eq 'B') { 'streamable-http' } else { 'stdio' }
+$transport = if ($DeployProfile -eq 'B') { 'streamable-http' } else { 'stdio' }
 
 Set-ItemProperty -Path $RegRoot -Name 'InstallPath' -Value $InstallPath -Type String
 Set-ItemProperty -Path $RegRoot -Name 'ConfigPath'  -Value $ConfigPath  -Type String
 Set-ItemProperty -Path $RegRoot -Name 'LogPath'     -Value $LogPath     -Type String
-Set-ItemProperty -Path $RegRoot -Name 'Profile'     -Value $Profile     -Type String
+Set-ItemProperty -Path $RegRoot -Name 'Profile'     -Value $DeployProfile     -Type String
 Set-ItemProperty -Path $RegRoot -Name 'Transport'   -Value $transport   -Type String
 Set-ItemProperty -Path $RegRoot -Name 'Port'        -Value 8000         -Type DWord
 
@@ -206,7 +215,7 @@ $RegService = 'HKLM:\SOFTWARE\LegacyMCP\Service'
 if (-not (Test-Path $RegService)) {
     New-Item -Path $RegService -Force | Out-Null
 }
-$autoStart = if ($Profile -eq 'B') { 1 } else { 0 }
+$autoStart = if ($DeployProfile -eq 'B') { 1 } else { 0 }
 Set-ItemProperty -Path $RegService -Name 'AutoStart' -Value $autoStart -Type DWord
 
 Write-OK 'Registry written.'
@@ -226,7 +235,7 @@ if (Test-Path $RegisterEventLog) {
 # ---------------------------------------------------------------------------
 # Phase 5 -- NSSM service (Profile B only)
 # ---------------------------------------------------------------------------
-if ($Profile -eq 'B') {
+if ($DeployProfile -eq 'B') {
     Write-Step 'Phase 5 -- Windows Service (NSSM)'
 
     $svcPython = $VenvPython
@@ -246,6 +255,18 @@ if ($Profile -eq 'B') {
     & $NssmExe set      LegacyMCP AppStderr (Join-Path $LogPath 'legacymcp-error.log')
 
     Write-OK 'LegacyMCP service installed via NSSM.'
+
+    # Configure service account
+    if ($ServiceAccount.EndsWith('$')) {
+        # gMSA -- empty password
+        & $NssmExe set LegacyMCP ObjectName $ServiceAccount ""
+        Write-OK "Service account set to gMSA: $ServiceAccount"
+    } else {
+        $svcPassword = Read-Host "Password for $ServiceAccount"
+        & $NssmExe set LegacyMCP ObjectName $ServiceAccount $svcPassword
+        Write-OK "Service account set to: $ServiceAccount"
+    }
+
     Write-Info "Start with: Start-Service LegacyMCP"
     Write-Info "Status:     Get-Service LegacyMCP"
 }
@@ -255,7 +276,7 @@ if ($Profile -eq 'B') {
 # ---------------------------------------------------------------------------
 Write-Step 'Phase 6 -- Next steps'
 
-if ($Profile -eq 'A') {
+if ($DeployProfile -eq 'A') {
     $escapedPython = $VenvPython -replace '\\', '\\'
     Write-Host ''
     Write-Host '=========================================='

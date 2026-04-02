@@ -93,7 +93,7 @@ function Get-RegistryServiceValues {
     $props = Get-ItemProperty -Path $REG_SERVICE -ErrorAction SilentlyContinue
     if (-not $props) { return @{} }
     $result = @{}
-    foreach ($name in @('ServiceAccount','AutoStart')) {
+    foreach ($name in @('AutoStart')) {
         $v = $props.$name
         if ($null -ne $v) { $result[$name] = $v }
     }
@@ -191,7 +191,7 @@ function Invoke-Get {
     if ($svc.Count -gt 0) {
         Write-Host ''
         Write-Host '  Service sub-key:'
-        foreach ($name in @('ServiceAccount','AutoStart')) {
+        foreach ($name in @('AutoStart')) {
             if ($svc.ContainsKey($name)) {
                 $line = "  {0,-22} {1}" -f ($name + ':'), $svc[$name]
                 Write-Host $line
@@ -241,7 +241,7 @@ function Invoke-Set {
             }
             if ($Value -like 'B*' -and -not (Test-NssmServiceExists)) {
                 Write-Warn "Profile '$Value' requires the LegacyMCP Windows service (NSSM)."
-                Write-Warn "Run Install-LegacyMCP.ps1 -Profile B to set up the service."
+                Write-Warn "Run Install-LegacyMCP.ps1 -DeployProfile B to set up the service."
             }
             Set-RegistryValue -Name 'Profile' -Value $Value
             Write-OK "Profile set to '$Value'."
@@ -310,14 +310,14 @@ function Invoke-Validate {
 
     $vals    = Get-RegistryValues
     $svc     = Get-RegistryServiceValues
-    $profile = if ($vals.ContainsKey('Profile'))   { $vals['Profile']   } else { 'A' }
+    $deployProfile = if ($vals.ContainsKey('Profile'))   { $vals['Profile']   } else { 'A' }
     $transport = if ($vals.ContainsKey('Transport')) { $vals['Transport'] } else { 'stdio' }
     $port    = if ($vals.ContainsKey('Port'))      { [int]$vals['Port'] } else { 8000 }
     $installPath = if ($vals.ContainsKey('InstallPath')) { $vals['InstallPath'] } else { $null }
     $configPath  = if ($vals.ContainsKey('ConfigPath'))  { $vals['ConfigPath']  } else { $null }
     $logPath     = if ($vals.ContainsKey('LogPath'))     { $vals['LogPath']     } else { $null }
 
-    Write-Host "  Profile  : $profile"
+    Write-Host "  Profile  : $deployProfile"
     Write-Host "  Transport: $transport"
     Write-Host "  Port     : $port"
     Write-Host ''
@@ -325,7 +325,7 @@ function Invoke-Validate {
     # ------------------------------------------------------------------
     # Profile C -- skip deep validation
     # ------------------------------------------------------------------
-    if ($profile -eq 'C') {
+    if ($deployProfile -eq 'C') {
         Write-Info "Profile C (enterprise deployment) -- deep validation skipped."
         Write-Info "Ensure WAF, OAuth2/OIDC, and MFA are configured externally."
         Write-Host ''
@@ -410,7 +410,7 @@ function Invoke-Validate {
         Get-ConfigYamlContent -ConfigPath $configPath
     } else { $null }
 
-    if ($profile -eq 'A') {
+    if ($deployProfile -eq 'A') {
         Write-Host '  [Profile A checks]'
 
         if ($transport -ne 'stdio') {
@@ -430,7 +430,7 @@ function Invoke-Validate {
             Write-Warn "Windows service 'LegacyMCP' exists. Profile A normally runs as a local stdio process, not a service."
         }
 
-    } elseif ($profile -like 'B*') {
+    } elseif ($deployProfile -like 'B*') {
         Write-Host '  [Profile B checks]'
 
         if ($transport -ne 'streamable-http') {
@@ -448,7 +448,7 @@ function Invoke-Validate {
         }
 
         if (-not (Test-NssmServiceExists)) {
-            Write-Fail "Windows service 'LegacyMCP' not found. Profile B requires NSSM service. Run Install-LegacyMCP.ps1 -Profile B."
+            Write-Fail "Windows service 'LegacyMCP' not found. Profile B requires NSSM service. Run Install-LegacyMCP.ps1 -DeployProfile B."
             $hasError = $true
         } else {
             Write-OK "Windows service 'LegacyMCP' is installed."
@@ -465,12 +465,18 @@ function Invoke-Validate {
             }
         }
 
-        # Service account warning
-        $svcAccount = if ($svc.ContainsKey('ServiceAccount')) { $svc['ServiceAccount'] } else { $null }
-        if ($svcAccount -and $svcAccount -eq 'LocalSystem') {
-            Write-Warn "Service is running as LocalSystem (SYSTEM). Prefer a dedicated gMSA or low-privilege account."
-        } elseif ($svcAccount) {
-            Write-OK "ServiceAccount: $svcAccount"
+        # Service account -- query SCM directly (not registry)
+        $wmiSvc = $null
+        try { $wmiSvc = Get-CimInstance Win32_Service -Filter "Name='LegacyMCP'" } catch {}
+        if (-not $wmiSvc) { $wmiSvc = Get-WmiObject Win32_Service -Filter "Name='LegacyMCP'" }
+        if ($wmiSvc) {
+            $runningAs = $wmiSvc.StartName
+            if ($runningAs -in @('LocalSystem', 'NT AUTHORITY\SYSTEM', 'LocalService', 'NetworkService')) {
+                Write-Fail "Service running as $runningAs -- Live Mode requires a domain account or gMSA"
+                $hasError = $true
+            } else {
+                Write-OK "Service running as: $runningAs"
+            }
         }
     }
 

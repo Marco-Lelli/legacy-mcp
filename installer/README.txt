@@ -45,7 +45,7 @@ QUICK START -- PROFILE A (local, offline, consultant's machine)
 
   2. Run:
        cd <install-root>\installer
-       .\Install-LegacyMCP.ps1 -Profile A
+       .\Install-LegacyMCP.ps1 -DeployProfile A
 
   3. The installer will:
        - Create a Python virtual environment in <install-root>\.venv
@@ -69,7 +69,7 @@ QUICK START -- PROFILE B (shared LAN, Windows service)
 
   3. Run:
        cd <install-root>\installer
-       .\Install-LegacyMCP.ps1 -Profile B
+       .\Install-LegacyMCP.ps1 -DeployProfile B -ServiceAccount CONTOSO\legacymcp$
 
   4. Edit config\config.yaml:
        - Set profile: B-core
@@ -178,7 +178,6 @@ REGISTRY KEYS
     Port            REG_DWORD   Server port (default 8000)
 
   HKLM\SOFTWARE\LegacyMCP\Service\
-    ServiceAccount  REG_SZ      Windows account or gMSA running the service
     AutoStart       REG_DWORD   0 = manual, 1 = automatic
 
 -------------------------------------------------------------------------------

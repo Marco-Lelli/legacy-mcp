@@ -93,7 +93,7 @@ function Write-ConfigRaw {
 # Supports both legacy (mode: offline) and profile-based configs.
 # Returns array of hashtables; each hashtable has at minimum 'name'.
 # ---------------------------------------------------------------------------
-function Parse-ForestsFromText {
+function ConvertFrom-ForestsText {
     param([string]$Text)
 
     $lines  = $Text -split "`r?`n"
@@ -175,7 +175,7 @@ function Get-Forests {
         }
     }
 
-    return Parse-ForestsFromText -Text $raw
+    return ConvertFrom-ForestsText -Text $raw
 }
 
 # ---------------------------------------------------------------------------
@@ -335,14 +335,14 @@ function Write-JsonFile {
     [System.IO.File]::WriteAllBytes($Path, $bytes)
 }
 
-function Infer-Module {
+function Resolve-Module {
     param([object]$JsonData)
     # Infer module from data structure
     $keys = ($JsonData | Get-Member -MemberType NoteProperty).Name
     $adCoreKeys = @('forest','dcs','domains','users','groups','computers','gpos','sites')
-    $matches = 0
-    foreach ($k in $adCoreKeys) { if ($keys -contains $k) { $matches++ } }
-    if ($matches -ge 3) { return 'ad-core' }
+    $regexMatches = 0
+    foreach ($k in $adCoreKeys) { if ($keys -contains $k) { $regexMatches++ } }
+    if ($regexMatches -ge 3) { return 'ad-core' }
     return 'unknown'
 }
 
@@ -836,7 +836,7 @@ function Invoke-RepairMetadata {
         # module (infer from structure)
         $curModule = Get-MetaField -Obj $meta -Field 'module'
         if (-not $curModule) {
-            $inferred = Infer-Module -JsonData $jdata
+            $inferred = Resolve-Module -JsonData $jdata
             Set-MetaField -Obj $meta -Field 'module' -Value $inferred
             Write-OK "_metadata.module inferred: $inferred."
             $changed = $true
