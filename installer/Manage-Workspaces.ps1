@@ -425,17 +425,17 @@ function Invoke-List {
                     $jdata = Read-JsonFile -Path $f['file']
                     $meta  = Get-JsonProperty -Obj $jdata -Name '_metadata'
                     if ($null -eq $meta) {
-                        $status = 'WARN -- _metadata assenti (collector < v1.5)'
+                        $status = 'WARN -- _metadata missing (collector < v1.5)'
                     } elseif (-not (Get-JsonProperty -Obj $meta -Name 'forest')) {
-                        $status = 'WARN -- _metadata incompleti'
+                        $status = 'WARN -- _metadata incomplete'
                     } else {
                         $status = 'OK'
                     }
                 } catch {
-                    $status = 'WARN -- JSON non leggibile'
+                    $status = 'WARN -- JSON not readable'
                 }
             } else {
-                $status = 'ERROR -- file non trovato'
+                $status = 'ERROR -- file not found'
             }
         } elseif ($mode -eq 'live') {
             $status = 'OK (live -- non verificato)'
@@ -570,7 +570,7 @@ function Invoke-Remove {
     $ok = Remove-ForestFromConfig -ForestName $Name
     if ($ok) {
         Write-Host ''
-        Write-OK "Forest rimosso dal workspace. Il file JSON non e' stato eliminato."
+        Write-OK "Forest removed from workspace. The JSON file was NOT deleted."
         Write-Host ''
     } else {
         Write-Err "Forest '$Name' not found in config.yaml."
@@ -810,15 +810,10 @@ function Invoke-RepairMetadata {
             $changed = $true
         }
 
-        # Helper to get/set property on PSObject
-        function Get-MetaField { param($Obj, $Field)
-            $names = ($Obj | Get-Member -MemberType NoteProperty -ErrorAction SilentlyContinue).Name
-            if ($names -contains $Field) { return $Obj.$Field }
-            return $null
-        }
-
+        # Helper to set property on PSObject (StrictMode-safe)
         function Set-MetaField { param($Obj, $Field, $Value)
-            $names = ($Obj | Get-Member -MemberType NoteProperty -ErrorAction SilentlyContinue).Name
+            $members = $Obj | Get-Member -MemberType NoteProperty -ErrorAction SilentlyContinue
+            $names   = if ($null -ne $members) { @($members.Name) } else { @() }
             if ($names -contains $Field) {
                 $Obj.$Field = $Value
             } else {
@@ -829,7 +824,7 @@ function Invoke-RepairMetadata {
         # --- Auto-repairable fields ---
 
         # forest (from config name)
-        $curForest = Get-MetaField -Obj $meta -Field 'forest'
+        $curForest = Get-JsonProperty -Obj $meta -Name 'forest'
         if (-not $curForest) {
             Set-MetaField -Obj $meta -Field 'forest' -Value $fname
             Write-OK "_metadata.forest set to '$fname'."
@@ -843,7 +838,7 @@ function Invoke-RepairMetadata {
         }
 
         # collected_at (from file modification date)
-        $curAt = Get-MetaField -Obj $meta -Field 'collected_at'
+        $curAt = Get-JsonProperty -Obj $meta -Name 'collected_at'
         if (-not $curAt) {
             $mtime   = (Get-Item $fpath).LastWriteTimeUtc.ToString('yyyy-MM-ddTHH:mm:ssZ')
             Set-MetaField -Obj $meta -Field 'collected_at' -Value $mtime
@@ -854,7 +849,7 @@ function Invoke-RepairMetadata {
         }
 
         # module (infer from structure)
-        $curModule = Get-MetaField -Obj $meta -Field 'module'
+        $curModule = Get-JsonProperty -Obj $meta -Name 'module'
         if (-not $curModule) {
             $inferred = Resolve-Module -JsonData $jdata
             Set-MetaField -Obj $meta -Field 'module' -Value $inferred
@@ -867,7 +862,7 @@ function Invoke-RepairMetadata {
         # --- Fields requiring confirmation ---
 
         # collector_version
-        $curCv = Get-MetaField -Obj $meta -Field 'collector_version'
+        $curCv = Get-JsonProperty -Obj $meta -Name 'collector_version'
         if (-not $curCv) {
             if ($Force) {
                 Set-MetaField -Obj $meta -Field 'collector_version' -Value 'unknown'
@@ -883,7 +878,7 @@ function Invoke-RepairMetadata {
         }
 
         # forest_level (if present, ask confirmation)
-        $curFl = Get-MetaField -Obj $meta -Field 'forest_level'
+        $curFl = Get-JsonProperty -Obj $meta -Name 'forest_level'
         if ($null -ne $curFl) {
             if ($Force) {
                 Write-OK "_metadata.forest_level kept as-is: $curFl (-Force)."
@@ -898,7 +893,7 @@ function Invoke-RepairMetadata {
         }
 
         # domain_level (if present, ask confirmation)
-        $curDl = Get-MetaField -Obj $meta -Field 'domain_level'
+        $curDl = Get-JsonProperty -Obj $meta -Name 'domain_level'
         if ($null -ne $curDl) {
             if ($Force) {
                 Write-OK "_metadata.domain_level kept as-is: $curDl (-Force)."
