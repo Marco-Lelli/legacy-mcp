@@ -290,3 +290,41 @@ class TestPerForestModeOverride:
         assert entry["mode"] == "offline"
         assert entry["loaded"] is True
         assert "dc" not in entry
+
+
+# ---------------------------------------------------------------------------
+# Workspace.connector() — implicit forest_name behaviour
+# ---------------------------------------------------------------------------
+
+class TestConnectorImplicitForestName:
+
+    def test_single_forest_no_name_returns_connector(
+        self, single_forest_workspace: Workspace
+    ) -> None:
+        """Single-forest workspace: connector(None) must succeed silently."""
+        conn = single_forest_workspace.connector()
+        assert conn is single_forest_workspace.connector("contoso.local")
+
+    def test_multi_forest_no_name_raises(
+        self, multi_forest_workspace: Workspace
+    ) -> None:
+        """Multi-forest workspace: connector(None) must raise ValueError."""
+        with pytest.raises(ValueError, match="forest_name obbligatorio"):
+            multi_forest_workspace.connector()
+
+    def test_multi_forest_no_name_error_lists_forests(
+        self, multi_forest_workspace: Workspace
+    ) -> None:
+        """Error message must include the available forest names."""
+        with pytest.raises(ValueError) as exc_info:
+            multi_forest_workspace.connector()
+        msg = str(exc_info.value)
+        assert "contoso.local" in msg
+        assert "fabrikam.local" in msg
+
+    def test_multi_forest_explicit_name_works(
+        self, multi_forest_workspace: Workspace
+    ) -> None:
+        """Multi-forest workspace: explicit forest_name must still work."""
+        conn = multi_forest_workspace.connector("contoso.local")
+        assert conn is not None

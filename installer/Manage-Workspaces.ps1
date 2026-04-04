@@ -347,6 +347,21 @@ function Resolve-Module {
 }
 
 # ---------------------------------------------------------------------------
+# Safe property accessor
+#
+# Avoids PropertyNotFoundException under Set-StrictMode -Version Latest
+# when accessing properties that may not exist on a PSCustomObject (e.g.
+# _metadata absent from older JSON files produced by collector < v1.5).
+# ---------------------------------------------------------------------------
+function Get-JsonProperty {
+    param([object]$Obj, [string]$Name)
+    if ($null -eq $Obj) { return $null }
+    $prop = $Obj.PSObject.Properties[$Name]
+    if ($null -eq $prop) { return $null }
+    return $prop.Value
+}
+
+# ---------------------------------------------------------------------------
 # Backup helper
 # ---------------------------------------------------------------------------
 function Backup-JsonFile {
@@ -408,9 +423,11 @@ function Invoke-List {
                 # Check _metadata
                 try {
                     $jdata = Read-JsonFile -Path $f['file']
-                    $meta  = $jdata._metadata
-                    if ($null -eq $meta -or -not $meta.forest) {
-                        $status = 'WARN -- metadati incompleti'
+                    $meta  = Get-JsonProperty -Obj $jdata -Name '_metadata'
+                    if ($null -eq $meta) {
+                        $status = 'WARN -- _metadata assenti (collector < v1.5)'
+                    } elseif (-not (Get-JsonProperty -Obj $meta -Name 'forest')) {
+                        $status = 'WARN -- _metadata incompleti'
                     } else {
                         $status = 'OK'
                     }
@@ -476,14 +493,15 @@ function Invoke-Add {
         } else {
             Write-OK "File found: $File"
             try {
-                $jdata = Read-JsonFile -Path $File
+                $jdata      = Read-JsonFile -Path $File
                 Write-OK 'JSON readable.'
-                $meta  = $jdata._metadata
+                $meta       = Get-JsonProperty -Obj $jdata -Name '_metadata'
+                $metaForest = Get-JsonProperty -Obj $meta  -Name 'forest'
                 if ($null -eq $meta) {
                     Write-Warn '_metadata block absent -- consider running -RepairMetadata after adding.'
                     $warnings++
-                } elseif ($meta.forest -and $meta.forest -ne $Name) {
-                    Write-Warn "_metadata.forest '$($meta.forest)' differs from -Name '$Name'."
+                } elseif ($metaForest -and $metaForest -ne $Name) {
+                    Write-Warn "_metadata.forest '$metaForest' differs from -Name '$Name'."
                     $warnings++
                 } else {
                     Write-OK '_metadata present.'
@@ -615,34 +633,36 @@ function Invoke-Validate {
                     $jdata = Read-JsonFile -Path $fpath
                     Write-OK 'JSON structure valid.'
 
-                    $meta = $jdata._metadata
+                    $meta = Get-JsonProperty -Obj $jdata -Name '_metadata'
                     if ($null -eq $meta) {
                         Write-Warn '_metadata block absent -- run -RepairMetadata to fix.'
                     } else {
                         # forest name match
-                        if ($meta.forest -and $meta.forest -ne $fname) {
-                            Write-Warn "_metadata.forest '$($meta.forest)' differs from config name '$fname'."
-                        } elseif ($meta.forest) {
+                        $metaForest = Get-JsonProperty -Obj $meta -Name 'forest'
+                        if ($metaForest -and $metaForest -ne $fname) {
+                            Write-Warn "_metadata.forest '$metaForest' differs from config name '$fname'."
+                        } elseif ($metaForest) {
                             Write-OK "_metadata.forest matches config name."
                         } else {
                             Write-Warn '_metadata.forest absent -- run -RepairMetadata.'
                         }
 
                         # collected_at
-                        if (-not $meta.collected_at) {
+                        if (-not (Get-JsonProperty -Obj $meta -Name 'collected_at')) {
                             Write-Warn '_metadata.collected_at absent -- run -RepairMetadata.'
                         }
 
                         # collector_version warnings for known old versions
-                        if ($meta.collector_version) {
-                            $cv = [string]$meta.collector_version
+                        $metaCv = Get-JsonProperty -Obj $meta -Name 'collector_version'
+                        if ($metaCv) {
+                            $cv = [string]$metaCv
                             if ($cv -match '^1\.[0-3]$') {
                                 Write-Warn "_metadata.collector_version: $cv -- group_members and gpo_links may be incomplete."
                             }
                         }
 
                         # module
-                        if (-not $meta.module) {
+                        if (-not (Get-JsonProperty -Obj $meta -Name 'module')) {
                             Write-Warn '_metadata.module absent.'
                         }
                     }
@@ -782,7 +802,7 @@ function Invoke-RepairMetadata {
 
         # Build metadata object if absent
         $changed = $false
-        $meta    = $jdata._metadata
+        $meta    = Get-JsonProperty -Obj $jdata -Name '_metadata'
         if ($null -eq $meta) {
             Write-Warn '_metadata block absent -- creating.'
             # Add _metadata as new property

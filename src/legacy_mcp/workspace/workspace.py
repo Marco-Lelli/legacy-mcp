@@ -83,8 +83,19 @@ class Workspace:
                 self._connectors[forest.name] = LiveConnector(forest)
 
     def connector(self, forest_name: str | None = None) -> Any:
-        """Return connector for a given forest (defaults to first forest)."""
+        """Return connector for a given forest.
+
+        If forest_name is None and there is exactly one forest, that forest is
+        used implicitly.  If there are multiple forests, the caller must
+        provide forest_name explicitly.
+        """
         if forest_name is None:
+            if len(self.forests) > 1:
+                names = ", ".join(f.name for f in self.forests)
+                raise ValueError(
+                    f"forest_name obbligatorio quando sono configurati piu' forest. "
+                    f"Forest disponibili: {names}"
+                )
             forest_name = self.forests[0].name
         if forest_name not in self._connectors:
             raise KeyError(f"Forest '{forest_name}' not found in workspace.")

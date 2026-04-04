@@ -1,14 +1,14 @@
 """Windows EventLog writer — LegacyMCP dedicated event log.
 
 Log name  : LegacyMCP
-Source    : LegacyMCP
+Source    : LegacyMCP-Server
 Event IDs :
   1000 — Informational: operation completed successfully
   2000 — Warning: DC unreachable (graceful degradation)
   3000 — Error: blocking failure
 
 Registration (run once as Administrator):
-  New-EventLog -LogName LegacyMCP -Source LegacyMCP
+  New-EventLog -LogName LegacyMCP -Source LegacyMCP-Server
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import logging
 import sys
 
 _LOG_NAME = "LegacyMCP"
-_SOURCE = "LegacyMCP"
+_SOURCE = "LegacyMCP-Server"
 
 _EVENT_INFO = 1000
 _EVENT_WARN = 2000
@@ -55,7 +55,7 @@ def _write_windows_event(event_id: int, message: str, event_type: str) -> None:
             _warned = True
             print(
                 f"[LegacyMCP] WARNING: EventLog write failed -- "
-                f"source 'LegacyMCP' may not be registered. "
+                f"source 'LegacyMCP-Server' may not be registered. "
                 f"Run scripts/Register-EventLog.ps1 as Administrator. "
                 f"Error: {e}",
                 file=sys.stderr,

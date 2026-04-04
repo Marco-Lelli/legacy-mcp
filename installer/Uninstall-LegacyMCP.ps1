@@ -82,23 +82,23 @@ if ($existingSvc) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 2 -- Remove EventLog source
+# Step 2 -- Remove EventLog log and source
 # ---------------------------------------------------------------------------
-Write-Step 'Step 2 -- EventLog source'
+Write-Step 'Step 2 -- EventLog log and source'
 
+# Source name is "LegacyMCP-Server"; log name is "LegacyMCP".
+# Remove-EventLog -Source fails when source name equals log name (Windows
+# restriction). The correct approach is Remove-EventLog -LogName which
+# removes the entire log and all sources registered within it.
 try {
-    if ([System.Diagnostics.EventLog]::SourceExists('LegacyMCP')) {
-        Remove-EventLog -Source 'LegacyMCP' -ErrorAction SilentlyContinue
-        # Also remove the custom log if it exists and is empty
-        if ([System.Diagnostics.EventLog]::Exists('LegacyMCP')) {
-            Remove-EventLog -LogName 'LegacyMCP' -ErrorAction SilentlyContinue
-        }
-        Write-OK "EventLog source 'LegacyMCP' removed."
+    if ([System.Diagnostics.EventLog]::Exists('LegacyMCP')) {
+        Remove-EventLog -LogName 'LegacyMCP' -ErrorAction Stop
+        Write-OK "EventLog log 'LegacyMCP' and all its sources removed."
     } else {
-        Write-Info "EventLog source 'LegacyMCP' not found -- skipping."
+        Write-Info "EventLog log 'LegacyMCP' not found -- skipping."
     }
 } catch {
-    Write-Warn "Could not remove EventLog source: $_"
+    Write-Warn "Could not remove EventLog log: $_"
 }
 
 # ---------------------------------------------------------------------------
