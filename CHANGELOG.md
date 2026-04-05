@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2026-04-05
+
+### Fixed
+- Installer: NSSM absolute paths for Python executable and AppDirectory
+- Installer: AppParameters now includes --config and --transport streamable-http
+- Installer: venv skip logic corrected — pip install always runs, -Force recreates venv
+- Installer: SeServiceLogonRight automatic verification and grant for Profile B non-gMSA accounts
+- Installer: LocalSystem downgraded from [FAIL] to [WARN] in Config -Validate
+- Manage-Workspaces: StrictMode-safe metadata access via Get-JsonProperty helper
+- Manage-Workspaces: -RepairMetadata no longer crashes on JSON without _metadata
+- Manage-Workspaces: -Add accepts valid JSON without _metadata (WARN instead of FAIL)
+- Manage-Workspaces: -List and -Validate correct severity on missing _metadata
+- EventLog: source "LegacyMCP-Server" separated from log name "LegacyMCP"
+- workspace.py: forest_name required on multi-forest workspace (explicit ValueError)
+- i18n: all residual Italian strings translated to English
+
+### Tested
+- Profile A: 8 test blocks validated end-to-end on development PC
+- Profile B: 5 test blocks validated end-to-end on LORENZO (house.local, WS2012R2)
+- 286 pytest tests green
+
 ## [0.1.3] - 2026-03-30
 
 ### Added
