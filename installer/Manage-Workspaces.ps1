@@ -403,11 +403,11 @@ function Invoke-List {
     $forests = Get-Forests
 
     Write-Host ''
-    Write-Host "Forest montati nel workspace (config: $Config)" -ForegroundColor White
+    Write-Host "Forests mounted in workspace (config: $Config)" -ForegroundColor White
     Write-Host ''
 
     if ($forests.Count -eq 0) {
-        Write-Host '  (nessun forest configurato)' -ForegroundColor Yellow
+        Write-Host '  (no forests configured)' -ForegroundColor Yellow
         Write-Host ''
         return
     }
@@ -438,7 +438,7 @@ function Invoke-List {
                 $status = 'ERROR -- file not found'
             }
         } elseif ($mode -eq 'live') {
-            $status = 'OK (live -- non verificato)'
+            $status = 'OK (live -- not verified)'
         } else {
             $status = '?'
         }

@@ -21,7 +21,8 @@
 param(
     [ValidateSet('A','B')]
     [string]$DeployProfile = 'A',
-    [string]$ServiceAccount = ''
+    [string]$ServiceAccount = '',
+    [switch]$Force
 )
 
 Set-StrictMode -Version Latest
@@ -145,15 +146,20 @@ Write-Step 'Phase 2 -- Installation'
 
 # Create virtual environment
 $VenvDir = Join-Path $InstallPath '.venv'
+if ($Force -and (Test-Path $VenvDir)) {
+    Write-Info "Removing existing virtual environment (-Force): $VenvDir"
+    Remove-Item $VenvDir -Recurse -Force
+    Write-OK 'Existing virtual environment removed.'
+}
 if (-not (Test-Path $VenvDir)) {
     Write-Info "Creating virtual environment in: $VenvDir"
     & python -m venv $VenvDir
     Write-OK 'Virtual environment created.'
 } else {
-    Write-OK 'Virtual environment already exists -- skipping creation.'
+    Write-Info 'Virtual environment already exists -- skipping creation.'
 }
 
-# Install package
+# Always install/update the package (runs whether venv was just created or pre-existing)
 Write-Info 'Installing LegacyMCP package (pip install -e .) ...'
 & "$VenvDir\Scripts\python.exe" -m pip install -e $InstallPath --quiet
 Write-OK 'Package installed.'
@@ -248,23 +254,83 @@ if ($DeployProfile -eq 'B') {
         & $NssmExe remove LegacyMCP confirm
     }
 
-    & $NssmExe install  LegacyMCP $svcPython '-m' 'legacy_mcp.server'
-    & $NssmExe set      LegacyMCP AppDirectory $InstallPath
-    & $NssmExe set      LegacyMCP Start SERVICE_AUTO_START
-    & $NssmExe set      LegacyMCP AppStdout (Join-Path $LogPath 'legacymcp.log')
-    & $NssmExe set      LegacyMCP AppStderr (Join-Path $LogPath 'legacymcp-error.log')
+    $PythonExe = Join-Path $InstallPath '.venv\Scripts\python.exe'
+    & $NssmExe install  LegacyMCP $PythonExe '-m' 'legacy_mcp.server'
+    & $NssmExe set      LegacyMCP AppDirectory  $InstallPath
+    & $NssmExe set      LegacyMCP Description   'Legacy MCP Server for Active Directory (Profile B)'
+    & $NssmExe set      LegacyMCP Start         SERVICE_AUTO_START
+    & $NssmExe set      LegacyMCP AppStdout     (Join-Path $LogPath 'legacymcp.log')
+    & $NssmExe set      LegacyMCP AppStderr     (Join-Path $LogPath 'legacymcp-error.log')
 
     Write-OK 'LegacyMCP service installed via NSSM.'
 
     # Configure service account
     if ($ServiceAccount.EndsWith('$')) {
-        # gMSA -- empty password
+        # gMSA -- empty password; AD grants SeServiceLogonRight automatically
         & $NssmExe set LegacyMCP ObjectName $ServiceAccount ""
         Write-OK "Service account set to gMSA: $ServiceAccount"
     } else {
         $svcPassword = Read-Host "Password for $ServiceAccount"
         & $NssmExe set LegacyMCP ObjectName $ServiceAccount $svcPassword
         Write-OK "Service account set to: $ServiceAccount"
+
+        # SeServiceLogonRight check -- non-gMSA accounts must have this right
+        # to start a Windows service. gMSA receive it automatically from AD.
+        Write-Info "Checking 'Log on as a service' right for: $ServiceAccount"
+
+        $secpolCfg = Join-Path $env:TEMP 'legacymcp_secpol.cfg'
+        $seceditDb  = Join-Path $env:TEMP 'legacymcp_secedit.sdb'
+
+        try {
+            # Resolve account to SID
+            $ntAcct = New-Object System.Security.Principal.NTAccount($ServiceAccount)
+            $sid    = $ntAcct.Translate([System.Security.Principal.SecurityIdentifier]).Value
+
+            # Export current local security policy
+            & secedit /export /cfg $secpolCfg /quiet | Out-Null
+            $cfgContent = Get-Content $secpolCfg -Raw -Encoding Unicode
+
+            if ($cfgContent -match "SeServiceLogonRight\s*=.*\*$sid") {
+                Write-OK "Account has 'Log on as a service' right."
+            } elseif ($isAdmin) {
+                # Add the SID to SeServiceLogonRight
+                $lines   = $cfgContent -split '\r?\n'
+                $patched = $false
+                for ($i = 0; $i -lt $lines.Count; $i++) {
+                    if ($lines[$i] -match '^SeServiceLogonRight\s*=') {
+                        $lines[$i] = $lines[$i].TrimEnd() + ",*$sid"
+                        $patched = $true
+                        break
+                    }
+                }
+                if (-not $patched) {
+                    # No existing entry -- insert under [Privilege Rights]
+                    for ($i = 0; $i -lt $lines.Count; $i++) {
+                        if ($lines[$i] -match '^\[Privilege Rights\]') {
+                            $before = $lines[0..$i]
+                            $after  = if ($i + 1 -lt $lines.Count) { $lines[($i+1)..($lines.Count-1)] } else { @() }
+                            $lines  = $before + "SeServiceLogonRight = *$sid" + $after
+                            break
+                        }
+                    }
+                }
+                [System.IO.File]::WriteAllText(
+                    $secpolCfg,
+                    ($lines -join "`r`n"),
+                    [System.Text.Encoding]::Unicode
+                )
+                & secedit /configure /db $seceditDb /cfg $secpolCfg /areas USER_RIGHTS /quiet | Out-Null
+                Write-Warn "Granted 'Log on as a service' to $ServiceAccount -- verify in secpol.msc before production deployment"
+            } else {
+                Write-Fail "ServiceAccount '$ServiceAccount' does not have 'Log on as a service' right (SeServiceLogonRight). Grant it manually in: secpol.msc -> Local Policies -> User Rights Assignment, or re-run this installer as Administrator for automatic grant."
+                exit 1
+            }
+        } catch {
+            Write-Warn "Could not check SeServiceLogonRight: $_"
+        } finally {
+            if (Test-Path $secpolCfg) { Remove-Item $secpolCfg -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $seceditDb)  { Remove-Item $seceditDb  -Force -ErrorAction SilentlyContinue }
+        }
     }
 
     Write-Info "Start with: Start-Service LegacyMCP"

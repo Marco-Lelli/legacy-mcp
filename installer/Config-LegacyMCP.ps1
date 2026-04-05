@@ -182,7 +182,7 @@ function Invoke-Get {
             if (Test-Path $vals[$name]) {
                 $line += '  [FILE OK]'
             } else {
-                $line += '  [FILE MANCANTE]'
+                $line += '  [FILE NOT FOUND]'
             }
         }
         Write-Host $line
@@ -470,12 +470,31 @@ function Invoke-Validate {
         try { $wmiSvc = Get-CimInstance Win32_Service -Filter "Name='LegacyMCP'" } catch {}
         if (-not $wmiSvc) { $wmiSvc = Get-WmiObject Win32_Service -Filter "Name='LegacyMCP'" }
         if ($wmiSvc) {
-            $runningAs = $wmiSvc.StartName
-            if ($runningAs -in @('LocalSystem', 'NT AUTHORITY\SYSTEM', 'LocalService', 'NetworkService')) {
-                Write-Fail "Service running as $runningAs -- Live Mode requires a domain account or gMSA"
-                $hasError = $true
+            $runningAs   = $wmiSvc.StartName
+            $systemAccts = @('LocalSystem', 'NT AUTHORITY\SYSTEM', 'LocalService', 'NetworkService')
+            if ($runningAs -in $systemAccts) {
+                Write-Warn "Service running as $runningAs -- acceptable for testing, NOT suitable for production Live Mode (no Kerberos identity)"
             } else {
                 Write-OK "Service running as: $runningAs"
+
+                # SeServiceLogonRight check -- non-system accounts must have this
+                # right to start a Windows service after reboot.
+                $secpolCfg = Join-Path $env:TEMP 'legacymcp_secpol_val.cfg'
+                try {
+                    $ntAcct = New-Object System.Security.Principal.NTAccount($runningAs)
+                    $sid    = $ntAcct.Translate([System.Security.Principal.SecurityIdentifier]).Value
+                    & secedit /export /cfg $secpolCfg /quiet | Out-Null
+                    $cfgContent = Get-Content $secpolCfg -Raw -Encoding Unicode
+                    if ($cfgContent -match "SeServiceLogonRight\s*=.*\*$sid") {
+                        Write-OK "ServiceAccount '$runningAs' has 'Log on as a service' right."
+                    } else {
+                        Write-Warn "ServiceAccount '$runningAs' may lack 'Log on as a service' right -- verify in secpol.msc"
+                    }
+                } catch {
+                    Write-Warn "Could not verify SeServiceLogonRight for '$runningAs': $_"
+                } finally {
+                    if (Test-Path $secpolCfg) { Remove-Item $secpolCfg -Force -ErrorAction SilentlyContinue }
+                }
             }
         }
     }

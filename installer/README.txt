@@ -32,6 +32,9 @@ Profile B only:
   - nssm.exe present in installer\tools\ (see NSSM section below)
   - WinRM HTTPS enabled on all Domain Controllers (port 5986)
   - Network access from this server to all target DCs
+  - Service account with "Log on as a service" right (SeServiceLogonRight)
+    * gMSA accounts (ending with $): right is granted automatically by AD
+    * Standard domain accounts: must be granted explicitly (see below)
 
 Recommended for the collector (offline mode):
   - PowerShell 5.1 with Active Directory module (RSAT)
@@ -81,6 +84,42 @@ QUICK START -- PROFILE B (shared LAN, Windows service)
 
   6. Configure your MCP client to connect to:
        http://<server-ip>:8000/mcp
+
+-------------------------------------------------------------------------------
+PROFILE B -- SERVICE ACCOUNT AND SeServiceLogonRight
+-------------------------------------------------------------------------------
+
+LegacyMCP runs as a Windows service under a dedicated service account.
+The account must have the "Log on as a service" Windows right (SeServiceLogonRight).
+
+Recommended: gMSA (Group Managed Service Account)
+  gMSA accounts (name ends with $) receive SeServiceLogonRight automatically
+  when they are added to the Windows service via NSSM. No manual grant needed.
+  Example:
+    .\Install-LegacyMCP.ps1 -DeployProfile B -ServiceAccount CONTOSO\legacymcp$
+
+Standard domain account (non-gMSA):
+  The installer checks SeServiceLogonRight automatically during Phase 5.
+
+  Case 1 -- Installer is running as Administrator (recommended):
+    The installer grants SeServiceLogonRight automatically using secedit.
+    A [WARN] is shown. Verify the grant in secpol.msc before production use.
+
+  Case 2 -- Installer is NOT running as Administrator:
+    The installer shows [FAIL] and exits. Grant the right manually:
+      1. Open: secpol.msc
+      2. Navigate to: Local Policies > User Rights Assignment
+      3. Open: "Log on as a service"
+      4. Add the service account.
+      5. Re-run the installer, or start the service manually.
+
+  Case 3 -- secedit check fails (e.g. restricted policy environment):
+    The installer shows [WARN] and continues. Verify in secpol.msc.
+
+Validating the right after installation:
+    .\Config-LegacyMCP.ps1 -Validate
+  The -Validate command checks SeServiceLogonRight for the configured account
+  and reports [OK] or [WARN].
 
 -------------------------------------------------------------------------------
 CONFIGURATION MANAGEMENT
