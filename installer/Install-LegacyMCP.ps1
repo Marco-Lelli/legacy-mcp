@@ -255,8 +255,10 @@ if ($DeployProfile -eq 'B') {
     }
 
     $PythonExe = Join-Path $InstallPath '.venv\Scripts\python.exe'
-    & $NssmExe install  LegacyMCP $PythonExe '-m' 'legacy_mcp.server'
-    & $NssmExe set      LegacyMCP AppDirectory  $InstallPath
+    & $NssmExe install  LegacyMCP $PythonExe
+    $NssmArgs  = "-m legacy_mcp.server --config `"$ConfigPath`" --transport streamable-http"
+    & $NssmExe set      LegacyMCP AppParameters  $NssmArgs
+    & $NssmExe set      LegacyMCP AppDirectory   $InstallPath
     & $NssmExe set      LegacyMCP Description   'Legacy MCP Server for Active Directory (Profile B)'
     & $NssmExe set      LegacyMCP Start         SERVICE_AUTO_START
     & $NssmExe set      LegacyMCP AppStdout     (Join-Path $LogPath 'legacymcp.log')
