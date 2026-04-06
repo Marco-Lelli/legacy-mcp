@@ -239,7 +239,7 @@ It is loadable in any offline workspace regardless of the profile that produced 
 | Field | Scope | Allowed values | Default | Notes |
 |-------|-------|----------------|---------|-------|
 | `profile` | global | `A`, `B-core`, `B-enterprise`, `C` | `A` | Replaces `mode` |
-| `mode` | global | `live`, `offline` | — | Deprecated — use `profile` |
+| `mode` | global | `live`, `offline` | — | Deprecated since v0.1.4 — use `profile` |
 | `server.host` | server | any IP / `0.0.0.0` | `127.0.0.1` | Set `0.0.0.0` for Profile B |
 | `server.port` | server | integer | `8000` | — |
 | `server.snapshot_path` | server | directory path | `C:\LegacyMCP-Data\snapshots\` | Default output dir for `create_snapshot` when `output_path` is not specified |

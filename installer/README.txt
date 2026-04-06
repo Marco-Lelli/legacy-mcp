@@ -122,6 +122,30 @@ Validating the right after installation:
   and reports [OK] or [WARN].
 
 -------------------------------------------------------------------------------
+PROFILE B -- TLS CERTIFICATE REPLACEMENT
+-------------------------------------------------------------------------------
+
+Replace the TLS certificate without reinstalling the service:
+
+  .\Install-LegacyMCP.ps1 -Action ReplaceCert -CertFile "C:\path\to\new.crt" -CertKeyFile "C:\path\to\new.key"
+
+This command:
+  1. Updates ssl_certfile and ssl_keyfile in config\config.yaml (partial merge --
+     only these two fields are changed, all other configuration is preserved).
+  2. Restarts the LegacyMCP service to load the new certificate.
+  3. Prints the updated claude_desktop_config.json block for copy-paste.
+
+Requirements:
+  - Administrator privileges (needed to restart the service)
+  - -CertFile  -- path to the PEM-encoded certificate file (or chain)
+  - -CertKeyFile -- path to the PEM-encoded private key file
+  - LegacyMCP must already be installed (service and registry must exist)
+
+Note: if you are replacing a self-signed certificate, copy the new certificate
+file to all consultant PCs and update the NODE_EXTRA_CA_CERTS path in their
+claude_desktop_config.json.
+
+-------------------------------------------------------------------------------
 CONFIGURATION MANAGEMENT
 -------------------------------------------------------------------------------
 
@@ -209,12 +233,14 @@ REGISTRY KEYS
 
   HKLM\SOFTWARE\LegacyMCP\
     InstallPath     REG_SZ      Absolute path to install root
-    Version         REG_SZ      Installed version (e.g. 0.1.3)
+    Version         REG_SZ      Installed version (e.g. 0.1.4)
     ConfigPath      REG_SZ      Absolute path to config.yaml
     LogPath         REG_SZ      Absolute path to log directory
     Profile         REG_SZ      A | B-core | B-enterprise | C
     Transport       REG_SZ      stdio | streamable-http
     Port            REG_DWORD   Server port (default 8000)
+    ApiKey          REG_BINARY  Bearer token (DPAPI machine-scope encrypted)
+                                Profile B only. Decrypted at server startup.
 
   HKLM\SOFTWARE\LegacyMCP\Service\
     AutoStart       REG_DWORD   0 = manual, 1 = automatic

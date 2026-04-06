@@ -323,3 +323,43 @@ def test_main_priority_port_from_registry():
     port = None or registry.get("port") or None
 
     assert port == 9000
+
+
+# ---------------------------------------------------------------------------
+# B1 regression: CRYPTPROTECT_LOCAL_MACHINE must be the numeric constant 0x04
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
+def test_dpapi_uses_numeric_flag_not_module_attribute():
+    """B1 regression: DPAPI decrypt must use 0x04, not win32crypt.CRYPTPROTECT_LOCAL_MACHINE.
+
+    win32crypt does not expose CRYPTPROTECT_LOCAL_MACHINE as a module attribute.
+    Using the attribute raises AttributeError on a clean install.  This test
+    verifies that the call is made with the numeric value 0x04 directly.
+    """
+    import importlib
+    import legacy_mcp.config_registry as m
+
+    # Build a mock win32crypt that:
+    #  - does NOT have CRYPTPROTECT_LOCAL_MACHINE as an attribute
+    #  - records what flag value CryptUnprotectData was called with
+    mock_win32crypt = MagicMock(spec=[])  # empty spec = no attributes
+    mock_win32crypt.CryptUnprotectData = MagicMock(return_value=("", b"secret-key"))
+
+    encrypted_value = b"\x01\x02\x03\x04"
+    values = {"ApiKey": (encrypted_value, 3)}  # 3 = REG_BINARY
+    mock_winreg = _make_winreg_mock(values=values)
+
+    with patch.dict("sys.modules", {"winreg": mock_winreg, "win32crypt": mock_win32crypt}):
+        importlib.reload(m)
+        result = m.read_registry_config()
+
+    # Confirm decryption was called and the flag passed is 0x04 (not a missing attribute)
+    mock_win32crypt.CryptUnprotectData.assert_called_once()
+    call_args = mock_win32crypt.CryptUnprotectData.call_args[0]
+    assert call_args[5] == 0x04, (
+        f"Expected DPAPI flag 0x04, got {call_args[5]!r}. "
+        "win32crypt.CRYPTPROTECT_LOCAL_MACHINE does not exist as a module attribute."
+    )
+    assert result["api_key"] == "secret-key"

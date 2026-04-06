@@ -26,6 +26,7 @@ def read_registry_config() -> dict:
       port          - int
       log_path      - absolute path to log directory
       install_path  - absolute path to install directory
+      api_key       - decrypted API key string (Profile B only)
 
     Returns {} if:
       - not running on Windows
@@ -76,6 +77,39 @@ def read_registry_config() -> dict:
                     result[dict_key] = int(value)
                 except (OSError, ValueError):
                     pass
+
+            # ApiKey is stored as REG_BINARY encrypted with DPAPI machine-scope
+            # (CRYPTPROTECT_LOCAL_MACHINE).  Machine-scope DPAPI is accessible to
+            # any process running on this machine regardless of the user context,
+            # including the NSSM service account.  This is intentional and
+            # acceptable for Profile B-core, whose threat model assumes
+            # network-level access control (TLS + perimeter firewall).
+            # For Profile B-enterprise or multi-tenant scenarios, re-evaluate:
+            # consider user-scope DPAPI or a dedicated secrets manager.
+            try:
+                encrypted, _ = winreg.QueryValueEx(key, "ApiKey")
+                if encrypted:
+                    import win32crypt  # noqa: PLC0415 -- pywin32, Windows only
+                    _desc, plaintext = win32crypt.CryptUnprotectData(
+                        encrypted,
+                        None,
+                        None,
+                        None,
+                        None,
+                        0x04,  # CRYPTPROTECT_LOCAL_MACHINE -- not exposed as a module constant
+                    )
+                    result["api_key"] = plaintext.decode("utf-8")
+            except OSError:
+                pass  # key absent -- Profile A or not yet configured
+            except ImportError:
+                pass  # pywin32 not installed
+            except Exception as exc:  # noqa: BLE001
+                import sys as _sys
+                print(
+                    f"[LegacyMCP] Warning: failed to decrypt ApiKey: {exc}",
+                    file=_sys.stderr,
+                )
+
     except Exception as exc:  # noqa: BLE001
         import sys as _sys
         print(f"[LegacyMCP] Warning: failed to read registry: {exc}", file=_sys.stderr)

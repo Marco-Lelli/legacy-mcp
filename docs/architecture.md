@@ -63,7 +63,7 @@ SQLite is never exposed to the caller — it is an internal implementation detai
 |---------|---------|----------------|--------------------------|
 | A       | Offline | None           | Local API key / localhost |
 | B       | Live    | Internal LAN   | gMSA + HTTPS             |
-| C       | Live    | Internet       | WAF + OAuth2 + MFA       |
+| C       | Offline | Internet       | WAF + OAuth2 + MFA       |
 
 ## Component Map
 

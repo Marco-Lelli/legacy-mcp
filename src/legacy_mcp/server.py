@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 
 from legacy_mcp.config import load_config
 from legacy_mcp.config_registry import read_registry_config
+from legacy_mcp.eventlog import writer as eventlog
 from legacy_mcp.workspace.workspace import Workspace
 from legacy_mcp import tools
 
@@ -110,18 +111,31 @@ def create_server(
     return mcp
 
 
-def _run_with_tls(mcp: FastMCP, ssl_certfile: str, ssl_keyfile: str) -> None:
+def _run_with_tls(
+    mcp: FastMCP,
+    ssl_certfile: str,
+    ssl_keyfile: str,
+    api_key: str | None = None,
+) -> None:
     """Start a Streamable HTTP server with TLS via uvicorn directly.
 
     FastMCP's run_streamable_http_async() does not forward ssl_certfile /
     ssl_keyfile to uvicorn.Config, so we build the uvicorn server ourselves
     using the same Starlette app that FastMCP would use.
+
+    When api_key is provided the Starlette app is wrapped with
+    BearerApiKeyMiddleware before being handed to uvicorn.  Profile A
+    (stdio) never calls this function, so the middleware is never active
+    for Profile A deployments.
     """
     import anyio
     import uvicorn
 
     async def _serve() -> None:
         app = mcp.streamable_http_app()
+        if api_key:
+            from legacy_mcp.auth import BearerApiKeyMiddleware  # noqa: PLC0415
+            app = BearerApiKeyMiddleware(app, api_key)
         config = uvicorn.Config(
             app,
             host=mcp.settings.host,
@@ -169,6 +183,7 @@ def main() -> None:
     transport = args.transport or registry.get("transport") or "stdio"
     host = args.host or None          # registry host not supported; kept in config.yaml
     port = args.port or registry.get("port") or None
+    api_key: str | None = registry.get("api_key") or None
 
     try:
         mcp = create_server(config_path, host=host, port=port)
@@ -180,7 +195,11 @@ def main() -> None:
     ssl_keyfile: str | None = getattr(mcp, "_tls_keyfile", None)
 
     if transport == "streamable-http" and ssl_certfile:
-        _run_with_tls(mcp, ssl_certfile, ssl_keyfile)
+        eventlog.info(
+            f"LegacyMCP starting: HTTPS {mcp.settings.host}:{mcp.settings.port} "
+            f"auth={'enabled' if api_key else 'disabled'}"
+        )
+        _run_with_tls(mcp, ssl_certfile, ssl_keyfile, api_key=api_key)
     else:
         mcp.run(transport=transport)
 

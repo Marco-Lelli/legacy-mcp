@@ -22,7 +22,13 @@ param(
     [ValidateSet('A','B')]
     [string]$DeployProfile = 'A',
     [string]$ServiceAccount = '',
-    [switch]$Force
+    [switch]$Force,
+    [string]$ApiKey = '',
+    [string]$CertFile = '',
+    [string]$CertKeyFile = '',
+    [string]$CertThumbprint = '',
+    [ValidateSet('Install', 'ReplaceCert')]
+    [string]$Action = 'Install'
 )
 
 Set-StrictMode -Version Latest
@@ -48,6 +54,126 @@ function Write-Warn { param([string]$Msg); Write-Host "  [WARN] $Msg" -Foregroun
 function Write-Fail { param([string]$Msg); Write-Host "  [FAIL] $Msg" -ForegroundColor Red    }
 function Write-Info { param([string]$Msg); Write-Host "  [INFO] $Msg" -ForegroundColor Cyan   }
 function Write-Step { param([string]$Msg); Write-Host "`n==> $Msg" -ForegroundColor White     }
+
+# ---------------------------------------------------------------------------
+# Helper: partial YAML merge -- update ssl_certfile / ssl_keyfile only
+# ---------------------------------------------------------------------------
+function Update-YamlSslFields {
+    param(
+        [string]$YamlPath,
+        [string]$SslCertFile,
+        [string]$SslKeyFile
+    )
+    $certLine = "  ssl_certfile: $SslCertFile"
+    $keyLine  = "  ssl_keyfile:  $SslKeyFile"
+    $content  = Get-Content $YamlPath -Raw
+
+    # Replace existing line (commented or uncommented); otherwise inject under server:
+    if ($content -match '(?m)^\s*#?\s*ssl_certfile\s*:') {
+        $content = $content -replace '(?m)^\s*#?\s*ssl_certfile\s*:.*', $certLine
+    } else {
+        # Append as first new line inside the server: block
+        $content = $content -replace '(?m)(^server\s*:.*(?:\r?\n(?:[ \t][^\r\n]*))*)', "`$1`n$certLine"
+    }
+    if ($content -match '(?m)^\s*#?\s*ssl_keyfile\s*:') {
+        $content = $content -replace '(?m)^\s*#?\s*ssl_keyfile\s*:.*', $keyLine
+    } else {
+        $content = $content -replace '(?m)(^\s*ssl_certfile\s*:.*)', "`$1`n$keyLine"
+    }
+    [System.IO.File]::WriteAllText($YamlPath, $content, [System.Text.Encoding]::UTF8)
+}
+
+# ---------------------------------------------------------------------------
+# -Action ReplaceCert: partial config.yaml SSL update + service restart
+# ---------------------------------------------------------------------------
+if ($Action -eq 'ReplaceCert') {
+    Write-Step 'ReplaceCert -- updating TLS certificate in config.yaml'
+
+    if (-not $CertFile -or -not $CertKeyFile) {
+        Write-Fail '-CertFile and -CertKeyFile are required for -Action ReplaceCert.'
+        exit 1
+    }
+    if (-not (Test-Path $CertFile)) {
+        Write-Fail "Certificate file not found: $CertFile"
+        exit 1
+    }
+    if (-not (Test-Path $CertKeyFile)) {
+        Write-Fail "Key file not found: $CertKeyFile"
+        exit 1
+    }
+    if (-not (Test-Path $ConfigPath)) {
+        Write-Fail "config.yaml not found at: $ConfigPath"
+        exit 1
+    }
+
+    Update-YamlSslFields -YamlPath $ConfigPath -SslCertFile $CertFile -SslKeyFile $CertKeyFile
+    Write-OK 'ssl_certfile and ssl_keyfile updated in config.yaml.'
+
+    $svc = Get-Service -Name 'LegacyMCP' -ErrorAction SilentlyContinue
+    if ($svc) {
+        Write-Info 'Restarting LegacyMCP service...'
+        Restart-Service -Name 'LegacyMCP' -Force
+        Write-OK 'LegacyMCP service restarted.'
+    } else {
+        Write-Warn 'LegacyMCP service not found -- skipping restart.'
+    }
+
+    # Retrieve and display stored API key so the caller can update their MCP client config
+    $displayKey = '<read-from-registry>'
+    try {
+        Add-Type -AssemblyName System.Security
+        $encBytes = Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\LegacyMCP' -Name 'ApiKey' -ErrorAction Stop
+        $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
+            $encBytes, $null,
+            [System.Security.Cryptography.DataProtectionScope]::LocalMachine
+        )
+        $displayKey = [System.Text.Encoding]::UTF8.GetString($plainBytes)
+    } catch {
+        Write-Warn "Could not read ApiKey from registry: $_"
+    }
+
+    $serverName = $env:COMPUTERNAME
+
+    Write-Host ''
+    Write-Host '==========================================' -ForegroundColor Yellow
+    Write-Host '  API KEY -- share securely with consultants' -ForegroundColor Yellow
+    Write-Host '  Run Setup-LegacyMCPClient.ps1 on each consultant PC.' -ForegroundColor Yellow
+    Write-Host '==========================================' -ForegroundColor Yellow
+    Write-Host "  $displayKey" -ForegroundColor Yellow
+    Write-Host '==========================================' -ForegroundColor Yellow
+    Write-Host ''
+    Write-Info "Setup-LegacyMCPClient.ps1 parameters:"
+    Write-Host "  -ApiKey `"$displayKey`"" -ForegroundColor White
+    Write-Host "  -ServerUrl `"https://$serverName`:8000/mcp`"" -ForegroundColor White
+    Write-Host "  -CaCertPath `"<path to $CertFile on consultant PC>`"" -ForegroundColor White
+    Write-Host ''
+    Write-Host '==========================================' -ForegroundColor White
+    Write-Host '  claude_desktop_config.json template' -ForegroundColor White
+    Write-Host '  (run Setup-LegacyMCPClient.ps1 -- do not paste API key in the JSON)' -ForegroundColor White
+    Write-Host '==========================================' -ForegroundColor White
+    Write-Host ''
+    Write-Host '{'
+    Write-Host '  "mcpServers": {'
+    Write-Host '    "legacymcp-live": {'
+    Write-Host '      "command": "npx",'
+    Write-Host '      "args": ['
+    Write-Host '        "mcp-remote",'
+    Write-Host "        `"https://$serverName`:8000/mcp`","
+    Write-Host '        "--header",'
+    Write-Host '        "Authorization:${AUTH_HEADER}"'
+    Write-Host '      ],'
+    Write-Host '      "env": {'
+    Write-Host '        "AUTH_HEADER": "Bearer <run Setup-LegacyMCPClient.ps1>",'
+    Write-Host '        "NODE_EXTRA_CA_CERTS": "<run Setup-LegacyMCPClient.ps1>"'
+    Write-Host '      }'
+    Write-Host '    }'
+    Write-Host '  }'
+    Write-Host '}'
+    Write-Host ''
+    Write-Host '==========================================' -ForegroundColor White
+    Write-Host ''
+    exit 0
+}
 
 # ---------------------------------------------------------------------------
 # Phase 1 -- Pre-flight checks
@@ -114,8 +240,8 @@ if ($DeployProfile -eq 'B') {
     }
 }
 
-# ServiceAccount required for Profile B
-if ($DeployProfile -eq 'B' -and -not $ServiceAccount) {
+# ServiceAccount required for Profile B (not needed for ReplaceCert -- exits before Phase 5)
+if ($DeployProfile -eq 'B' -and -not $ServiceAccount -and $Action -ne 'ReplaceCert') {
     Write-Fail '-ServiceAccount is required for Profile B. LocalSystem has no Kerberos identity -- Live Mode would not work.'
     Write-Fail 'Example (gMSA):    .\Install-LegacyMCP.ps1 -Profile B -ServiceAccount CONTOSO\legacymcp$'
     Write-Fail 'Example (user):    .\Install-LegacyMCP.ps1 -Profile B -ServiceAccount CONTOSO\svc-legacymcp'
@@ -225,6 +351,154 @@ $autoStart = if ($DeployProfile -eq 'B') { 1 } else { 0 }
 Set-ItemProperty -Path $RegService -Name 'AutoStart' -Value $autoStart -Type DWord
 
 Write-OK 'Registry written.'
+
+# ---------------------------------------------------------------------------
+# Phase 3.5 -- API Key + TLS Certificate (Profile B only)
+# ---------------------------------------------------------------------------
+if ($DeployProfile -eq 'B') {
+    Write-Step 'Phase 3.5 -- API Key and TLS Certificate'
+
+    # --- API Key ---
+    if (-not $ApiKey) {
+        $ApiKey = (New-Guid).ToString()
+        Write-Info "API key generated (copy from the output block below)."
+    } else {
+        Write-Info 'Using provided API key.'
+    }
+
+    Add-Type -AssemblyName System.Security
+    $apiKeyBytes  = [System.Text.Encoding]::UTF8.GetBytes($ApiKey)
+    # DPAPI machine-scope (LocalMachine): any process on this machine can decrypt.
+    # Acceptable for Profile B-core (network access controlled by TLS + firewall).
+    # Re-evaluate for Profile B-enterprise: consider user-scope DPAPI or Key Vault.
+    $encryptedKey = [System.Security.Cryptography.ProtectedData]::Protect(
+        $apiKeyBytes, $null,
+        [System.Security.Cryptography.DataProtectionScope]::LocalMachine
+    )
+    Set-ItemProperty -Path $RegRoot -Name 'ApiKey' -Value $encryptedKey -Type Binary
+    Write-OK 'API key stored encrypted (DPAPI machine-scope) in HKLM:\SOFTWARE\LegacyMCP\ApiKey.'
+
+    # --- TLS Certificate ---
+    $CertDir = Join-Path $InstallPath 'certs'
+    if (-not (Test-Path $CertDir)) {
+        New-Item -ItemType Directory -Path $CertDir -Force | Out-Null
+    }
+
+    $resolvedCertFile = $CertFile
+    $resolvedKeyFile  = $CertKeyFile
+
+    if ($CertFile -and $CertKeyFile) {
+        # Existing PEM files provided
+        if (-not (Test-Path $CertFile)) {
+            Write-Fail "Certificate file not found: $CertFile"
+            exit 1
+        }
+        if (-not (Test-Path $CertKeyFile)) {
+            Write-Fail "Key file not found: $CertKeyFile"
+            exit 1
+        }
+        Write-OK "Using existing certificate: $CertFile"
+
+    } elseif ($CertThumbprint) {
+        # Export certificate from Windows certificate store by thumbprint
+        $resolvedCertFile = Join-Path $CertDir 'server.crt'
+        $resolvedKeyFile  = Join-Path $CertDir 'server.key'
+        $tmpPfxPath = Join-Path $env:TEMP "legacymcp_$([System.Guid]::NewGuid().ToString('N')).pfx"
+        $tmpPfxPass = [System.Guid]::NewGuid().ToString('N')
+
+        $storeCert = Get-ChildItem 'Cert:\LocalMachine\My' -ErrorAction SilentlyContinue |
+                     Where-Object { $_.Thumbprint -eq $CertThumbprint.ToUpper() }
+        if (-not $storeCert) {
+            $storeCert = Get-ChildItem 'Cert:\LocalMachine\WebHosting' -ErrorAction SilentlyContinue |
+                         Where-Object { $_.Thumbprint -eq $CertThumbprint.ToUpper() }
+        }
+        if (-not $storeCert) {
+            Write-Fail "Certificate with thumbprint '$CertThumbprint' not found in LocalMachine stores."
+            exit 1
+        }
+
+        $secPass = $tmpPfxPass | ConvertTo-SecureString -AsPlainText -Force
+        Export-PfxCertificate -Cert $storeCert -FilePath $tmpPfxPath -Password $secPass | Out-Null
+        Write-Info 'Certificate exported to PFX. Converting to PEM...'
+
+        $venvPy = Join-Path $InstallPath '.venv\Scripts\python.exe'
+        $convertPy = @"
+from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption
+with open(r'$tmpPfxPath', 'rb') as f: data = f.read()
+key, cert, chain = pkcs12.load_key_and_certificates(data, b'$tmpPfxPass')
+with open(r'$resolvedCertFile', 'wb') as f:
+    f.write(cert.public_bytes(Encoding.PEM))
+    for c in (chain or []):
+        f.write(c.public_bytes(Encoding.PEM))
+with open(r'$resolvedKeyFile', 'wb') as f:
+    f.write(key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()))
+"@
+        & $venvPy -c $convertPy
+        Remove-Item $tmpPfxPath -Force -ErrorAction SilentlyContinue
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail 'PFX to PEM conversion failed.'
+            exit 1
+        }
+        Write-OK "Certificate exported to PEM: $resolvedCertFile"
+
+    } else {
+        # No certificate provided -- generate self-signed
+        $resolvedCertFile = Join-Path $CertDir 'server.crt'
+        $resolvedKeyFile  = Join-Path $CertDir 'server.key'
+        Write-Info 'No certificate provided -- generating self-signed certificate...'
+
+        $venvPy = Join-Path $InstallPath '.venv\Scripts\python.exe'
+        $genPy = @"
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+import datetime, socket
+hostname = socket.getfqdn()
+key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, hostname)])
+cert = (
+    x509.CertificateBuilder()
+    .subject_name(name)
+    .issuer_name(name)
+    .public_key(key.public_key())
+    .serial_number(x509.random_serial_number())
+    .not_valid_before(datetime.datetime.utcnow())
+    .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=730))
+    .add_extension(x509.SubjectAlternativeName([
+        x509.DNSName(hostname),
+        x509.DNSName(socket.gethostname()),
+        x509.DNSName('localhost'),
+    ]), critical=False)
+    .sign(key, hashes.SHA256())
+)
+with open(r'$resolvedCertFile', 'wb') as f:
+    f.write(cert.public_bytes(serialization.Encoding.PEM))
+with open(r'$resolvedKeyFile', 'wb') as f:
+    f.write(key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption()
+    ))
+print('OK')
+"@
+        & $venvPy -c $genPy | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail 'Failed to generate self-signed certificate.'
+            exit 1
+        }
+        Write-OK "Self-signed certificate generated: $resolvedCertFile"
+        Write-Warn "Clients must trust this CA. Copy $resolvedCertFile to the consultant PC and set NODE_EXTRA_CA_CERTS."
+    }
+
+    # Write ssl_certfile / ssl_keyfile into config.yaml (partial merge -- only these two keys)
+    if (Test-Path $ConfigPath) {
+        Update-YamlSslFields -YamlPath $ConfigPath -SslCertFile $resolvedCertFile -SslKeyFile $resolvedKeyFile
+        Write-OK 'ssl_certfile and ssl_keyfile written to config.yaml.'
+    } else {
+        Write-Warn "config.yaml not found at $ConfigPath -- set ssl_certfile and ssl_keyfile manually."
+    }
+}
 
 # ---------------------------------------------------------------------------
 # Phase 4 -- EventLog
@@ -373,8 +647,47 @@ if ($DeployProfile -eq 'A') {
     Write-Info "Check logs:"
     Write-Host "    Get-Content '$LogPath\legacymcp.log' -Tail 50 -Wait" -ForegroundColor White
     Write-Host ''
-    Write-Info "Configure Claude Desktop or your MCP client to connect via:"
-    Write-Host "    http://<server-ip>:8000/mcp" -ForegroundColor White
+
+    $serverName  = $env:COMPUTERNAME
+    $certDisplay = if ($resolvedCertFile) { $resolvedCertFile } else { 'C:\LegacyMCP\certs\server.crt' }
+
+    Write-Host ''
+    Write-Host '==========================================' -ForegroundColor Yellow
+    Write-Host '  API KEY -- share securely with consultants' -ForegroundColor Yellow
+    Write-Host '  Run Setup-LegacyMCPClient.ps1 on each consultant PC.' -ForegroundColor Yellow
+    Write-Host '==========================================' -ForegroundColor Yellow
+    Write-Host "  $ApiKey" -ForegroundColor Yellow
+    Write-Host '==========================================' -ForegroundColor Yellow
+    Write-Host ''
+    Write-Info "Setup-LegacyMCPClient.ps1 parameters:"
+    Write-Host "  -ApiKey `"$ApiKey`"" -ForegroundColor White
+    Write-Host "  -ServerUrl `"https://$serverName`:8000/mcp`"" -ForegroundColor White
+    Write-Host "  -CaCertPath `"<path to $certDisplay on consultant PC>`"" -ForegroundColor White
+    Write-Host ''
+    Write-Host '==========================================' -ForegroundColor White
+    Write-Host '  claude_desktop_config.json template' -ForegroundColor White
+    Write-Host '  (run Setup-LegacyMCPClient.ps1 -- do not paste API key in the JSON)' -ForegroundColor White
+    Write-Host '==========================================' -ForegroundColor White
+    Write-Host ''
+    Write-Host '{'
+    Write-Host '  "mcpServers": {'
+    Write-Host '    "legacymcp-live": {'
+    Write-Host '      "command": "npx",'
+    Write-Host '      "args": ['
+    Write-Host '        "mcp-remote",'
+    Write-Host "        `"https://$serverName`:8000/mcp`","
+    Write-Host '        "--header",'
+    Write-Host '        "Authorization:${AUTH_HEADER}"'
+    Write-Host '      ],'
+    Write-Host '      "env": {'
+    Write-Host '        "AUTH_HEADER": "Bearer <run Setup-LegacyMCPClient.ps1>",'
+    Write-Host '        "NODE_EXTRA_CA_CERTS": "<run Setup-LegacyMCPClient.ps1>"'
+    Write-Host '      }'
+    Write-Host '    }'
+    Write-Host '  }'
+    Write-Host '}'
+    Write-Host ''
+    Write-Host '==========================================' -ForegroundColor White
     Write-Host ''
 }
 

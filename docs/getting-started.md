@@ -49,9 +49,9 @@ Run once as Administrator before starting the server:
 .\scripts\Register-EventLog.ps1
 ```
 
-This registers the LegacyMCP event source in the Windows Event Log.
-Required for the server to log startup, shutdown, and security events.
-Safe to run multiple times.
+This registers the `LegacyMCP-Server` event source in the `LegacyMCP`
+Windows Event Log. Required for the server to log startup, shutdown,
+and security events. Safe to run multiple times.
 
 ---
 
