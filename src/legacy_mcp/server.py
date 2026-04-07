@@ -147,7 +147,8 @@ def _run_with_tls(
             ssl_keyfile=ssl_keyfile,
         )
         server = uvicorn.Server(config)
-        await server.serve()
+        async with mcp.session_manager.run():  # ← inizializza il task group FastMCP
+            await server.serve()
 
     anyio.run(_serve)
 

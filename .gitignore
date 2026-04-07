@@ -45,3 +45,7 @@ desktop.ini
 # Logs
 logs/
 *.log
+
+# Local API key wrappers (contain credentials or DPAPI-encrypted key file)
+mcp-remote-live.bat
+.legacymcp-key

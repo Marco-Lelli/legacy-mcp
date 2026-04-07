@@ -106,6 +106,41 @@ server:
 from the network without `host: 0.0.0.0`. This must be set explicitly in Profile B.
 Restrict access at the firewall level. TLS is strongly recommended.
 
+**Client setup (consultant's machine):**
+
+Run `Setup-LegacyMCPClient.ps1` once on each consultant's machine (non-elevated,
+regular user context). The script stores the API key as a DPAPI-encrypted file
+(`.legacymcp-key`) and sets the required environment variables.
+
+The `mcp-remote-live.ps1` wrapper in the repository root reads the key from
+`.legacymcp-key` at runtime and passes it to `mcp-remote` without ever exposing
+it in the config file.
+
+Add the following entry to `%APPDATA%\Claude\claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "legacymcp-live": {
+      "command": "powershell.exe",
+      "args": [
+        "-ExecutionPolicy", "Bypass",
+        "-File", "C:\\path\\to\\legacy-mcp\\mcp-remote-live.ps1"
+      ]
+    }
+  }
+}
+```
+
+Replace `C:\\path\\to\\legacy-mcp` with the actual repository path on the
+consultant's machine. Use double backslashes in JSON.
+
+**Files that must NOT be committed:**
+- `mcp-remote-live.bat` — contains the API key in plaintext
+- `.legacymcp-key` — DPAPI-encrypted key file (user-specific)
+
+Both are excluded in `.gitignore`.
+
 ---
 
 ## Profile B-enterprise — Shared LAN with Audit

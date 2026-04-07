@@ -80,7 +80,7 @@ class BearerApiKeyMiddleware:
         #   ones it implements, Starlette returns 404 for the rest.
         # /token          -- has its own client_secret validation in oauth.py.
         path = scope.get("path", "")
-        if path.startswith("/.well-known/") or path == "/token":
+        if path.startswith("/.well-known/") or path in ("/token", "/register", "/authorize"):
             await self._app(scope, receive, send)
             return
 

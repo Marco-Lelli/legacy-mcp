@@ -185,8 +185,11 @@ async def test_middleware_401_has_no_www_authenticate_header():
     "/.well-known/oauth-authorization-server",
     "/.well-known/oauth-protected-resource",
     "/.well-known/oauth-protected-resource/mcp",
+    "/token",
+    "/register",
+    "/authorize",
 ])
-async def test_well_known_paths_bypass_auth_and_forward_to_app(path):
+async def test_oauth_paths_bypass_auth_and_forward_to_app(path):
     """Feature H + Bug G: /.well-known/* paths must bypass Bearer auth.
 
     The middleware must NOT apply auth checks and must NOT return 401.
