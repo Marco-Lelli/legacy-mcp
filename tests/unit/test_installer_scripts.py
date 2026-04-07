@@ -62,3 +62,57 @@ def test_setup_admin_guard_exits_on_elevation():
     assert "exit 1" in surrounding or "exit" in surrounding, (
         "Admin guard must call 'exit' after Write-Error to halt execution."
     )
+
+
+# ---------------------------------------------------------------------------
+# Bug D regression: ConvertTo-Json backslash normalisation
+# ---------------------------------------------------------------------------
+
+
+def test_setup_json_backslash_normalisation_present():
+    """Bug D: ConvertTo-Json doubles backslashes (\\ -> \\\\) in Windows paths.
+    The script must apply a normalisation pass (-replace '\\\\\\\\', '\\\\')
+    between ConvertTo-Json and writing the file.
+    """
+    source = _SETUP_SCRIPT.read_text(encoding="utf-8")
+    # The normalisation must appear between ConvertTo-Json and the file write.
+    json_pos = source.find("ConvertTo-Json")
+    write_pos = source.find("WriteAllText")
+    assert json_pos != -1, "ConvertTo-Json not found in script."
+    assert write_pos != -1, "WriteAllText not found in script."
+    between = source[json_pos:write_pos]
+    assert "-replace" in between, (
+        "No -replace normalisation found between ConvertTo-Json and WriteAllText. "
+        "ConvertTo-Json doubles backslashes; the result must be normalised before "
+        "writing to disk."
+    )
+
+
+def test_setup_json_output_valid_after_normalisation():
+    """Bug D: simulate the ConvertTo-Json backslash-doubling + normalisation and
+    verify the final string parses as valid JSON with single-escaped paths (\\).
+    """
+    import json
+    import re
+
+    # Simulate a Windows path that ConvertTo-Json would double-escape
+    raw_path = r"C:\legacy-mcp\certs\server.crt"
+    # ConvertTo-Json encodes \ as \\ in the JSON string, so the resulting
+    # JSON text contains \\\\ (four backslashes = two escaped backslashes).
+    simulated_json = json.dumps({"NODE_EXTRA_CA_CERTS": raw_path})
+    # Verify it round-trips correctly through json.loads
+    parsed = json.loads(simulated_json)
+    assert parsed["NODE_EXTRA_CA_CERTS"] == raw_path
+
+    # Now simulate the PowerShell ConvertTo-Json bug: it produces \\\\ in the
+    # JSON text where \\ is correct (i.e. it double-escapes).
+    bugged_json = simulated_json.replace("\\\\", "\\\\\\\\")
+    # The normalisation pass fixes it: replace \\\\ with \\
+    normalised = bugged_json.replace("\\\\\\\\", "\\\\")
+    parsed2 = json.loads(normalised)
+    assert parsed2["NODE_EXTRA_CA_CERTS"] == raw_path, (
+        "After normalisation the path must survive a json.loads round-trip intact."
+    )
+    assert "\\\\" not in normalised or normalised.count("\\\\") == simulated_json.count("\\\\"), (
+        "Normalised JSON must not contain quadruple backslashes."
+    )

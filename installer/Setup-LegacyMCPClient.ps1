@@ -204,7 +204,10 @@ if ($mcpServers.PSObject.Properties['legacymcp-live']) {
 Add-Member -InputObject $mcpServers -NotePropertyName 'legacymcp-live' -NotePropertyValue $liveMcpEntry
 
 # Write back -- UTF-8 without BOM, 2-space indent
+# ConvertTo-Json doubles backslashes in Windows paths (\\ -> \\\\).
+# Normalise back to \\ so the JSON is valid for Claude Desktop.
 $updatedJson = $config | ConvertTo-Json -Depth 10
+$updatedJson = $updatedJson -replace '\\\\\\\\', '\\\\'
 [System.IO.File]::WriteAllText(
     $ClaudeConfigPath,
     $updatedJson,
