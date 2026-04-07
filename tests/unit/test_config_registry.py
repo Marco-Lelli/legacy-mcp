@@ -358,8 +358,35 @@ def test_dpapi_uses_numeric_flag_not_module_attribute():
     # Confirm decryption was called and the flag passed is 0x04 (not a missing attribute)
     mock_win32crypt.CryptUnprotectData.assert_called_once()
     call_args = mock_win32crypt.CryptUnprotectData.call_args[0]
-    assert call_args[5] == 0x04, (
-        f"Expected DPAPI flag 0x04, got {call_args[5]!r}. "
+    assert call_args[4] == 0x04, (
+        f"Expected DPAPI flag 0x04 at position 4, got {call_args[4]!r}. "
         "win32crypt.CRYPTPROTECT_LOCAL_MACHINE does not exist as a module attribute."
     )
     assert result["api_key"] == "secret-key"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
+def test_dpapi_call_has_exactly_five_positional_args():
+    """Fix 1 regression: CryptUnprotectData must be called with exactly 5 positional
+    args (data, description, entropy, reserved, flags).  A 6-arg call raises
+    TypeError on a clean pywin32 install.
+    """
+    import importlib
+    import legacy_mcp.config_registry as m
+
+    mock_win32crypt = MagicMock(spec=[])
+    mock_win32crypt.CryptUnprotectData = MagicMock(return_value=("", b"key"))
+
+    encrypted_value = b"\x01\x02\x03\x04"
+    values = {"ApiKey": (encrypted_value, 3)}
+    mock_winreg = _make_winreg_mock(values=values)
+
+    with patch.dict("sys.modules", {"winreg": mock_winreg, "win32crypt": mock_win32crypt}):
+        importlib.reload(m)
+        m.read_registry_config()
+
+    call_args = mock_win32crypt.CryptUnprotectData.call_args[0]
+    assert len(call_args) == 5, (
+        f"CryptUnprotectData called with {len(call_args)} positional args, expected 5. "
+        "The correct signature is (data, description, entropy, reserved, flags)."
+    )

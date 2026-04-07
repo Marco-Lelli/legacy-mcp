@@ -132,7 +132,7 @@ if ($Action -eq 'ReplaceCert') {
         Write-Warn "Could not read ApiKey from registry: $_"
     }
 
-    $serverName = $env:COMPUTERNAME
+    $serverName = "$env:COMPUTERNAME.$env:USERDNSDOMAIN"
 
     Write-Host ''
     Write-Host '==========================================' -ForegroundColor Yellow
@@ -648,7 +648,7 @@ if ($DeployProfile -eq 'A') {
     Write-Host "    Get-Content '$LogPath\legacymcp.log' -Tail 50 -Wait" -ForegroundColor White
     Write-Host ''
 
-    $serverName  = $env:COMPUTERNAME
+    $serverName  = "$env:COMPUTERNAME.$env:USERDNSDOMAIN"
     $certDisplay = if ($resolvedCertFile) { $resolvedCertFile } else { 'C:\LegacyMCP\certs\server.crt' }
 
     Write-Host ''

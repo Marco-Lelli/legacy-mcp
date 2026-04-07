@@ -92,11 +92,10 @@ def read_registry_config() -> dict:
                     import win32crypt  # noqa: PLC0415 -- pywin32, Windows only
                     _desc, plaintext = win32crypt.CryptUnprotectData(
                         encrypted,
-                        None,
-                        None,
-                        None,
-                        None,
-                        0x04,  # CRYPTPROTECT_LOCAL_MACHINE -- not exposed as a module constant
+                        None,   # description
+                        None,   # entropy
+                        None,   # reserved
+                        0x04,   # flags: CRYPTPROTECT_LOCAL_MACHINE
                     )
                     result["api_key"] = plaintext.decode("utf-8")
             except OSError:

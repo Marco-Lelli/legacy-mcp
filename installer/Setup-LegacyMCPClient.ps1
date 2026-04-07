@@ -51,6 +51,17 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
+# Guard: must NOT run as Administrator
+# When elevated, $env:APPDATA points to the admin profile, not the interactive
+# user's profile -- claude_desktop_config.json would be written to the wrong
+# location and User-scope environment variables would be set for the wrong account.
+# ---------------------------------------------------------------------------
+if ([Security.Principal.WindowsIdentity]::GetCurrent().Groups -match 'S-1-5-32-544') {
+    Write-Error 'Do not run as Administrator. Run as the normal user account whose Claude Desktop you are configuring.'
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
 # Output helpers
 # ---------------------------------------------------------------------------
 function Write-OK   { param([string]$Msg); Write-Host "  [OK]   $Msg" -ForegroundColor Green  }
@@ -180,7 +191,7 @@ $liveMcpEntry = [PSCustomObject]@{
         'Authorization:${AUTH_HEADER}'
     )
     env     = [PSCustomObject]@{
-        AUTH_HEADER        = 'Bearer ${AUTH_HEADER}'
+        AUTH_HEADER        = '${AUTH_HEADER}'
         NODE_EXTRA_CA_CERTS = '${NODE_EXTRA_CA_CERTS}'
     }
 }
