@@ -181,6 +181,62 @@ async def test_middleware_401_has_no_www_authenticate_header():
 
 
 @pytest.mark.anyio
+async def test_oauth_discovery_path_returns_404_without_auth():
+    """Bug G: GET /.well-known/oauth-authorization-server must return 404
+    without any auth check.  mcp-remote interprets a 401 on this path as
+    evidence of an OAuth server and starts an OAuth flow (registerClient)
+    that LegacyMCP does not implement, causing a ServerError.
+    A 404 signals that no OAuth server exists and forces mcp-remote to use
+    the static Bearer token supplied via --header directly.
+    """
+    inner = _RecordingApp()
+    mw = BearerApiKeyMiddleware(inner, "my-key")
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/.well-known/oauth-authorization-server",
+        "headers": [],  # no Authorization header
+    }
+    capture = _CaptureSend()
+    await mw(scope, None, capture)
+
+    assert not inner.called
+    assert capture.events[0]["status"] == 404
+    assert capture.events[1]["body"] == b'{"error":"not_found"}'
+
+
+@pytest.mark.anyio
+async def test_mcp_path_without_token_returns_401_no_www_authenticate():
+    """Bug G + Bug F: GET /mcp without token → 401, no WWW-Authenticate."""
+    inner = _RecordingApp()
+    mw = BearerApiKeyMiddleware(inner, "my-key")
+    scope = _make_http_scope(None)
+    scope["path"] = "/mcp"
+    capture = _CaptureSend()
+    await mw(scope, None, capture)
+
+    assert not inner.called
+    start = capture.events[0]
+    assert start["status"] == 401
+    header_names = [name.lower() for name, _ in start["headers"]]
+    assert b"www-authenticate" not in header_names
+
+
+@pytest.mark.anyio
+async def test_mcp_path_with_valid_token_passes_through():
+    """Bug G: GET /mcp with valid token must reach the inner app (not 401/404)."""
+    inner = _RecordingApp()
+    mw = BearerApiKeyMiddleware(inner, "my-key")
+    scope = _make_http_scope("Bearer my-key")
+    scope["path"] = "/mcp"
+    capture = _CaptureSend()
+    await mw(scope, None, capture)
+
+    assert inner.called
+    assert capture.events == []
+
+
+@pytest.mark.anyio
 async def test_middleware_passes_non_http_scope():
     """Lifespan and websocket scopes must bypass auth entirely."""
     inner = _RecordingApp()

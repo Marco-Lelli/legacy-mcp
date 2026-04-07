@@ -64,7 +64,13 @@ class BearerApiKeyMiddleware:
     dedicated secrets manager such as Azure Key Vault.
     """
 
-    _BODY = b'{"error":"Unauthorized"}'
+    _BODY_401 = b'{"error":"Unauthorized"}'
+    _BODY_404 = b'{"error":"not_found"}'
+
+    # mcp-remote probes this path to discover an OAuth server.
+    # Returning 404 (not 401) tells it no OAuth server exists and forces it
+    # to use the static Bearer token supplied via --header instead.
+    _OAUTH_DISCOVERY_PATH = "/.well-known/oauth-authorization-server"
 
     def __init__(self, app: Callable, api_key: str) -> None:
         self._app = app
@@ -73,6 +79,11 @@ class BearerApiKeyMiddleware:
     async def __call__(self, scope: dict, receive: Callable, send: Callable) -> None:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
+            return
+
+        # Short-circuit OAuth discovery probe: return 404 without auth check.
+        if scope.get("path") == self._OAUTH_DISCOVERY_PATH:
+            await self._send_404(send)
             return
 
         headers: dict[str, str] = {
@@ -99,11 +110,24 @@ class BearerApiKeyMiddleware:
                 "status": 401,
                 "headers": [
                     [b"content-type", b"application/json"],
-                    [b"content-length", str(len(self._BODY)).encode()],
+                    [b"content-length", str(len(self._BODY_401)).encode()],
                     # WWW-Authenticate intentionally omitted: mcp-remote interprets
                     # it as an OAuth discovery trigger.  LegacyMCP uses a static
                     # Bearer token -- no OAuth flow is involved.
                 ],
             }
         )
-        await send({"type": "http.response.body", "body": self._BODY})
+        await send({"type": "http.response.body", "body": self._BODY_401})
+
+    async def _send_404(self, send: Callable) -> None:
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 404,
+                "headers": [
+                    [b"content-type", b"application/json"],
+                    [b"content-length", str(len(self._BODY_404)).encode()],
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": self._BODY_404})
