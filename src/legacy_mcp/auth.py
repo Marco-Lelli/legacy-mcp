@@ -65,7 +65,6 @@ class BearerApiKeyMiddleware:
     """
 
     _BODY_401 = b'{"error":"Unauthorized"}'
-    _BODY_404 = b'{"error":"not_found"}'
 
     def __init__(self, app: Callable, api_key: str) -> None:
         self._app = app
@@ -76,13 +75,13 @@ class BearerApiKeyMiddleware:
             await self._app(scope, receive, send)
             return
 
-        # Short-circuit all OAuth discovery probes: return 404 without auth check.
-        # mcp-remote probes /.well-known/oauth-authorization-server,
-        # /.well-known/oauth-protected-resource, and sub-paths thereof.
-        # 404 signals no OAuth server exists; mcp-remote then uses the static
-        # Bearer token from --header directly.
-        if scope.get("path", "").startswith("/.well-known/"):
-            await self._send_404(send)
+        # OAuth paths bypass Bearer auth and are forwarded to the app directly.
+        # /.well-known/* -- discovery endpoints; oauth.py returns 200 for the
+        #   ones it implements, Starlette returns 404 for the rest.
+        # /token          -- has its own client_secret validation in oauth.py.
+        path = scope.get("path", "")
+        if path.startswith("/.well-known/") or path == "/token":
+            await self._app(scope, receive, send)
             return
 
         headers: dict[str, str] = {
@@ -118,15 +117,3 @@ class BearerApiKeyMiddleware:
         )
         await send({"type": "http.response.body", "body": self._BODY_401})
 
-    async def _send_404(self, send: Callable) -> None:
-        await send(
-            {
-                "type": "http.response.start",
-                "status": 404,
-                "headers": [
-                    [b"content-type", b"application/json"],
-                    [b"content-length", str(len(self._BODY_404)).encode()],
-                ],
-            }
-        )
-        await send({"type": "http.response.body", "body": self._BODY_404})

@@ -134,7 +134,9 @@ def _run_with_tls(
     async def _serve() -> None:
         app = mcp.streamable_http_app()
         if api_key:
+            from legacy_mcp.oauth import build_oauth_app       # noqa: PLC0415
             from legacy_mcp.auth import BearerApiKeyMiddleware  # noqa: PLC0415
+            app = build_oauth_app(api_key, fallback=app)
             app = BearerApiKeyMiddleware(app, api_key)
         config = uvicorn.Config(
             app,

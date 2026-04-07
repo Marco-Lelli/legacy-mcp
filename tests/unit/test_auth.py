@@ -186,18 +186,13 @@ async def test_middleware_401_has_no_www_authenticate_header():
     "/.well-known/oauth-protected-resource",
     "/.well-known/oauth-protected-resource/mcp",
 ])
-async def test_well_known_paths_return_404_without_auth(path):
-    """Bug G: all /.well-known/* paths must return 404 without auth check.
+async def test_well_known_paths_bypass_auth_and_forward_to_app(path):
+    """Feature H + Bug G: /.well-known/* paths must bypass Bearer auth.
 
-    mcp-remote probes at least three paths:
-      - /.well-known/oauth-authorization-server
-      - /.well-known/oauth-protected-resource
-      - /.well-known/oauth-protected-resource/mcp
-
-    A 401 on any of these is interpreted as evidence of an OAuth server,
-    triggering a registerClient flow that LegacyMCP does not implement.
-    A 404 signals no OAuth server exists; mcp-remote then falls back to
-    the static Bearer token from --header.
+    The middleware must NOT apply auth checks and must NOT return 401.
+    Instead it passes the request to the inner app (oauth.py router), which
+    returns 200 for implemented paths or 404 for unknown ones.
+    Verification that the correct HTTP status is returned lives in test_oauth.py.
     """
     inner = _RecordingApp()
     mw = BearerApiKeyMiddleware(inner, "my-key")
@@ -205,9 +200,10 @@ async def test_well_known_paths_return_404_without_auth(path):
     capture = _CaptureSend()
     await mw(scope, None, capture)
 
-    assert not inner.called
-    assert capture.events[0]["status"] == 404
-    assert capture.events[1]["body"] == b'{"error":"not_found"}'
+    # Inner app must be reached -- no 401 interception by the middleware.
+    assert inner.called
+    # Middleware sent nothing (inner app would handle the response in production).
+    assert capture.events == []
 
 
 @pytest.mark.anyio
