@@ -181,22 +181,27 @@ async def test_middleware_401_has_no_www_authenticate_header():
 
 
 @pytest.mark.anyio
-async def test_oauth_discovery_path_returns_404_without_auth():
-    """Bug G: GET /.well-known/oauth-authorization-server must return 404
-    without any auth check.  mcp-remote interprets a 401 on this path as
-    evidence of an OAuth server and starts an OAuth flow (registerClient)
-    that LegacyMCP does not implement, causing a ServerError.
-    A 404 signals that no OAuth server exists and forces mcp-remote to use
-    the static Bearer token supplied via --header directly.
+@pytest.mark.parametrize("path", [
+    "/.well-known/oauth-authorization-server",
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-protected-resource/mcp",
+])
+async def test_well_known_paths_return_404_without_auth(path):
+    """Bug G: all /.well-known/* paths must return 404 without auth check.
+
+    mcp-remote probes at least three paths:
+      - /.well-known/oauth-authorization-server
+      - /.well-known/oauth-protected-resource
+      - /.well-known/oauth-protected-resource/mcp
+
+    A 401 on any of these is interpreted as evidence of an OAuth server,
+    triggering a registerClient flow that LegacyMCP does not implement.
+    A 404 signals no OAuth server exists; mcp-remote then falls back to
+    the static Bearer token from --header.
     """
     inner = _RecordingApp()
     mw = BearerApiKeyMiddleware(inner, "my-key")
-    scope = {
-        "type": "http",
-        "method": "GET",
-        "path": "/.well-known/oauth-authorization-server",
-        "headers": [],  # no Authorization header
-    }
+    scope = {"type": "http", "method": "GET", "path": path, "headers": []}
     capture = _CaptureSend()
     await mw(scope, None, capture)
 

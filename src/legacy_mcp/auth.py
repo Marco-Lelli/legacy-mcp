@@ -67,11 +67,6 @@ class BearerApiKeyMiddleware:
     _BODY_401 = b'{"error":"Unauthorized"}'
     _BODY_404 = b'{"error":"not_found"}'
 
-    # mcp-remote probes this path to discover an OAuth server.
-    # Returning 404 (not 401) tells it no OAuth server exists and forces it
-    # to use the static Bearer token supplied via --header instead.
-    _OAUTH_DISCOVERY_PATH = "/.well-known/oauth-authorization-server"
-
     def __init__(self, app: Callable, api_key: str) -> None:
         self._app = app
         self._api_key = api_key
@@ -81,8 +76,12 @@ class BearerApiKeyMiddleware:
             await self._app(scope, receive, send)
             return
 
-        # Short-circuit OAuth discovery probe: return 404 without auth check.
-        if scope.get("path") == self._OAUTH_DISCOVERY_PATH:
+        # Short-circuit all OAuth discovery probes: return 404 without auth check.
+        # mcp-remote probes /.well-known/oauth-authorization-server,
+        # /.well-known/oauth-protected-resource, and sub-paths thereof.
+        # 404 signals no OAuth server exists; mcp-remote then uses the static
+        # Bearer token from --header directly.
+        if scope.get("path", "").startswith("/.well-known/"):
             await self._send_404(send)
             return
 
