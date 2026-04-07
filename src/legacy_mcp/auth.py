@@ -100,7 +100,9 @@ class BearerApiKeyMiddleware:
                 "headers": [
                     [b"content-type", b"application/json"],
                     [b"content-length", str(len(self._BODY)).encode()],
-                    [b"www-authenticate", b'Bearer realm="LegacyMCP"'],
+                    # WWW-Authenticate intentionally omitted: mcp-remote interprets
+                    # it as an OAuth discovery trigger.  LegacyMCP uses a static
+                    # Bearer token -- no OAuth flow is involved.
                 ],
             }
         )

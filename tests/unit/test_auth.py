@@ -158,6 +158,29 @@ async def test_middleware_rejects_missing_header():
 
 
 @pytest.mark.anyio
+async def test_middleware_401_has_no_www_authenticate_header():
+    """Bug F regression: 401 must NOT include WWW-Authenticate.
+
+    mcp-remote treats WWW-Authenticate: Bearer as an OAuth discovery trigger
+    and attempts an OAuth flow that LegacyMCP does not implement, blocking
+    the connection entirely.  The header must be absent from every 401 response.
+    """
+    inner = _RecordingApp()
+    mw = BearerApiKeyMiddleware(inner, "my-key")
+    scope = _make_http_scope("Bearer wrong-token")
+    capture = _CaptureSend()
+    await mw(scope, None, capture)
+
+    start_event = capture.events[0]
+    assert start_event["status"] == 401
+    header_names = [name.lower() for name, _ in start_event["headers"]]
+    assert b"www-authenticate" not in header_names, (
+        "401 response must not contain WWW-Authenticate -- mcp-remote would "
+        "interpret it as an OAuth discovery trigger."
+    )
+
+
+@pytest.mark.anyio
 async def test_middleware_passes_non_http_scope():
     """Lifespan and websocket scopes must bypass auth entirely."""
     inner = _RecordingApp()
