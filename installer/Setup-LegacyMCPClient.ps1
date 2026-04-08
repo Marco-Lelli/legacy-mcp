@@ -4,12 +4,13 @@
     Configure a consultant PC to connect to a LegacyMCP Profile B server.
 
 .DESCRIPTION
-    Sets AUTH_HEADER and NODE_EXTRA_CA_CERTS as User-scope environment variables,
-    then adds or updates the legacymcp-live entry in claude_desktop_config.json.
+    Saves the API key as a DPAPI user-scope encrypted file (.legacymcp-key),
+    sets NODE_EXTRA_CA_CERTS as a User-scope environment variable, and adds or
+    updates the legacymcp-live entry in claude_desktop_config.json.
 
-    The API key is stored only in the User environment -- never written to disk in
-    plain text. The JSON config uses ${AUTH_HEADER} as a reference so Claude Desktop
-    reads the value from the environment at startup.
+    The API key is never stored in plain text. It is encrypted with DPAPI
+    (user-scope) so only the current Windows user account can decrypt it.
+    The mcp-remote-live.ps1 wrapper reads the key at runtime.
 
     A backup of claude_desktop_config.json is created before any modification.
     If the backup fails the script exits without touching the config file.
@@ -124,20 +125,25 @@ if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 3 -- Set User environment variables
+# Step 3 -- Save API key (DPAPI user-scope) + NODE_EXTRA_CA_CERTS env var
 # ---------------------------------------------------------------------------
-Write-Step 'Step 3 -- User environment variables'
+Write-Step 'Step 3 -- Save API key and environment'
 
-$authHeaderValue = "Bearer $ApiKey"
-[Environment]::SetEnvironmentVariable('AUTH_HEADER', $authHeaderValue, 'User')
-Write-OK 'AUTH_HEADER set as User environment variable.'
+# Encrypt the API key with DPAPI (user-scope) and write to .legacymcp-key
+# alongside mcp-remote-live.ps1 in the repo root (one level above installer/).
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$keyFile  = Join-Path $repoRoot '.legacymcp-key'
+$secure    = $ApiKey | ConvertTo-SecureString -AsPlainText -Force
+$encrypted = $secure | ConvertFrom-SecureString
+$encrypted | Out-File $keyFile -Encoding UTF8
+Write-OK "API key saved (DPAPI encrypted): $keyFile"
 
 [Environment]::SetEnvironmentVariable('NODE_EXTRA_CA_CERTS', $CaCertPath, 'User')
 Write-OK "NODE_EXTRA_CA_CERTS set: $CaCertPath"
 
 # Clear from memory (best effort)
-$ApiKey = $null
-$authHeaderValue = $null
+$ApiKey    = $null
+$encrypted = $null
 
 # ---------------------------------------------------------------------------
 # Step 4 -- Update claude_desktop_config.json
@@ -181,19 +187,16 @@ if (-not ($config.PSObject.Properties['mcpServers'])) {
     Add-Member -InputObject $config -NotePropertyName 'mcpServers' -NotePropertyValue ([PSCustomObject]@{})
 }
 
-# Build the legacymcp-live entry -- API key is NOT embedded; use env var reference
+# Build the legacymcp-live entry -- delegates to mcp-remote-live.ps1 which
+# reads the DPAPI-encrypted key from .legacymcp-key at runtime.
+$wrapperPath  = Join-Path $repoRoot 'mcp-remote-live.ps1'
 $liveMcpEntry = [PSCustomObject]@{
-    command = 'npx'
+    command = 'powershell.exe'
     args    = @(
-        'mcp-remote',
-        $ServerUrl,
-        '--header',
-        'Authorization:${AUTH_HEADER}'
+        '-ExecutionPolicy', 'Bypass',
+        '-File', $wrapperPath,
+        '-ServerUrl', $ServerUrl
     )
-    env     = [PSCustomObject]@{
-        AUTH_HEADER        = '${AUTH_HEADER}'
-        NODE_EXTRA_CA_CERTS = '${NODE_EXTRA_CA_CERTS}'
-    }
 }
 
 # Add or replace legacymcp-live (never touch legacymcp / Profile A entry)
@@ -221,8 +224,10 @@ Write-OK "claude_desktop_config.json updated: $ClaudeConfigPath"
 Write-Step 'Step 5 -- Summary'
 
 Write-Host ''
-Write-Host '  Environment variables set (User scope):' -ForegroundColor White
-Write-Host '    AUTH_HEADER         = Bearer ***' -ForegroundColor Cyan
+Write-Host '  API key stored (DPAPI encrypted, user-scope):' -ForegroundColor White
+Write-Host "    $keyFile" -ForegroundColor Cyan
+Write-Host ''
+Write-Host '  Environment variable set (User scope):' -ForegroundColor White
 Write-Host "    NODE_EXTRA_CA_CERTS = $CaCertPath" -ForegroundColor Cyan
 Write-Host ''
 Write-Host '  legacymcp-live entry added to:' -ForegroundColor White

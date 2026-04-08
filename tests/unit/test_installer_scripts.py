@@ -14,22 +14,44 @@ _INSTALL_SCRIPT = Path("installer/Install-LegacyMCP.ps1")
 
 
 # ---------------------------------------------------------------------------
-# Fix 2 regression: AUTH_HEADER value in JSON must NOT contain "Bearer " prefix
+# F3: API key stored as DPAPI file, not as AUTH_HEADER env var
 # ---------------------------------------------------------------------------
 
 
-def test_setup_auth_header_json_value_no_bearer_prefix():
-    """Fix 2: AUTH_HEADER in the JSON env block must be '${AUTH_HEADER}', not
-    'Bearer ${AUTH_HEADER}'.  The env var already contains 'Bearer <key>';
-    adding a prefix again would produce 'Bearer Bearer <key>' at runtime.
+def test_setup_uses_dpapi_not_auth_header_env_var():
+    """F3: Setup must encrypt the API key with DPAPI, not set AUTH_HEADER env var.
+
+    The old approach stored the key as AUTH_HEADER in the User environment.
+    The new approach encrypts with ConvertFrom-SecureString and writes .legacymcp-key.
     """
     source = _SETUP_SCRIPT.read_text(encoding="utf-8")
-    assert "Bearer ${AUTH_HEADER}" not in source, (
-        "Setup-LegacyMCPClient.ps1 still contains 'Bearer ${AUTH_HEADER}' "
-        "in the JSON env block -- this would double the Bearer prefix at runtime."
+    assert "AUTH_HEADER" not in source, (
+        "Setup-LegacyMCPClient.ps1 must not reference AUTH_HEADER at all. "
+        "The API key must be stored as a DPAPI-encrypted .legacymcp-key file."
     )
-    assert "'${AUTH_HEADER}'" in source or '"${AUTH_HEADER}"' in source, (
-        "AUTH_HEADER JSON value should be '${AUTH_HEADER}' (no Bearer prefix)."
+    assert "ConvertFrom-SecureString" in source, (
+        "Setup-LegacyMCPClient.ps1 must use ConvertFrom-SecureString to encrypt "
+        "the API key with DPAPI user-scope."
+    )
+
+
+def test_setup_writes_legacymcp_key_file():
+    """F3: Setup must write the DPAPI-encrypted key to .legacymcp-key."""
+    source = _SETUP_SCRIPT.read_text(encoding="utf-8")
+    assert ".legacymcp-key" in source, (
+        "Setup-LegacyMCPClient.ps1 must reference .legacymcp-key as the output "
+        "file for the DPAPI-encrypted API key."
+    )
+
+
+def test_setup_json_entry_uses_ps1_wrapper():
+    """F3: The claude_desktop_config.json entry must invoke mcp-remote-live.ps1,
+    not call npx/mcp-remote directly.
+    """
+    source = _SETUP_SCRIPT.read_text(encoding="utf-8")
+    assert "mcp-remote-live.ps1" in source, (
+        "Setup-LegacyMCPClient.ps1 must build a claude_desktop_config.json entry "
+        "that invokes mcp-remote-live.ps1 (which reads the key from .legacymcp-key)."
     )
 
 

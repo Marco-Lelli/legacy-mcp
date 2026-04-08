@@ -3,14 +3,14 @@
 # Per generare .legacymcp-key eseguire Setup-LegacyMCPClient.ps1.
 #
 # ADATTARE per ogni deployment:
-#   - NODE_EXTRA_CA_CERTS: path al certificato TLS del server MCP
-#   - URL in npx mcp-remote: hostname e porta del server MCP
-#
-# Esempio per il lab LORENZO:
-#   NODE_EXTRA_CA_CERTS = C:\GIT\legacy-mcp\certs\lorenzo.crt
-#   URL                 = https://lorenzo.house.local:8000/mcp
+#   - $ServerUrl: URL del server MCP (passato da claude_desktop_config.json
+#     tramite il parametro -ServerUrl, oppure modificare il default qui sotto)
+#   - NODE_EXTRA_CA_CERTS: impostato da Setup-LegacyMCPClient.ps1 come variabile
+#     d'ambiente User-scope; non serve modificarlo qui.
 
-$env:NODE_EXTRA_CA_CERTS = "C:\GIT\legacy-mcp\certs\lorenzo.crt"
+param(
+    [string]$ServerUrl = "https://lorenzo.house.local:8000/mcp"
+)
 
 $keyFile = Join-Path $PSScriptRoot ".legacymcp-key"
 if (-not (Test-Path $keyFile)) {
@@ -21,4 +21,4 @@ if (-not (Test-Path $keyFile)) {
 $secure = Get-Content $keyFile | ConvertTo-SecureString
 $apiKey = [System.Net.NetworkCredential]::new("", $secure).Password
 
-& npx mcp-remote https://lorenzo.house.local:8000/mcp --header "Authorization:Bearer $apiKey"
+& npx mcp-remote $ServerUrl --header "Authorization:Bearer $apiKey"
