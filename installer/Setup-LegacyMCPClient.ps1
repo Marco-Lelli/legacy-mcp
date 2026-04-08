@@ -4,13 +4,18 @@
     Configure a consultant PC to connect to a LegacyMCP Profile B server.
 
 .DESCRIPTION
-    Saves the API key as a DPAPI user-scope encrypted file (.legacymcp-key),
-    sets NODE_EXTRA_CA_CERTS as a User-scope environment variable, and adds or
-    updates the legacymcp-live entry in claude_desktop_config.json.
+    Saves the API key as a DPAPI user-scope encrypted file (client\.legacymcp-key),
+    generates client\mcp-remote-live.bat as the Claude Desktop entry point, and
+    adds or updates the legacymcp-live entry in claude_desktop_config.json.
 
     The API key is never stored in plain text. It is encrypted with DPAPI
     (user-scope) so only the current Windows user account can decrypt it.
-    The mcp-remote-live.ps1 wrapper reads the key at runtime.
+    client\mcp-remote-live.ps1 reads the key at runtime via $PSScriptRoot.
+
+    Claude Desktop cannot use powershell.exe directly as a MCP server command --
+    PowerShell emits startup output to stdout before mcp-remote takes control,
+    breaking the JSON-RPC framing. The generated BAT file suppresses this with
+    -NoProfile -NonInteractive and is the only reliable entry point.
 
     A backup of claude_desktop_config.json is created before any modification.
     If the backup fails the script exits without touching the config file.
@@ -125,21 +130,41 @@ if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 3 -- Save API key (DPAPI user-scope) + NODE_EXTRA_CA_CERTS env var
+# Step 3 -- Save API key (DPAPI user-scope) + generate BAT entry point
 # ---------------------------------------------------------------------------
-Write-Step 'Step 3 -- Save API key and environment'
+Write-Step 'Step 3 -- Save API key and generate client files'
 
-# Encrypt the API key with DPAPI (user-scope) and write to .legacymcp-key
-# alongside mcp-remote-live.ps1 in the repo root (one level above installer/).
-$repoRoot = Split-Path $PSScriptRoot -Parent
-$keyFile  = Join-Path $repoRoot '.legacymcp-key'
+$repoRoot  = Split-Path $PSScriptRoot -Parent
+$clientDir = Join-Path $repoRoot 'client'
+if (-not (Test-Path $clientDir)) {
+    New-Item -ItemType Directory -Path $clientDir -Force | Out-Null
+    Write-OK "Created client directory: $clientDir"
+}
+
+# Encrypt the API key with DPAPI (user-scope) and write to client\.legacymcp-key.
+# mcp-remote-live.ps1 reads it via $PSScriptRoot, so key and PS1 must be co-located.
+$keyFile   = Join-Path $clientDir '.legacymcp-key'
 $secure    = $ApiKey | ConvertTo-SecureString -AsPlainText -Force
 $encrypted = $secure | ConvertFrom-SecureString
 $encrypted | Out-File $keyFile -Encoding UTF8
 Write-OK "API key saved (DPAPI encrypted): $keyFile"
 
-[Environment]::SetEnvironmentVariable('NODE_EXTRA_CA_CERTS', $CaCertPath, 'User')
-Write-OK "NODE_EXTRA_CA_CERTS set: $CaCertPath"
+# Generate client\mcp-remote-live.bat -- the actual entry point for Claude Desktop.
+# PowerShell cannot be used directly as a MCP command: PS emits startup output to
+# stdout before mcp-remote takes over, breaking the JSON-RPC framing.
+# The BAT file uses -NoProfile -NonInteractive and also sets NODE_EXTRA_CA_CERTS
+# explicitly in the process environment (User-scope env vars are not reliably
+# inherited by Claude Desktop child processes).
+$ps1Path    = Join-Path $clientDir 'mcp-remote-live.ps1'
+$batPath    = Join-Path $clientDir 'mcp-remote-live.bat'
+$batContent  = "@echo off`r`n"
+$batContent += "set NODE_EXTRA_CA_CERTS=$CaCertPath`r`n"
+$batContent += "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass"
+$batContent += " -File `"$ps1Path`""
+$batContent += " -ServerUrl `"$ServerUrl`""
+$batContent += " -CaCertPath `"$CaCertPath`""
+[System.IO.File]::WriteAllText($batPath, $batContent, (New-Object System.Text.UTF8Encoding $false))
+Write-OK "BAT entry point generated: $batPath"
 
 # Clear from memory (best effort)
 $ApiKey    = $null
@@ -187,16 +212,12 @@ if (-not ($config.PSObject.Properties['mcpServers'])) {
     Add-Member -InputObject $config -NotePropertyName 'mcpServers' -NotePropertyValue ([PSCustomObject]@{})
 }
 
-# Build the legacymcp-live entry -- delegates to mcp-remote-live.ps1 which
-# reads the DPAPI-encrypted key from .legacymcp-key at runtime.
-$wrapperPath  = Join-Path $repoRoot 'mcp-remote-live.ps1'
-$liveMcpEntry = [PSCustomObject]@{
-    command = 'powershell.exe'
-    args    = @(
-        '-ExecutionPolicy', 'Bypass',
-        '-File', $wrapperPath,
-        '-ServerUrl', $ServerUrl
-    )
+# Build the legacymcp-live entry using [ordered]@{} with plain PS path strings.
+# ConvertTo-Json handles backslash escaping correctly when paths are inserted as
+# normal PS strings -- no post-processing -replace workaround needed.
+$liveMcpEntry = [ordered]@{
+    command = $batPath
+    args    = @()
 }
 
 # Add or replace legacymcp-live (never touch legacymcp / Profile A entry)
@@ -206,15 +227,13 @@ if ($mcpServers.PSObject.Properties['legacymcp-live']) {
 }
 Add-Member -InputObject $mcpServers -NotePropertyName 'legacymcp-live' -NotePropertyValue $liveMcpEntry
 
-# Write back -- UTF-8 without BOM, 2-space indent
-# ConvertTo-Json doubles backslashes in Windows paths (\\ -> \\\\).
-# Normalise back to \\ so the JSON is valid for Claude Desktop.
+# Write back -- UTF-8 without BOM (New-Object System.Text.UTF8Encoding $false).
+# [System.Text.Encoding]::UTF8 includes a BOM that Claude Desktop rejects.
 $updatedJson = $config | ConvertTo-Json -Depth 10
-$updatedJson = $updatedJson -replace '\\\\\\\\', '\\\\'
 [System.IO.File]::WriteAllText(
     $ClaudeConfigPath,
     $updatedJson,
-    [System.Text.Encoding]::UTF8
+    (New-Object System.Text.UTF8Encoding $false)
 )
 Write-OK "claude_desktop_config.json updated: $ClaudeConfigPath"
 
@@ -227,8 +246,8 @@ Write-Host ''
 Write-Host '  API key stored (DPAPI encrypted, user-scope):' -ForegroundColor White
 Write-Host "    $keyFile" -ForegroundColor Cyan
 Write-Host ''
-Write-Host '  Environment variable set (User scope):' -ForegroundColor White
-Write-Host "    NODE_EXTRA_CA_CERTS = $CaCertPath" -ForegroundColor Cyan
+Write-Host '  Claude Desktop entry point generated:' -ForegroundColor White
+Write-Host "    $batPath" -ForegroundColor Cyan
 Write-Host ''
 Write-Host '  legacymcp-live entry added to:' -ForegroundColor White
 Write-Host "    $ClaudeConfigPath" -ForegroundColor Cyan

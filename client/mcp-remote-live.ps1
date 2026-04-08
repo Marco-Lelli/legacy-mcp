@@ -5,11 +5,11 @@
 # ADATTARE per ogni deployment:
 #   - $ServerUrl: URL del server MCP (passato da claude_desktop_config.json
 #     tramite il parametro -ServerUrl, oppure modificare il default qui sotto)
-#   - NODE_EXTRA_CA_CERTS: impostato da Setup-LegacyMCPClient.ps1 come variabile
-#     d'ambiente User-scope; non serve modificarlo qui.
+#   - $CaCertPath: percorso del certificato CA del server MCP
 
 param(
-    [string]$ServerUrl = "https://lorenzo.house.local:8000/mcp"
+    [string]$ServerUrl  = "https://lorenzo.house.local:8000/mcp",
+    [string]$CaCertPath = ""
 )
 
 $keyFile = Join-Path $PSScriptRoot ".legacymcp-key"
@@ -20,5 +20,10 @@ if (-not (Test-Path $keyFile)) {
 
 $secure = Get-Content $keyFile | ConvertTo-SecureString
 $apiKey = [System.Net.NetworkCredential]::new("", $secure).Password
+
+if ($CaCertPath -eq "") {
+    $CaCertPath = Join-Path $PSScriptRoot "certs\lorenzo.crt"
+}
+$env:NODE_EXTRA_CA_CERTS = $CaCertPath
 
 & npx mcp-remote $ServerUrl --header "Authorization:Bearer $apiKey"

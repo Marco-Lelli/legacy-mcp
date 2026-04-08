@@ -109,37 +109,42 @@ Restrict access at the firewall level. TLS is strongly recommended.
 **Client setup (consultant's machine):**
 
 Run `Setup-LegacyMCPClient.ps1` once on each consultant's machine (non-elevated,
-regular user context). The script stores the API key as a DPAPI-encrypted file
-(`.legacymcp-key`) and sets the required environment variables.
+regular user context). The script:
 
-The `mcp-remote-live.ps1` wrapper in the repository root reads the key from
-`.legacymcp-key` at runtime and passes it to `mcp-remote` without ever exposing
-it in the config file.
+1. Encrypts the API key with DPAPI user-scope → `client\.legacymcp-key`
+2. Generates `client\mcp-remote-live.bat` — the Claude Desktop entry point
+3. Adds the `legacymcp-live` entry to `claude_desktop_config.json`
 
-Add the following entry to `%APPDATA%\Claude\claude_desktop_config.json`:
+**Why a BAT file?**
+
+Claude Desktop cannot use `powershell.exe` directly as a MCP server `command`.
+PowerShell emits startup output (banner, profile messages) to stdout before
+`mcp-remote` takes over, corrupting the JSON-RPC framing and breaking the
+connection. The generated BAT file uses `-NoProfile -NonInteractive` to suppress
+this output and is the only reliable entry point.
+
+The `claude_desktop_config.json` entry added by Setup looks like:
 
 ```json
 {
   "mcpServers": {
     "legacymcp-live": {
-      "command": "powershell.exe",
-      "args": [
-        "-ExecutionPolicy", "Bypass",
-        "-File", "C:\\path\\to\\legacy-mcp\\mcp-remote-live.ps1"
-      ]
+      "command": "C:\\path\\to\\legacy-mcp\\client\\mcp-remote-live.bat",
+      "args": []
     }
   }
 }
 ```
 
-Replace `C:\\path\\to\\legacy-mcp` with the actual repository path on the
-consultant's machine. Use double backslashes in JSON.
+The paths are absolute and written by `Setup-LegacyMCPClient.ps1` — no manual
+editing of the JSON file is needed.
 
 **Files that must NOT be committed:**
-- `mcp-remote-live.bat` — contains the API key in plaintext
-- `.legacymcp-key` — DPAPI-encrypted key file (user-specific)
+- `client\mcp-remote-live.bat` — generated with deployment-specific absolute paths
+- `client\.legacymcp-key` — DPAPI-encrypted key file (user-specific)
+- `client\certs\` — deployment-specific TLS certificates
 
-Both are excluded in `.gitignore`.
+All are excluded in `.gitignore`.
 
 ---
 
