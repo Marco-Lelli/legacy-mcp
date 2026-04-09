@@ -8,7 +8,7 @@
 #   - $CaCertPath: path to the MCP server CA certificate
 
 param(
-    [string]$ServerUrl  = "https://lorenzo.house.local:8000/mcp",
+    [string]$ServerUrl  = "https://LEGACYMCP-SERVER:8000/mcp",
     [string]$CaCertPath = ""
 )
 
@@ -22,7 +22,7 @@ $secure = Get-Content $keyFile | ConvertTo-SecureString
 $apiKey = [System.Net.NetworkCredential]::new("", $secure).Password
 
 if ($CaCertPath -eq "") {
-    $CaCertPath = Join-Path $PSScriptRoot "certs\lorenzo.crt"
+    $CaCertPath = Join-Path $PSScriptRoot "certs\server.crt"
 }
 $env:NODE_EXTRA_CA_CERTS = $CaCertPath
 

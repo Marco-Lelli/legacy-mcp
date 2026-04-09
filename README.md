@@ -163,7 +163,6 @@ See [DISCLAIMER.md](DISCLAIMER.md) for terms of use.
 
 ## Requirements
 
-- PowerShell 5.1 or later (PS 7.x supported)
 - Windows Server 2012 R2 and later
 - Python 3.10+
 - PowerShell 5.1 or later — required to run the collector on the target AD environment
