@@ -347,13 +347,18 @@ MULTI-FOREST CONFIGURATION
   but does not infer any relationship between them.
 
       workspace:
-        mode: offline
-        sources:
-          - domain: contoso.local
+        forests:
+          - name: contoso.local
+            relation: standalone
+            module: ad-core
             file: C:\LegacyMCP-Data\contoso.local-data-20250317.json
-          - domain: fabrikam.local
+          - name: fabrikam.local
+            relation: standalone
+            module: ad-core
             file: C:\LegacyMCP-Data\fabrikam.local-data-20250317.json
-          - domain: tailspin.local
+          - name: tailspin.local
+            relation: standalone
+            module: ad-core
             file: C:\LegacyMCP-Data\tailspin.local-data-20250317.json
 
   Use this when auditing multiple unrelated environments in a single session.
@@ -367,17 +372,18 @@ MULTI-FOREST CONFIGURATION
   naming conflicts, SIDHistory mapping for already-migrated accounts.
 
       workspace:
-        mode: offline
-        migration: true
-        sources:
-          - domain: contoso.local
-            role: source
+        forests:
+          - name: contoso.local
+            relation: source
+            module: ad-core
             file: C:\LegacyMCP-Data\contoso.local-data-20250317.json
-          - domain: corp.fabrikam.com
-            role: destination
+          - name: corp.fabrikam.com
+            relation: dest
+            module: ad-core
             file: C:\LegacyMCP-Data\corp.fabrikam.com-data-20250317.json
 
-  With migration: true, LegacyMCP surfaces comparative findings:
+  Mark one forest as relation: source and one as relation: dest.
+  LegacyMCP surfaces comparative findings:
     - Users in source without a match in destination
     - Groups with no equivalent in the target
     - SIDHistory entries for already-migrated principals
@@ -391,17 +397,19 @@ MULTI-FOREST CONFIGURATION
   Admin rights were not available and each domain was collected separately.
 
       workspace:
-        mode: offline
-        sources:
-          - domain: contoso.local
+        forests:
+          - name: contoso.local
+            relation: standalone
+            module: ad-core
             file: C:\LegacyMCP-Data\contoso.local-data-20250317.json
-          - domain: child.contoso.local
+          - name: child.contoso.local
+            relation: standalone
+            module: ad-core
             file: C:\LegacyMCP-Data\child.contoso.local-data-20250317.json
-          - domain: eu.contoso.local
+          - name: eu.contoso.local
+            relation: standalone
+            module: ad-core
             file: C:\LegacyMCP-Data\eu.contoso.local-data-20250317.json
-
-  LegacyMCP will correlate trust relationships and cross-domain group
-  memberships across the files when the domains share the same forest root.
 
 
 NOTES
