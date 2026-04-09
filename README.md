@@ -6,6 +6,11 @@
 
 > Active Directory MCP Server for AI-powered assessment
 
+[![Release](https://img.shields.io/github/v/release/Marco-Lelli/legacy-mcp?label=release)](https://github.com/Marco-Lelli/legacy-mcp/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows-informational)](https://github.com/Marco-Lelli/legacy-mcp)
+
 LegacyMCP brings the power of AI to Active Directory on-premises environments.
 It exposes AD data as tools that Claude and other LLMs can query directly —
 turning a static assessment script into an interactive, intelligent conversation
