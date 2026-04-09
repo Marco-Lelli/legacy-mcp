@@ -1,4 +1,11 @@
-# Getting Started with LegacyMCP
+# Getting Started — Profile A (Offline Mode)
+
+> This guide covers **Profile A** — the simplest deployment scenario:
+> a single consultant machine running LegacyMCP locally in Offline Mode.
+> No network exposure, no authentication required.
+>
+> For Profile B-core (LAN endpoint with HTTPS and authentication),
+> see [getting-started-b-core.md](getting-started-b-core.md).
 
 LegacyMCP is an MCP server that lets Claude query an Active Directory
 environment and produce an assessment report. This guide covers Offline

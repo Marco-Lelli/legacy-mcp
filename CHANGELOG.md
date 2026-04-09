@@ -31,7 +31,7 @@ All notable changes to this project will be documented in this file.
 ### Tests
 - 341 tests passing (+16 since v0.1.4)
 
-## [0.1.4] - 2026-04-05
+## [0.1.4] - 2026-04-05 "Easter Prize"
 
 ### Fixed
 - Installer: NSSM absolute paths for Python executable and AppDirectory
@@ -52,7 +52,7 @@ All notable changes to this project will be documented in this file.
 - Profile B: 5 test blocks validated end-to-end on LORENZO (house.local, WS2012R2)
 - 286 pytest tests green
 
-## [0.1.3] - 2026-03-30
+## [0.1.3] - 2026-03-30 "Collector Speaks"
 
 ### Added
 - Collector v1.5: file logging with append mode and session header/footer
@@ -71,7 +71,7 @@ All notable changes to this project will be documented in this file.
   not in the user profile when PowerShell working directory differs from
   script location.
 
-## [0.1.2] - 2026-03-29
+## [0.1.2] - 2026-03-29 "Collector Metadata & EventLog"
 
 ### Added
 - Collector v1.4: `_metadata` block as first key in every JSON output
@@ -96,7 +96,7 @@ All notable changes to this project will be documented in this file.
 - `list_snapshots` and `load_snapshot` now read `collected_at` with fallback
   to `timestamp` for backward compatibility with pre-v0.1.2 snapshots
 
-## [0.1.1] - 2026-03-28
+## [0.1.1] - 2026-03-28 "Deployment Profiles & Snapshots"
 
 ### Added
 - Deployment profiles (A / B-core / B-enterprise / C) replacing global `mode` field
@@ -115,11 +115,11 @@ All notable changes to this project will be documented in this file.
 - 257 unit tests (from 241)
 - CLAUDE.md updated with deployment profiles, module system, snapshot bridge
 
-## [0.1.0] - 2026-03-28
+## [0.1.0] - 2026-03-28 "First Light"
 
 ### Added
 - 27 MCP tools covering all core AD sections (Offline Mode and Live Mode)
-- Streamable HTTP transport (Profilo A/B/C)
+- Streamable HTTP transport (Profile A/B/C)
 - Snapshot system (create, list, load)
 - Paginated responses on all tools
 - PowerShell collector v1.3 with safe export (pre-check, post-check JSON validation)

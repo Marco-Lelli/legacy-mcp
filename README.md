@@ -154,7 +154,7 @@ See [DISCLAIMER.md](DISCLAIMER.md) for terms of use.
 - **gMSA support** — no password management headaches
 - **Windows Service** — install, forget, monitor
 - **Dedicated EventLog** — full audit trail, SIEM-ready
-- **Performance Counters** — heartbeat and DC reachability monitoring
+- **Performance Counters** — heartbeat and DC reachability monitoring *(roadmap)*
 - **Graceful degradation** — partial data is better than no data
 - **Three deployment profiles** — local offline, internal network,
   internet-facing with WAF
@@ -166,6 +166,7 @@ See [DISCLAIMER.md](DISCLAIMER.md) for terms of use.
 - PowerShell 5.1 or later (PS 7.x supported)
 - Windows Server 2012 R2 and later
 - Python 3.10+
+- PowerShell 5.1 or later — required to run the collector on the target AD environment
 - Claude Desktop or any MCP-compatible client
 
 ---

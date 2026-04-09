@@ -25,6 +25,9 @@ dev = [
     "pytest-asyncio>=0.23",
 ]
 
+[project.urls]
+Repository = "https://github.com/Marco-Lelli/legacy-mcp"
+
 [project.scripts]
 legacy-mcp = "legacy_mcp.server:main"
 

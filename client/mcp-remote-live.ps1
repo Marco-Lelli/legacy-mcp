@@ -1,11 +1,11 @@
-# mcp-remote-live.ps1 -- wrapper per Claude Desktop (Profile B)
-# La API key viene letta da .legacymcp-key (cifrato con DPAPI user-scope).
-# Per generare .legacymcp-key eseguire Setup-LegacyMCPClient.ps1.
+# mcp-remote-live.ps1 -- Claude Desktop wrapper (Profile B)
+# The API key is read from .legacymcp-key (encrypted with DPAPI user-scope).
+# To generate .legacymcp-key run Setup-LegacyMCPClient.ps1.
 #
-# ADATTARE per ogni deployment:
-#   - $ServerUrl: URL del server MCP (passato da claude_desktop_config.json
-#     tramite il parametro -ServerUrl, oppure modificare il default qui sotto)
-#   - $CaCertPath: percorso del certificato CA del server MCP
+# ADAPT for each deployment:
+#   - $ServerUrl: MCP server URL (passed from claude_desktop_config.json
+#     via -ServerUrl parameter, or modify the default below)
+#   - $CaCertPath: path to the MCP server CA certificate
 
 param(
     [string]$ServerUrl  = "https://lorenzo.house.local:8000/mcp",

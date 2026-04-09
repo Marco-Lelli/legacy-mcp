@@ -236,6 +236,13 @@ server:
   port: 8000
 ```
 
+### config.yaml — global mode field (deprecated)
+
+Il campo `mode:` globale a livello root del config.yaml e' deprecato dal v0.1.1.
+Usare il campo `profile:` per il deployment profile e, se necessario, il campo
+`mode:` per-forest per gli override individuali. Il server emette un warning
+a stderr se rileva `mode:` al livello root.
+
 ### server.host
 
 Per deployment in rete (Profile B) impostare `server.host: 0.0.0.0` nel config.yaml.
@@ -473,9 +480,16 @@ legacy-mcp/
 │   └── modules/        # moduli PS per area funzionale
 ├── config/             # template configurazione per profilo A/B/C
 ├── docs/               # architettura e documentazione
+├── client/             # consultant client scripts (generated + static)
+│   ├── mcp-remote-live.ps1   # DPAPI wrapper for mcp-remote
+│   ├── mcp-remote-live.bat   # Claude Desktop entry point (generated)
+│   ├── .legacymcp-key        # DPAPI-encrypted API key (generated, gitignored)
+│   └── certs/                # server TLS cert (gitignored)
 ├── src/legacy_mcp/     # MCP server Python
 │   ├── server.py       # entrypoint FastMCP
 │   ├── config.py
+│   ├── auth.py         # ASGI middleware — API key validation (Profile B)
+│   ├── oauth.py        # OAuth 2.0 stub — discovery, PKCE, client_credentials
 │   ├── workspace/
 │   ├── modes/          # live.py e offline.py
 │   ├── storage/        # JSON → SQLite
@@ -534,3 +548,10 @@ legacy-mcp/
   Nuovo tool get_computers con get_computer_summary e filtri delegation/stale.
   Definita architettura enterprise Azure (VM Windows, Blob Storage, Portal,
   APIM, Copilot Studio). Due file CLAUDE separati: pubblico e privato.
+- 8 aprile 2026 — v0.1.5 "Secure Channel". OAuth 2.0 stub completo (oauth.py):
+  discovery, PKCE auto-approve, dynamic client registration, token dual grant
+  (authorization_code + client_credentials). Setup-LegacyMCPClient.ps1: API key
+  migrata da env var AUTH_HEADER a DPAPI user-scope (.legacymcp-key).
+  Entry point Claude Desktop migrato da PS1 a BAT (mcp-remote-live.bat) per
+  evitare stdout pollution che rompeva il JSON-RPC. NODE_EXTRA_CA_CERTS
+  impostato direttamente nel BAT. 341 test verdi. Prima release pubblica su GitHub.
