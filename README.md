@@ -129,14 +129,15 @@ LegacyMCP is built around ten security principles that apply across every deploy
 
 3. **Sensitive data stays local** — in Offline Mode, AD data never leaves the client network toward the cloud. Analysis happens locally. JSON output files are classified Confidential/Restricted.
 
-4. **Strong authentication for exposed endpoints** — three deployment profiles with increasing security requirements: local-only, internal network, and internet-facing with WAF and OAuth2/OIDC.
+4. **Strong authentication for exposed endpoints** — four deployment profiles with increasing security requirements: local-only, internal network (API Key), internal network with Entra ID, and internet-facing with WAF and OAuth2/OIDC.
 
 ```mermaid
 flowchart TD
     A[Profile A - Local] -->|localhost only| B[LegacyMCP Server]
-    C[Profile B - Internal] -->|HTTPS + API Key| B
-    D[Profile C - Internet] -->|WAF + OAuth2/OIDC + MFA| E[Azure APIM]
-    E --> B
+    C[Profile B-core - Internal] -->|HTTPS + API Key| B
+    D[Profile B-enterprise - Internal] -->|HTTPS + Entra ID| B
+    E[Profile C - Internet] -->|WAF + OAuth2/OIDC + MFA| F[Azure APIM]
+    F --> B
 ```
 
 5. **TLS on all non-localhost endpoints** — no plaintext traffic outside localhost under any deployment profile.
@@ -162,8 +163,8 @@ See [DISCLAIMER.md](DISCLAIMER.md) for terms of use.
 - **Dedicated EventLog** — full audit trail, SIEM-ready
 - **Performance Counters** — heartbeat and DC reachability monitoring *(roadmap)*
 - **Graceful degradation** — partial data is better than no data
-- **Three deployment profiles** — local offline, internal network,
-  internet-facing with WAF
+- **Four deployment profiles** — local offline, internal network with API Key,
+  internal network with Entra ID, internet-facing with WAF
 
 ---
 
