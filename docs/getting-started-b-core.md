@@ -23,6 +23,61 @@ flowchart LR
 
 ---
 
+## WinRM Prerequisites
+
+Before installing LegacyMCP, verify the following on each target Domain Controller.
+
+**WinRM HTTPS listener (port 5986)**
+```powershell
+winrm enumerate winrm/config/listener
+```
+The output must include a listener with `Transport = HTTPS` and a valid
+`CertificateThumbprint`. If missing, configure it:
+```powershell
+# Replace thumbprint with your DC certificate thumbprint
+winrm create winrm/config/listener?Address=*+Transport=HTTPS @{Hostname="dc01.contoso.local";CertificateThumbprint="YOUR_THUMBPRINT"}
+```
+
+**Valid certificate on the DC**
+The DC must have a certificate issued by an internal CA (Domain Controller
+template). A self-signed certificate works for testing.
+Verify:
+```powershell
+Get-ChildItem Cert:\LocalMachine\My | Where-Object {$_.Thumbprint -eq "YOUR_THUMBPRINT"} | Format-List Subject, NotAfter, HasPrivateKey
+```
+
+**TLS 1.2 enabled (required on Windows Server 2012 R2)**
+Windows Server 2012 R2 does not enable TLS 1.2 by default. Python 3.11+
+requires TLS 1.2. Enable it via registry on each affected DC and reboot:
+```powershell
+$base = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2"
+New-Item "$base\Server" -Force | Out-Null
+New-Item "$base\Client" -Force | Out-Null
+Set-ItemProperty "$base\Server" -Name "Enabled"           -Value 1 -Type DWord
+Set-ItemProperty "$base\Server" -Name "DisabledByDefault" -Value 0 -Type DWord
+Set-ItemProperty "$base\Client" -Name "Enabled"           -Value 1 -Type DWord
+Set-ItemProperty "$base\Client" -Name "DisabledByDefault" -Value 0 -Type DWord
+Restart-Computer
+```
+Windows Server 2016 and later have TLS 1.2 enabled by default — verify
+with `Get-Item "HKLM:\...\TLS 1.2\Server"` if in doubt.
+
+**Internal CA not expired**
+If the DC certificate is issued by an internal CA, verify the CA is not
+expired before issuing or renewing the DC certificate.
+
+**MCP server placement**
+The LegacyMCP server runs on the **dedicated member server**, not on any
+Domain Controller. The member server must have network access to the DCs
+on port 5986.
+
+**Service account**
+The installer configures a gMSA (recommended) or a dedicated domain account
+with Domain Admin rights and WinRM access to the target DCs. With a gMSA,
+Windows manages credentials automatically — no passwords stored anywhere.
+
+---
+
 ## Prerequisites
 
 **Server machine (member server — never a Domain Controller):**
@@ -125,6 +180,33 @@ Expected response: list of configured forests with their mode (live or offline).
 
 For full TLS setup details, certificate export procedures, and notes on
 legacy CA compatibility, see [tls-certificate-setup.md](tls-certificate-setup.md).
+
+---
+
+## Assessment session tips
+
+Five practices that make sessions more effective, especially on the
+Claude Desktop Pro plan which has a per-turn tool-call limit:
+
+1. **Split collection from analysis.** Turn 1: *"Collect all data for
+   contoso.local. Do not analyse — just say 'data collected' when done."*
+   Turn 2: *"Produce the full report with High/Medium/Low findings."*
+
+2. **One forest per turn.** Multi-forest queries in a single turn hit
+   the tool-call limit quickly.
+
+3. **Specific queries over generic ones.** *"Show users with adminCount=1
+   and privileged groups with nested members on contoso.local"* uses
+   far fewer tool calls than *"Analyse everything."*
+
+4. **The Continue command.** If Claude stops before finishing the report,
+   type `Continue`. The data is already in memory — no additional tool
+   calls are needed. This resolves the
+   *"Claude reached its tool-use limit for this turn"* message.
+
+5. **list_workspaces() first.** Claude calls it automatically at session
+   start to confirm what is loaded. If it does not, ask explicitly before
+   any other query.
 
 ---
 
