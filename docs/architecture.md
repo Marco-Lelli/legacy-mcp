@@ -59,11 +59,12 @@ SQLite is never exposed to the caller — it is an internal implementation detai
 
 ## Deployment Profiles
 
-| Profile | Mode    | Network        | Auth                     |
-|---------|---------|----------------|--------------------------|
-| A       | Offline | None           | Local API key / localhost |
-| B       | Live    | Internal LAN   | gMSA + HTTPS             |
-| C       | Offline | Internet       | WAF + OAuth2 + MFA       |
+| Profile      | Mode    | Network        | Auth                        |
+|--------------|---------|----------------|-----------------------------|
+| A            | Offline | None           | None (localhost only)        |
+| B-core       | Live    | Internal LAN   | API key Bearer + OAuth stub  |
+| B-enterprise | Live    | Internal LAN   | Per-user Entra ID           |
+| C            | Offline | Internet       | WAF + OAuth2/OIDC + MFA     |
 
 ## Component Map
 
