@@ -10,6 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows-informational)](https://github.com/Marco-Lelli/legacy-mcp)
+[![Code Signing](https://img.shields.io/badge/code%20signing-SignPath-blue)](docs/code-signing-policy.md)
 
 LegacyMCP brings the power of AI to Active Directory on-premises environments.
 It exposes AD data as tools that Claude and other LLMs can query directly —
