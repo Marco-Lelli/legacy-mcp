@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+
+  # ── Lint, package and publish to GitHub Releases ───────────────────────────
+  release:
+    name: Release (PowerShell + GitHub)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+
+      - name: Lint — collector (Error only)
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path collector -Recurse -Severity Error
+          if ($results) {
+            $results | Format-Table ScriptName, Line, Message -AutoSize
+            exit 1
+          }
+          Write-Host "collector: OK (no errors)"
+
+      - name: Lint — installer (Error only)
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path installer -Recurse -Severity Error
+          if ($results) {
+            $results | Format-Table ScriptName, Line, Message -AutoSize
+            exit 1
+          }
+          Write-Host "installer: OK (no errors)"
+
+      - name: Package — legacymcp-collector.zip
+        shell: pwsh
+        run: Compress-Archive -Path collector -DestinationPath legacymcp-collector.zip -Force
+
+      - name: Package — legacymcp-installer.zip
+        shell: pwsh
+        run: Compress-Archive -Path installer -DestinationPath legacymcp-installer.zip -Force
+
+      - name: Upload collector artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacymcp-collector
+          path: legacymcp-collector.zip
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacymcp-installer
+          path: legacymcp-installer.zip
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Create release if it does not exist yet; skip if already created manually
+          if ! gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
+            gh release create "${{ github.ref_name }}" \
+              --title "LegacyMCP ${{ github.ref_name }}" \
+              --generate-notes
+          fi
+          # Attach (or replace) the two zip assets
+          gh release upload "${{ github.ref_name }}" \
+            legacymcp-collector.zip \
+            legacymcp-installer.zip \
+            --clobber

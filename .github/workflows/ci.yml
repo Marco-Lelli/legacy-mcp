@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+
+  # ── Job 1: Python unit tests (Linux, no Windows deps) ──────────────────────
+  test:
+    name: Test (Python 3.11)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install ".[dev]"
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+  # ── Job 2: PSScriptAnalyzer lint + zip artifacts ────────────────────────────
+  lint-and-package:
+    name: Lint & Package (PowerShell)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+
+      - name: Lint — collector (Error only)
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path collector -Recurse -Severity Error
+          if ($results) {
+            $results | Format-Table ScriptName, Line, Message -AutoSize
+            exit 1
+          }
+          Write-Host "collector: OK (no errors)"
+
+      - name: Lint — installer (Error only)
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path installer -Recurse -Severity Error
+          if ($results) {
+            $results | Format-Table ScriptName, Line, Message -AutoSize
+            exit 1
+          }
+          Write-Host "installer: OK (no errors)"
+
+      - name: Package — legacymcp-collector.zip
+        shell: pwsh
+        run: Compress-Archive -Path collector -DestinationPath legacymcp-collector.zip -Force
+
+      - name: Package — legacymcp-installer.zip
+        shell: pwsh
+        run: Compress-Archive -Path installer -DestinationPath legacymcp-installer.zip -Force
+
+      - name: Upload collector artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacymcp-collector
+          path: legacymcp-collector.zip
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacymcp-installer
+          path: legacymcp-installer.zip
