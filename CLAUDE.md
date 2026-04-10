@@ -296,3 +296,14 @@ Full coverage requires cross-referencing `LinkedGPOs` from OUs via
 - Always use absolute paths in configuration files (YAML, JSON) unless
   explicitly requested otherwise
 - Always run `pytest` after code changes before committing
+
+---
+
+## Session baseline
+
+At the beginning of every new Claude Code session:
+1. Read `STATUS.md` in the repository root.
+2. Use it as the primary baseline for project status, recent decisions,
+   open tasks, constraints, and next steps.
+3. Do not assume prior chat memory is available.
+4. If something is unclear or missing, say so explicitly before proceeding.
