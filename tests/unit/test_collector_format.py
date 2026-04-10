@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from legacy_mcp.storage.loader import JsonLoader
 from legacy_mcp.storage.queries import QueryEngine
@@ -83,6 +83,6 @@ def test_log_file_path_is_absolute(json_with_summary: Path) -> None:
     with json_with_summary.open() as fh:
         data = json.load(fh)
     log_file = data["_metadata"]["collection_summary"]["log_file"]
-    assert Path(log_file).is_absolute(), (
+    assert PureWindowsPath(log_file).is_absolute(), (
         f"log_file must be an absolute path, got: {log_file!r}"
     )

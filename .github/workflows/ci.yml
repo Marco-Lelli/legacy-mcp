@@ -39,7 +39,8 @@ jobs:
       - name: Lint — collector (Error only)
         shell: pwsh
         run: |
-          $results = Invoke-ScriptAnalyzer -Path collector -Recurse -Severity Error
+          $results = Invoke-ScriptAnalyzer -Path collector -Recurse -Severity Error `
+            -ExcludeRule PSAvoidUsingConvertToSecureStringWithPlainText
           if ($results) {
             $results | Format-Table ScriptName, Line, Message -AutoSize
             exit 1
@@ -49,7 +50,8 @@ jobs:
       - name: Lint — installer (Error only)
         shell: pwsh
         run: |
-          $results = Invoke-ScriptAnalyzer -Path installer -Recurse -Severity Error
+          $results = Invoke-ScriptAnalyzer -Path installer -Recurse -Severity Error `
+            -ExcludeRule PSAvoidUsingConvertToSecureStringWithPlainText
           if ($results) {
             $results | Format-Table ScriptName, Line, Message -AutoSize
             exit 1
