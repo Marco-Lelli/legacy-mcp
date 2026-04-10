@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.6] - 2026-04-10 "Open Doors"
+
+### Added
+- `.github/workflows/ci.yml`: GitHub Actions CI — pytest on ubuntu-latest +
+  PSScriptAnalyzer lint and zip packaging on windows-latest
+- `.github/workflows/release.yml`: GitHub Actions Release — automated zip
+  artifacts on version tags, published to GitHub Releases
+- `docs/code-signing-policy.md`: SignPath Foundation application in progress
+- Badge "code signing SignPath" in README
+
+### Changed
+- README: deployment profiles diagram updated to A / B-core / B-enterprise / C
+- README: "four deployment profiles" in Security by Design and
+  Built for enterprise sections
+- Full documentation review: `getting-started-a.md`, `getting-started-b-core.md`,
+  `tls-certificate-setup.md`, `CONTRIBUTING.md`, `LICENSES.md`,
+  `CLAUDE.md` (rewritten in English), `collector/README.txt`,
+  `pyproject.toml` (version, cryptography dep, repository URL)
+- `client/mcp-remote-live.ps1`: generic placeholders (no real credentials)
+
+### Fixed
+- `tests/unit/test_collector_format.py`: use `PureWindowsPath` for Windows
+  path validation on Linux CI
+- CI: excluded `PSAvoidUsingConvertToSecureStringWithPlainText` from
+  PSScriptAnalyzer (intentional DPAPI pattern)
+
+### Tests
+- 341 tests passing
+
 ## [0.1.5] - 2026-04-08 "Secure Channel"
 
 ### Added
