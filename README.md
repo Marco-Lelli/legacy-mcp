@@ -174,6 +174,27 @@ See [DISCLAIMER.md](DISCLAIMER.md) for terms of use.
 - Python 3.10+
 - PowerShell 5.1 or later — required to run the collector on the target AD environment
 - Claude Desktop or any MCP-compatible client
+- Node.js 18+ — required on the consultant machine for Profile B-core
+
+---
+
+## Getting Started
+
+New to LegacyMCP? Start here:
+
+👉 [Getting Started Guide](docs/getting-started.md)
+
+Already know which profile you need?
+- [Profile A — local offline setup](docs/getting-started-a.md)
+- [Profile B-core — LAN endpoint with HTTPS](docs/getting-started-b-core.md)
+
+---
+
+## Further Reading
+
+- [Deployment profiles](docs/deployment-profiles.md)
+- [Architecture](docs/architecture.md)
+- [TLS certificate setup](docs/tls-certificate-setup.md)
 
 ---
 

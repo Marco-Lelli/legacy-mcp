@@ -194,30 +194,7 @@ section in `collector/README.txt`. It covers:
 
 ---
 
-## Assessment session tips
-
-Five practices that make sessions more effective, especially on the
-Claude Desktop Pro plan which has a per-turn tool-call limit:
-
-1. **Split collection from analysis.** Turn 1: *"Collect all data for
-   contoso.local. Do not analyse — just say 'data collected' when done."*
-   Turn 2: *"Produce the full report with High/Medium/Low findings."*
-
-2. **One forest per turn.** Multi-forest queries in a single turn hit
-   the tool-call limit quickly.
-
-3. **Specific queries over generic ones.** *"Show users with adminCount=1
-   and privileged groups with nested members on contoso.local"* uses
-   far fewer tool calls than *"Analyse everything."*
-
-4. **The Continue command.** If Claude stops before finishing the report,
-   type `Continue`. The data is already in memory — no additional tool
-   calls are needed. This resolves the
-   *"Claude reached its tool-use limit for this turn"* message.
-
-5. **list_workspaces() first.** Claude calls it automatically at session
-   start to confirm what is loaded. If it does not, ask explicitly before
-   any other query.
+> For assessment session tips, see [Getting Started](getting-started.md#assessment-session-tips).
 
 ---
 
