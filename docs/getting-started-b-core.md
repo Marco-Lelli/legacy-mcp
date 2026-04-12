@@ -9,11 +9,8 @@
 ---
 
 Profile B-core is for consulting scenarios where the consultant cannot or
-should not run the MCP server on their own machine. The server runs on a
-dedicated Windows member server inside the client network. The consultant
-connects remotely from Claude Desktop via HTTPS. Typical scenario: the client
-provides a member server, the consultant installs LegacyMCP on it, then queries
-it from their laptop over the LAN.
+should not run the MCP server on their own machine. It's the only profile
+that can connect live to an Active Directory environment.
 
 ---
 
