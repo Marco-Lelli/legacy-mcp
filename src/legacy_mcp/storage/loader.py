@@ -36,6 +36,9 @@ KNOWN_SECTIONS = [
     "dns_forwarders",
     "computers",
     "pki",
+    "dc_windows_features",
+    "dc_services",
+    "dc_installed_software",
 ]
 
 

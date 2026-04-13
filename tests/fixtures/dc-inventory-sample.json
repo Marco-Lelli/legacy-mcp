@@ -1,0 +1,53 @@
+{
+  "dc_windows_features": [
+    {
+      "DC": "dc01.contoso.local",
+      "Status": "OK",
+      "Features": [
+        {"name": "AD-Domain-Services", "display_name": "Active Directory Domain Services"},
+        {"name": "DNS", "display_name": "DNS Server"}
+      ]
+    },
+    {
+      "DC": "dc02.contoso.local",
+      "Status": "Unreachable",
+      "Features": []
+    }
+  ],
+  "dc_services": [
+    {
+      "DC": "dc01.contoso.local",
+      "Status": "OK",
+      "Services": [
+        {"name": "NTDS", "display_name": "Active Directory Domain Services", "status": "Running", "start_type": "Automatic"},
+        {"name": "DNS", "display_name": "DNS Server", "status": "Running", "start_type": "Automatic"}
+      ]
+    },
+    {
+      "DC": "dc02.contoso.local",
+      "Status": "Unreachable",
+      "Services": []
+    }
+  ],
+  "dc_installed_software": [
+    {
+      "DC": "dc01.contoso.local",
+      "Status": "OK",
+      "Software": [
+        {
+          "name": "Windows Admin Center",
+          "version": "2306.22.0.0",
+          "vendor": "Microsoft Corporation",
+          "install_date": "20231015",
+          "_source": "registry",
+          "_note": "data may include stale entries from incomplete uninstalls"
+        }
+      ]
+    },
+    {
+      "DC": "dc02.contoso.local",
+      "Status": "Unreachable",
+      "Software": []
+    }
+  ]
+}

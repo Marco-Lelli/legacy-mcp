@@ -64,3 +64,76 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         """
         conn = workspace.connector(forest_name)
         return conn.query_page("ntp_config", offset=offset, limit=limit)
+
+    @mcp.tool()
+    def get_dc_features(
+        forest_name: str | None = None,
+        dc_name: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Return installed Windows Server roles for each Domain Controller.
+        Each item contains the DC hostname, status, and a nested list of
+        installed roles (name, display_name).
+
+        Use dc_name to filter results to a specific Domain Controller.
+        Returns a paginated result: {items, total, offset, limit, has_more}.
+        Default limit is 50 (one entry per DC with nested role list).
+        """
+        conn = workspace.connector(forest_name)
+        result = conn.query_page("dc_windows_features", offset=offset, limit=limit)
+        if result["total"] == 0:
+            result["_note"] = "data not available \u2014 collector < v1.6"
+        if dc_name:
+            result["items"] = [i for i in result["items"] if i.get("DC") == dc_name]
+            result["total"] = len(result["items"])
+        return result
+
+    @mcp.tool()
+    def get_dc_services(
+        forest_name: str | None = None,
+        dc_name: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Return services that are Running or have Startup Type Auto
+        for each Domain Controller. Covers: what is currently running,
+        and what is configured to start automatically.
+
+        Use dc_name to filter results to a specific Domain Controller.
+        Returns a paginated result: {items, total, offset, limit, has_more}.
+        Default limit is 50.
+        """
+        conn = workspace.connector(forest_name)
+        result = conn.query_page("dc_services", offset=offset, limit=limit)
+        if result["total"] == 0:
+            result["_note"] = "data not available \u2014 collector < v1.6"
+        if dc_name:
+            result["items"] = [i for i in result["items"] if i.get("DC") == dc_name]
+            result["total"] = len(result["items"])
+        return result
+
+    @mcp.tool()
+    def get_dc_software(
+        forest_name: str | None = None,
+        dc_name: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Return installed software from the registry of each Domain Controller.
+        Each item contains the DC hostname, status, and a nested list of
+        installed software (name, version, vendor, install_date).
+
+        Note: registry data may include stale entries from incomplete uninstalls.
+        Use dc_name to filter results to a specific Domain Controller.
+        Returns a paginated result: {items, total, offset, limit, has_more}.
+        Default limit is 50.
+        """
+        conn = workspace.connector(forest_name)
+        result = conn.query_page("dc_installed_software", offset=offset, limit=limit)
+        if result["total"] == 0:
+            result["_note"] = "data not available \u2014 collector < v1.6"
+        if dc_name:
+            result["items"] = [i for i in result["items"] if i.get("DC") == dc_name]
+            result["total"] = len(result["items"])
+        return result

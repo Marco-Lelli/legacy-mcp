@@ -130,4 +130,104 @@ function Get-SysvolData {
     }
 }
 
-Export-ModuleMember -Function Get-DCData, Get-NtpConfigData, Get-EventLogConfigData, Get-SysvolData
+function Get-DCWindowsFeaturesData {
+    [CmdletBinding()]
+    param([hashtable]$CommonParams = @{})
+
+    $dcs = Get-ADDomainController -Filter * @CommonParams
+    foreach ($dc in $dcs) {
+        try {
+            $features = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
+                Import-Module ServerManager -ErrorAction SilentlyContinue
+                Get-WindowsFeature |
+                    Where-Object { $_.InstallState -eq 'Installed' -and $_.FeatureType -eq 'Role' } |
+                    Select-Object @{N='name'; E={$_.Name}},
+                                  @{N='display_name'; E={$_.DisplayName}}
+            } -ErrorAction Stop
+
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Status   = "OK"
+                Features = @($features)
+            }
+        } catch {
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Status   = "Unreachable"
+                Features = @()
+            }
+        }
+    }
+}
+
+function Get-DCServicesData {
+    [CmdletBinding()]
+    param([hashtable]$CommonParams = @{})
+
+    $dcs = Get-ADDomainController -Filter * @CommonParams
+    foreach ($dc in $dcs) {
+        try {
+            $services = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
+                Get-Service |
+                    Where-Object { $_.Status -eq 'Running' -or $_.StartType -eq 'Automatic' } |
+                    Select-Object @{N='name';         E={$_.ServiceName}},
+                                  @{N='display_name'; E={$_.DisplayName}},
+                                  @{N='status';       E={$_.Status.ToString()}},
+                                  @{N='start_type';   E={$_.StartType.ToString()}}
+            } -ErrorAction Stop
+
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Status   = "OK"
+                Services = @($services)
+            }
+        } catch {
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Status   = "Unreachable"
+                Services = @()
+            }
+        }
+    }
+}
+
+function Get-DCInstalledSoftwareData {
+    [CmdletBinding()]
+    param([hashtable]$CommonParams = @{})
+
+    $dcs = Get-ADDomainController -Filter * @CommonParams
+    foreach ($dc in $dcs) {
+        try {
+            $software = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
+                $paths = @(
+                    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+                    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+                )
+                foreach ($path in $paths) {
+                    Get-ItemProperty $path -ErrorAction SilentlyContinue |
+                        Where-Object { $_.DisplayName } |
+                        Select-Object @{N='name';         E={$_.DisplayName}},
+                                      @{N='version';      E={$_.DisplayVersion}},
+                                      @{N='vendor';       E={$_.Publisher}},
+                                      @{N='install_date'; E={$_.InstallDate}},
+                                      @{N='_source';      E={'registry'}},
+                                      @{N='_note';        E={'data may include stale entries from incomplete uninstalls'}}
+                }
+            } -ErrorAction Stop
+
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Status   = "OK"
+                Software = @($software | Sort-Object name -Unique)
+            }
+        } catch {
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Status   = "Unreachable"
+                Software = @()
+            }
+        }
+    }
+}
+
+Export-ModuleMember -Function Get-DCData, Get-NtpConfigData, Get-EventLogConfigData, Get-SysvolData, Get-DCWindowsFeaturesData, Get-DCServicesData, Get-DCInstalledSoftwareData

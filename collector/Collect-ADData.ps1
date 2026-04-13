@@ -3,7 +3,7 @@
 
 <#
 .SYNOPSIS
-    LegacyMCP Offline Data Collector v1.5 - exports AD data to a structured JSON file.
+    LegacyMCP Offline Data Collector v1.6 - exports AD data to a structured JSON file.
 
 .DESCRIPTION
     Collects Active Directory data across all sections covered by LegacyMCP Core
@@ -366,6 +366,109 @@ $data["sysvol"] = Invoke-Section "SYSVOL" {
 if ($null -ne $data["sysvol"]) {
     Write-CollectorLog -Level INFO -Section "SYSVOL" `
         -Message "collected: $(@($data['sysvol']).Count) DCs"
+}
+
+# --- DC Windows Features ---
+$data["dc_windows_features"] = Invoke-Section "DC Windows Features" {
+    $dcs = Get-ADDomainController -Filter * @commonParams
+    foreach ($dc in $dcs) {
+        try {
+            $features = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
+                Import-Module ServerManager -ErrorAction SilentlyContinue
+                Get-WindowsFeature |
+                    Where-Object { $_.InstallState -eq 'Installed' -and $_.FeatureType -eq 'Role' } |
+                    Select-Object @{N='name'; E={$_.Name}},
+                                  @{N='display_name'; E={$_.DisplayName}}
+            } -ErrorAction Stop
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Status   = "OK"
+                Features = @($features)
+            }
+        } catch {
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Status   = "Unreachable"
+                Features = @()
+            }
+        }
+    }
+}
+if ($null -ne $data["dc_windows_features"]) {
+    Write-CollectorLog -Level INFO -Section "DC Windows Features" `
+        -Message "collected: $(@($data['dc_windows_features']).Count) DCs"
+}
+
+# --- DC Services ---
+$data["dc_services"] = Invoke-Section "DC Services" {
+    $dcs = Get-ADDomainController -Filter * @commonParams
+    foreach ($dc in $dcs) {
+        try {
+            $services = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
+                Get-Service |
+                    Where-Object { $_.Status -eq 'Running' -or $_.StartType -eq 'Automatic' } |
+                    Select-Object @{N='name';         E={$_.ServiceName}},
+                                  @{N='display_name'; E={$_.DisplayName}},
+                                  @{N='status';       E={$_.Status.ToString()}},
+                                  @{N='start_type';   E={$_.StartType.ToString()}}
+            } -ErrorAction Stop
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Status   = "OK"
+                Services = @($services)
+            }
+        } catch {
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Status   = "Unreachable"
+                Services = @()
+            }
+        }
+    }
+}
+if ($null -ne $data["dc_services"]) {
+    Write-CollectorLog -Level INFO -Section "DC Services" `
+        -Message "collected: $(@($data['dc_services']).Count) DCs"
+}
+
+# --- DC Installed Software ---
+$data["dc_installed_software"] = Invoke-Section "DC Installed Software" {
+    $dcs = Get-ADDomainController -Filter * @commonParams
+    foreach ($dc in $dcs) {
+        try {
+            $software = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
+                $paths = @(
+                    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+                    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+                )
+                foreach ($path in $paths) {
+                    Get-ItemProperty $path -ErrorAction SilentlyContinue |
+                        Where-Object { $_.DisplayName } |
+                        Select-Object @{N='name';         E={$_.DisplayName}},
+                                      @{N='version';      E={$_.DisplayVersion}},
+                                      @{N='vendor';       E={$_.Publisher}},
+                                      @{N='install_date'; E={$_.InstallDate}},
+                                      @{N='_source';      E={'registry'}},
+                                      @{N='_note';        E={'data may include stale entries from incomplete uninstalls'}}
+                }
+            } -ErrorAction Stop
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Status   = "OK"
+                Software = @($software | Sort-Object name -Unique)
+            }
+        } catch {
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Status   = "Unreachable"
+                Software = @()
+            }
+        }
+    }
+}
+if ($null -ne $data["dc_installed_software"]) {
+    Write-CollectorLog -Level INFO -Section "DC Installed Software" `
+        -Message "collected: $(@($data['dc_installed_software']).Count) DCs"
 }
 
 # --- Sites ---
@@ -746,7 +849,7 @@ try {
         version            = "1.0"
         forest             = $forestName
         collected_at       = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        collector_version  = "1.5"
+        collector_version  = "1.6"
         collected_by       = "$env:USERDOMAIN\$env:USERNAME"
         collection_summary = [ordered]@{
             sections_ok    = $script:sectionsOK
