@@ -56,9 +56,17 @@ function Write-Step  { param([string]$Msg); Write-Host "`n$Msg" -ForegroundColor
 # ---------------------------------------------------------------------------
 function Resolve-ConfigPath {
     param([string]$Path)
+    # 1. Already absolute -- use directly
     if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
-    # Relative to caller's working directory
-    return Join-Path (Get-Location).Path $Path
+    # 2. Registry override (Profile B -- path set by installer)
+    try {
+        $regVal = Get-ItemProperty -Path 'HKLM:\SOFTWARE\LegacyMCP' -Name 'ConfigPath' -ErrorAction Stop
+        if ($regVal.ConfigPath) { return $regVal.ConfigPath }
+    } catch {
+        # Key absent -- continue to fallback
+    }
+    # 3. Fallback: relative to the script's own directory
+    return Join-Path $PSScriptRoot $Path
 }
 
 $ConfigFile = Resolve-ConfigPath $Config
@@ -477,10 +485,24 @@ function Invoke-Add {
         }
     }
 
+    # Normalize file path separators -- MW-B
+    if ($File) { $File = $File.Replace('\', '/') }
+
+    # Read profile to control mode: field -- MW-C
+    $rawConfig = Read-ConfigRaw
+    $configProfile = ''
+    if ($rawConfig -match '(?m)^profile\s*:\s*(\S+)') { $configProfile = $Matches[1] }
+
     # Build forest hashtable
     $forest = @{ name = $Name; relation = $Relation; module = $Module }
-    if ($File) { $forest['mode'] = 'offline'; $forest['file'] = $File }
-    if ($DC)   { $forest['mode'] = 'live';    $forest['dc']   = $DC   }
+    if ($File) {
+        $forest['file'] = $File
+        if ($configProfile -ne 'A') { $forest['mode'] = 'offline' }
+    }
+    if ($DC) {
+        $forest['dc'] = $DC
+        if ($configProfile -ne 'A') { $forest['mode'] = 'live' }
+    }
 
     # Pre-validate
     Write-Step "Validating forest '$Name' before adding..."
