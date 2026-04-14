@@ -721,40 +721,34 @@ _SCRIPTS: dict[str, str] = {
     ),
     # ------------------------------------------------------------------
     # dc_installed_software — registry Uninstall key per DC.
-    # Uses WMI StdRegProv (same pattern as ntp_config) to enumerate
-    # HKLM\SOFTWARE\...\Uninstall and WOW6432Node on each DC via DCOM.
-    # Skips entries without DisplayName. De-duplicates by name.
+    # Uses Invoke-Command directly to each DC (not a double-hop —
+    # each DC reads its own local registry). Covers both 64-bit and
+    # WOW6432Node paths. Skips entries without DisplayName.
+    # De-duplicates by name. StdRegProv WMI was discarded: it returns
+    # null on Windows Server 2012 R2 (confirmed field test 2026-04-14).
     # ------------------------------------------------------------------
     "dc_installed_software": (
-        "$HKLM = [uint32]2147483650\n"
-        "$paths = @(\n"
-        "  'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',\n"
-        "  'SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall'\n"
-        ")\n"
         "$dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName\n"
         "$results = foreach ($dcName in $dcs) {\n"
         "  try {\n"
-        "    $reg  = Get-WmiObject -Namespace root\\default -Class StdRegProv"
-        " -ComputerName $dcName -ErrorAction Stop\n"
-        "    $soft = foreach ($path in $paths) {\n"
-        "      $subkeys = ($reg.EnumKey($HKLM, $path)).sNames\n"
-        "      if (-not $subkeys) { continue }\n"
-        "      foreach ($key in $subkeys) {\n"
-        "        $fullKey = \"$path\\$key\"\n"
-        "        $name = ($reg.GetStringValue($HKLM, $fullKey, 'DisplayName')).sValue\n"
-        "        if (-not $name) { continue }\n"
-        "        [PSCustomObject]@{\n"
-        "          name         = $name\n"
-        "          version      = ($reg.GetStringValue($HKLM, $fullKey, 'DisplayVersion')).sValue\n"
-        "          vendor       = ($reg.GetStringValue($HKLM, $fullKey, 'Publisher')).sValue\n"
-        "          install_date = ($reg.GetStringValue($HKLM, $fullKey, 'InstallDate')).sValue\n"
-        "          _source      = 'registry'\n"
-        "          _note        = 'data may include stale entries from incomplete uninstalls'\n"
-        "        }\n"
+        "    $software = Invoke-Command -ComputerName $dcName -ScriptBlock {\n"
+        "      $paths = @(\n"
+        "        'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',\n"
+        "        'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'\n"
+        "      )\n"
+        "      $soft = foreach ($path in $paths) {\n"
+        "        Get-ItemProperty $path -ErrorAction SilentlyContinue |\n"
+        "          Where-Object { $_.DisplayName } |\n"
+        "          Select-Object @{N='name';         E={$_.DisplayName}},\n"
+        "                        @{N='version';      E={$_.DisplayVersion}},\n"
+        "                        @{N='vendor';       E={$_.Publisher}},\n"
+        "                        @{N='install_date'; E={$_.InstallDate}},\n"
+        "                        @{N='_source';      E={'registry'}},\n"
+        "                        @{N='_note';        E={'data may include stale entries from incomplete uninstalls'}}\n"
         "      }\n"
-        "    }\n"
-        "    $dedup = if ($soft) { @($soft | Sort-Object name -Unique) } else { @() }\n"
-        "    [PSCustomObject]@{ DC = $dcName; Status = 'OK'; Software = $dedup }\n"
+        "      @($soft | Sort-Object name -Unique)\n"
+        "    } -ErrorAction Stop\n"
+        "    [PSCustomObject]@{ DC = $dcName; Status = 'OK'; Software = @($software) }\n"
         "  } catch {\n"
         "    [PSCustomObject]@{ DC = $dcName; Status = 'Unreachable'; Software = @() }\n"
         "  }\n"
