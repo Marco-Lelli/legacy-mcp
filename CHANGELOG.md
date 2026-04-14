@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.7] "Field Notes" — 2026-04-14
+
+### Added
+- DC Inventory: three new MCP tools and collector sections per Domain Controller
+  - `get_dc_features` — installed Windows Server roles
+  - `get_dc_services` — running and auto-start services
+  - `get_dc_software` — installed software from registry
+  - Collector v1.6: `dc_windows_features`, `dc_services`, `dc_installed_software`
+  - Live Mode: all three tools work via WinRM (local execution on DC)
+  - Backward compatible: collector < v1.6 returns `_note` instead of exception
+- SIDHistory collection in collector and `has_sid_history` filter in `get_users`
+- `mcp-remote-live.ps1` added to installer folder and signed artifacts list
+
+### Fixed
+- Bug MW-A: Manage-Workspaces.ps1 config.yaml resolved from $PSScriptRoot/registry
+  instead of current working directory
+- Bug MW-B: Manage-Workspaces.ps1 -Add normalizes JSON paths to forward slashes
+- Bug MW-C: Manage-Workspaces.ps1 -Add no longer writes mode: field in Profile A
+- Bug SC-A: Setup-LegacyMCPClient.ps1 now copies mcp-remote-live.ps1 to client folder
+
+### Changed
+- README Requirements restructured by machine role (collector/server/consultant)
+- docs/getting-started-a.md: ZIP download as alternative to git clone; Git removed
+  from prerequisites
+- docs/getting-started-b-core.md: client setup instructions for standalone folder
+  (no repository required); fixed -ServerUrl to include /mcp suffix
+- mcp-remote-live.ps1 misleading "ADAPT" comment replaced with correct note
+- docs/getting-started.md restructured with entry point, profile table, common
+  prerequisites and assessment tips (session #9)
+
 ## [0.1.6] - 2026-04-10 "Open Doors"
 
 ### Added
