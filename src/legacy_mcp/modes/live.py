@@ -666,94 +666,87 @@ _SCRIPTS: dict[str, str] = {
         "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
     ),
     # ------------------------------------------------------------------
-    # dc_windows_features — installed Windows Server roles per DC.
-    # Uses Win32_ServerFeature (WMI/DCOM) to avoid WinRM double-hop.
-    # Note: Win32_ServerFeature.Name is the display name; the PS module
-    # short name (e.g. AD-Domain-Services) is not available via WMI
-    # without Invoke-Command, so name and display_name carry the same value.
+    # dc_windows_features — installed Windows Server roles on the
+    # configured DC. Runs locally on the WinRM target (no -ComputerName,
+    # no Get-ADDomainController). WMI loopback and Invoke-Command to self
+    # both fail inside a WinRM session; local execution avoids both.
+    # Returns a single-DC result for the configured DC.
+    # FQDN built from $env:COMPUTERNAME + $env:USERDNSDOMAIN.
     # ------------------------------------------------------------------
     "dc_windows_features": (
-        "$dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName\n"
-        "$results = foreach ($dcName in $dcs) {\n"
-        "  try {\n"
-        "    $features = Get-WmiObject -Class Win32_ServerFeature"
-        " -ComputerName $dcName -ErrorAction Stop |\n"
-        "      ForEach-Object {\n"
-        "        [PSCustomObject]@{ name = $_.Name; display_name = $_.Name }\n"
-        "      }\n"
-        "    [PSCustomObject]@{ DC = $dcName; Status = 'OK'; Features = @($features) }\n"
-        "  } catch {\n"
-        "    [PSCustomObject]@{ DC = $dcName; Status = 'Unreachable'; Features = @() }\n"
-        "  }\n"
-        "}\n"
-        "@($results) | ConvertTo-Json -Depth 5"
+        "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
+        "try {\n"
+        "  Import-Module ServerManager -ErrorAction SilentlyContinue\n"
+        "  $features = Get-WindowsFeature |\n"
+        "    Where-Object { $_.InstallState -eq 'Installed' -and $_.FeatureType -eq 'Role' } |\n"
+        "    ForEach-Object { [PSCustomObject]@{ name = $_.Name; display_name = $_.DisplayName } }\n"
+        "  @([PSCustomObject]@{ DC = $dcFqdn; Status = 'OK'; Features = @($features) })"
+        " | ConvertTo-Json -Depth 5\n"
+        "} catch {\n"
+        "  @([PSCustomObject]@{ DC = $dcFqdn; Status = 'Unreachable'; Features = @() })"
+        " | ConvertTo-Json -Depth 5\n"
+        "}"
     ),
     # ------------------------------------------------------------------
-    # dc_services — Running or Auto-start services per DC.
-    # Uses Win32_Service (WMI/DCOM) to avoid WinRM double-hop and to
-    # expose StartMode on PS 5.1 / Windows Server 2012 R2 (Get-Service
-    # does not return StartType on PS 5.1).
-    # WMI StartMode 'Auto' is normalised to 'Automatic' to match
-    # the collector output from Get-Service.StartType.ToString().
+    # dc_services — Running or Auto-start services on the configured DC.
+    # Runs locally on the WinRM target (no -ComputerName).
+    # Uses Win32_Service (WMI local) for compatibility with PS 5.1 /
+    # Windows Server 2012 R2 (Get-Service does not expose StartType on
+    # PS 5.1). WMI StartMode 'Auto' is normalised to 'Automatic' to
+    # match the collector output from Get-Service.StartType.ToString().
     # ------------------------------------------------------------------
     "dc_services": (
-        "$dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName\n"
-        "$results = foreach ($dcName in $dcs) {\n"
-        "  try {\n"
-        "    $services = Get-WmiObject -Class Win32_Service"
-        " -ComputerName $dcName -ErrorAction Stop |\n"
-        "      Where-Object { $_.State -eq 'Running' -or $_.StartMode -eq 'Auto' } |\n"
-        "      ForEach-Object {\n"
-        "        [PSCustomObject]@{\n"
-        "          name         = $_.Name\n"
-        "          display_name = $_.DisplayName\n"
-        "          status       = $_.State\n"
-        "          start_type   = if ($_.StartMode -eq 'Auto') { 'Automatic' }"
+        "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
+        "try {\n"
+        "  $services = Get-WmiObject -Class Win32_Service |\n"
+        "    Where-Object { $_.State -eq 'Running' -or $_.StartMode -eq 'Auto' } |\n"
+        "    ForEach-Object {\n"
+        "      [PSCustomObject]@{\n"
+        "        name         = $_.Name\n"
+        "        display_name = $_.DisplayName\n"
+        "        status       = $_.State\n"
+        "        start_type   = if ($_.StartMode -eq 'Auto') { 'Automatic' }"
         " else { $_.StartMode }\n"
-        "        }\n"
         "      }\n"
-        "    [PSCustomObject]@{ DC = $dcName; Status = 'OK'; Services = @($services) }\n"
-        "  } catch {\n"
-        "    [PSCustomObject]@{ DC = $dcName; Status = 'Unreachable'; Services = @() }\n"
-        "  }\n"
-        "}\n"
-        "@($results) | ConvertTo-Json -Depth 5"
+        "    }\n"
+        "  @([PSCustomObject]@{ DC = $dcFqdn; Status = 'OK'; Services = @($services) })"
+        " | ConvertTo-Json -Depth 5\n"
+        "} catch {\n"
+        "  @([PSCustomObject]@{ DC = $dcFqdn; Status = 'Unreachable'; Services = @() })"
+        " | ConvertTo-Json -Depth 5\n"
+        "}"
     ),
     # ------------------------------------------------------------------
-    # dc_installed_software — registry Uninstall key per DC.
-    # Uses Invoke-Command directly to each DC (not a double-hop —
-    # each DC reads its own local registry). Covers both 64-bit and
-    # WOW6432Node paths. Skips entries without DisplayName.
-    # De-duplicates by name. StdRegProv WMI was discarded: it returns
-    # null on Windows Server 2012 R2 (confirmed field test 2026-04-14).
+    # dc_installed_software — registry Uninstall key on the configured DC.
+    # Runs locally on the WinRM target (no Invoke-Command, no -ComputerName).
+    # Invoke-Command -ComputerName self is a WinRM double-hop even to the
+    # same machine and fails without credential delegation. Removed.
+    # Covers both 64-bit and WOW6432Node paths. De-duplicates by name.
     # ------------------------------------------------------------------
     "dc_installed_software": (
-        "$dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName\n"
-        "$results = foreach ($dcName in $dcs) {\n"
-        "  try {\n"
-        "    $software = Invoke-Command -ComputerName $dcName -ScriptBlock {\n"
-        "      $paths = @(\n"
-        "        'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',\n"
-        "        'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'\n"
-        "      )\n"
-        "      $soft = foreach ($path in $paths) {\n"
-        "        Get-ItemProperty $path -ErrorAction SilentlyContinue |\n"
-        "          Where-Object { $_.DisplayName } |\n"
-        "          Select-Object @{N='name';         E={$_.DisplayName}},\n"
-        "                        @{N='version';      E={$_.DisplayVersion}},\n"
-        "                        @{N='vendor';       E={$_.Publisher}},\n"
-        "                        @{N='install_date'; E={$_.InstallDate}},\n"
-        "                        @{N='_source';      E={'registry'}},\n"
-        "                        @{N='_note';        E={'data may include stale entries from incomplete uninstalls'}}\n"
-        "      }\n"
-        "      @($soft | Sort-Object name -Unique)\n"
-        "    } -ErrorAction Stop\n"
-        "    [PSCustomObject]@{ DC = $dcName; Status = 'OK'; Software = @($software) }\n"
-        "  } catch {\n"
-        "    [PSCustomObject]@{ DC = $dcName; Status = 'Unreachable'; Software = @() }\n"
+        "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
+        "try {\n"
+        "  $paths = @(\n"
+        "    'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',\n"
+        "    'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'\n"
+        "  )\n"
+        "  $soft = foreach ($path in $paths) {\n"
+        "    Get-ItemProperty $path -ErrorAction SilentlyContinue |\n"
+        "      Where-Object { $_.DisplayName } |\n"
+        "      Select-Object @{N='name';         E={$_.DisplayName}},\n"
+        "                    @{N='version';      E={$_.DisplayVersion}},\n"
+        "                    @{N='vendor';       E={$_.Publisher}},\n"
+        "                    @{N='install_date'; E={$_.InstallDate}},\n"
+        "                    @{N='_source';      E={'registry'}},\n"
+        "                    @{N='_note';        E={'data may include stale entries from incomplete uninstalls'}}\n"
         "  }\n"
-        "}\n"
-        "@($results) | ConvertTo-Json -Depth 5"
+        "  $dedup = if ($soft) { @($soft | Sort-Object name -Unique) } else { @() }\n"
+        "  @([PSCustomObject]@{ DC = $dcFqdn; Status = 'OK'; Software = $dedup })"
+        " | ConvertTo-Json -Depth 5\n"
+        "} catch {\n"
+        "  @([PSCustomObject]@{ DC = $dcFqdn; Status = 'Unreachable'; Software = @() })"
+        " | ConvertTo-Json -Depth 5\n"
+        "}"
     ),
 }
 
