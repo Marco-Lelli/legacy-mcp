@@ -170,11 +170,23 @@ See [DISCLAIMER.md](DISCLAIMER.md) for terms of use.
 
 ## Requirements
 
-- Windows Server 2012 R2 and later
+LegacyMCP involves three distinct machines with different requirements:
+
+**Collector machine** — runs the PowerShell data collection script:
+- Windows 10 / Windows Server 2012 R2 or later
+- PowerShell 5.1+
+- ActiveDirectory module (RSAT)
+- Domain Admin or Enterprise Admin rights on the target AD environment
+
+**MCP server machine** — runs the LegacyMCP Python server:
+- Profile A: the consultant's own machine (same as collector machine above)
+- Profile B-core: a dedicated Windows Server 2016+ (2012 R2 supported),
+  domain-joined, with a service account
 - Python 3.10+
-- PowerShell 5.1 or later — required to run the collector on the target AD environment
-- Claude Desktop or any MCP-compatible client
-- Node.js 18+ — required on the consultant machine for Profile B-core
+
+**Consultant machine** — runs Claude Desktop:
+- Claude Desktop with Pro plan
+- Node.js 18+ — Profile B-core only, required for mcp-remote
 
 ---
 

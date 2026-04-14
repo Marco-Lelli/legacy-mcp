@@ -19,7 +19,6 @@ no persistent network access required.
 
 - **Claude Desktop** with a Pro plan — [claude.ai](https://claude.ai)
 - **Python 3.10+** — `python --version` to check
-- **Git**
 - **PowerShell 5.1** on the machine where you will run the collector
   (any domain-joined Windows workstation or server with RSAT installed)
 - **Domain Admin** rights on the target domain, or **Enterprise Admin**
@@ -29,10 +28,23 @@ no persistent network access required.
 
 ## Installation
 
+**Option 1 — Download ZIP (no Git required)**
+
+Download the latest release from the
+[Releases page](https://github.com/Marco-Lelli/legacy-mcp/releases),
+extract `legacymcp-installer.zip` to a folder of your choice, and
+open a PowerShell window in that folder.
+
+**Option 2 — Clone with Git**
+
 ```bash
 git clone https://github.com/Marco-Lelli/legacy-mcp.git
 cd legacy-mcp
+```
 
+**Both options — create the virtual environment and install:**
+
+```bash
 python -m venv .venv
 .venv\Scripts\activate        # Windows
 # source .venv/bin/activate   # macOS / Linux

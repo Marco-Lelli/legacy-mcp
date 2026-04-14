@@ -154,18 +154,38 @@ Transfer `server.crt` to the consultant machine via a secure channel.
 
 ## Installation — Client Side
 
-On the consultant machine, open PowerShell as Administrator:
+`Setup-LegacyMCPClient.ps1` can be run either from inside the repository
+or from a standalone folder outside it — useful when the consultant machine
+does not have the full repository.
+
+**Option 1 — From the repository**
 
 ```powershell
-cd C:\GIT\legacy-mcp\installer
+cd C:\path\to\legacy-mcp\installer
 .\Setup-LegacyMCPClient.ps1 `
-  -ServerUrl "https://SERVER_IP:8000" `
+  -ServerUrl "https://SERVER_IP:8000/mcp" `
   -CaCertPath "C:\path\to\server.crt"
 ```
 
-The script will prompt for the API key, then:
-- Store the API key encrypted (DPAPI user-scope) in `client\.legacymcp-key`
-- Generate `client\mcp-remote-live.bat` (Claude Desktop entry point)
+**Option 2 — From a standalone folder (no repository required)**
+
+1. Create a folder on the consultant machine, e.g. `C:\LegacyMCP-Client\installer\`
+2. Copy these files from `installer\` into that folder:
+   - `Setup-LegacyMCPClient.ps1`
+   - `mcp-remote-live.ps1`
+3. Copy the server certificate (`server.crt`) to a location of your choice.
+4. Run from that folder:
+
+```powershell
+cd C:\LegacyMCP-Client\installer
+.\Setup-LegacyMCPClient.ps1 `
+  -ServerUrl "https://SERVER_IP:8000/mcp" `
+  -CaCertPath "C:\path\to\server.crt"
+```
+
+In both options, the script will prompt for the API key, then:
+- Store the API key encrypted (DPAPI user-scope) in `..\client\.legacymcp-key`
+- Generate `..\client\mcp-remote-live.bat` (Claude Desktop entry point)
 - Update `claude_desktop_config.json` automatically
 
 Restart Claude Desktop after setup.
