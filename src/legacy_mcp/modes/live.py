@@ -665,6 +665,102 @@ _SCRIPTS: dict[str, str] = {
         "}\n"
         "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
     ),
+    # ------------------------------------------------------------------
+    # dc_windows_features — installed Windows Server roles per DC.
+    # Uses Win32_ServerFeature (WMI/DCOM) to avoid WinRM double-hop.
+    # Note: Win32_ServerFeature.Name is the display name; the PS module
+    # short name (e.g. AD-Domain-Services) is not available via WMI
+    # without Invoke-Command, so name and display_name carry the same value.
+    # ------------------------------------------------------------------
+    "dc_windows_features": (
+        "$dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName\n"
+        "$results = foreach ($dcName in $dcs) {\n"
+        "  try {\n"
+        "    $features = Get-WmiObject -Class Win32_ServerFeature"
+        " -ComputerName $dcName -ErrorAction Stop |\n"
+        "      ForEach-Object {\n"
+        "        [PSCustomObject]@{ name = $_.Name; display_name = $_.Name }\n"
+        "      }\n"
+        "    [PSCustomObject]@{ DC = $dcName; Status = 'OK'; Features = @($features) }\n"
+        "  } catch {\n"
+        "    [PSCustomObject]@{ DC = $dcName; Status = 'Unreachable'; Features = @() }\n"
+        "  }\n"
+        "}\n"
+        "@($results) | ConvertTo-Json -Depth 5"
+    ),
+    # ------------------------------------------------------------------
+    # dc_services — Running or Auto-start services per DC.
+    # Uses Win32_Service (WMI/DCOM) to avoid WinRM double-hop and to
+    # expose StartMode on PS 5.1 / Windows Server 2012 R2 (Get-Service
+    # does not return StartType on PS 5.1).
+    # WMI StartMode 'Auto' is normalised to 'Automatic' to match
+    # the collector output from Get-Service.StartType.ToString().
+    # ------------------------------------------------------------------
+    "dc_services": (
+        "$dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName\n"
+        "$results = foreach ($dcName in $dcs) {\n"
+        "  try {\n"
+        "    $services = Get-WmiObject -Class Win32_Service"
+        " -ComputerName $dcName -ErrorAction Stop |\n"
+        "      Where-Object { $_.State -eq 'Running' -or $_.StartMode -eq 'Auto' } |\n"
+        "      ForEach-Object {\n"
+        "        [PSCustomObject]@{\n"
+        "          name         = $_.Name\n"
+        "          display_name = $_.DisplayName\n"
+        "          status       = $_.State\n"
+        "          start_type   = if ($_.StartMode -eq 'Auto') { 'Automatic' }"
+        " else { $_.StartMode }\n"
+        "        }\n"
+        "      }\n"
+        "    [PSCustomObject]@{ DC = $dcName; Status = 'OK'; Services = @($services) }\n"
+        "  } catch {\n"
+        "    [PSCustomObject]@{ DC = $dcName; Status = 'Unreachable'; Services = @() }\n"
+        "  }\n"
+        "}\n"
+        "@($results) | ConvertTo-Json -Depth 5"
+    ),
+    # ------------------------------------------------------------------
+    # dc_installed_software — registry Uninstall key per DC.
+    # Uses WMI StdRegProv (same pattern as ntp_config) to enumerate
+    # HKLM\SOFTWARE\...\Uninstall and WOW6432Node on each DC via DCOM.
+    # Skips entries without DisplayName. De-duplicates by name.
+    # ------------------------------------------------------------------
+    "dc_installed_software": (
+        "$HKLM = [uint32]2147483650\n"
+        "$paths = @(\n"
+        "  'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',\n"
+        "  'SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall'\n"
+        ")\n"
+        "$dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName\n"
+        "$results = foreach ($dcName in $dcs) {\n"
+        "  try {\n"
+        "    $reg  = Get-WmiObject -Namespace root\\default -Class StdRegProv"
+        " -ComputerName $dcName -ErrorAction Stop\n"
+        "    $soft = foreach ($path in $paths) {\n"
+        "      $subkeys = ($reg.EnumKey($HKLM, $path)).sNames\n"
+        "      if (-not $subkeys) { continue }\n"
+        "      foreach ($key in $subkeys) {\n"
+        "        $fullKey = \"$path\\$key\"\n"
+        "        $name = ($reg.GetStringValue($HKLM, $fullKey, 'DisplayName')).sValue\n"
+        "        if (-not $name) { continue }\n"
+        "        [PSCustomObject]@{\n"
+        "          name         = $name\n"
+        "          version      = ($reg.GetStringValue($HKLM, $fullKey, 'DisplayVersion')).sValue\n"
+        "          vendor       = ($reg.GetStringValue($HKLM, $fullKey, 'Publisher')).sValue\n"
+        "          install_date = ($reg.GetStringValue($HKLM, $fullKey, 'InstallDate')).sValue\n"
+        "          _source      = 'registry'\n"
+        "          _note        = 'data may include stale entries from incomplete uninstalls'\n"
+        "        }\n"
+        "      }\n"
+        "    }\n"
+        "    $dedup = if ($soft) { @($soft | Sort-Object name -Unique) } else { @() }\n"
+        "    [PSCustomObject]@{ DC = $dcName; Status = 'OK'; Software = $dedup }\n"
+        "  } catch {\n"
+        "    [PSCustomObject]@{ DC = $dcName; Status = 'Unreachable'; Software = @() }\n"
+        "  }\n"
+        "}\n"
+        "@($results) | ConvertTo-Json -Depth 5"
+    ),
 }
 
 
