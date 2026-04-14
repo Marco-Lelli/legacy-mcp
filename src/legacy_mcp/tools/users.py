@@ -52,6 +52,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         delegation_only: bool = False,
         password_never_expires: bool | None = None,
         locked_out: bool | None = None,
+        has_sid_history: bool | None = None,
         forest_name: str | None = None,
         offset: int = 0,
         limit: int = 200,
@@ -84,6 +85,9 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             True = only locked-out accounts.
             False = only non-locked accounts.
             None = all.
+        has_sid_history:
+            True = only accounts with a non-empty SIDHistory (migrated accounts,
+            M&A scenarios). False = only accounts without SIDHistory. None = all.
         forest_name:
             Target forest. Defaults to the first forest in the workspace.
 
@@ -144,6 +148,11 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             users = [u for u in users if u.get("LockedOut") == "True"]
         elif locked_out is False:
             users = [u for u in users if u.get("LockedOut") != "True"]
+
+        if has_sid_history is True:
+            users = [u for u in users if u.get("SIDHistory")]
+        elif has_sid_history is False:
+            users = [u for u in users if not u.get("SIDHistory")]
 
         total = len(users)
         page = users[offset : offset + limit]

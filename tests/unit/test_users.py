@@ -240,6 +240,53 @@ class TestGetUsersPasswordNeverExpires:
 
 
 # ---------------------------------------------------------------------------
+# get_users — has_sid_history filter
+# ---------------------------------------------------------------------------
+
+class TestGetUsersSIDHistory:
+
+    def test_sid_history_true_returns_only_migrated(self, tools: _MockMCP) -> None:
+        # Only a.rossi has a non-empty SIDHistory in the fixture.
+        result = tools.get_users(has_sid_history=True)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "a.rossi"
+
+    def test_sid_history_true_items_have_non_empty_list(self, tools: _MockMCP) -> None:
+        result = tools.get_users(has_sid_history=True)
+        for u in result["items"]:
+            assert isinstance(u["SIDHistory"], list)
+            assert len(u["SIDHistory"]) > 0
+
+    def test_sid_history_false_excludes_migrated(self, tools: _MockMCP) -> None:
+        result = tools.get_users(has_sid_history=False)
+        names = [u["SamAccountName"] for u in result["items"]]
+        assert "a.rossi" not in names
+
+    def test_sid_history_false_count(self, tools: _MockMCP) -> None:
+        # 14 users: all except a.rossi (m.ferrari has [] which is falsy,
+        # rest have no SIDHistory field at all — both match has_sid_history=False).
+        result = tools.get_users(has_sid_history=False)
+        assert result["total"] == 14
+
+    def test_sid_history_none_returns_all(self, tools: _MockMCP) -> None:
+        result = tools.get_users(has_sid_history=None)
+        assert result["total"] == 15
+
+    def test_sid_history_field_is_array_of_strings(self, tools: _MockMCP) -> None:
+        result = tools.get_users(has_sid_history=True)
+        sids = result["items"][0]["SIDHistory"]
+        assert isinstance(sids, list)
+        assert all(isinstance(s, str) for s in sids)
+        assert sids[0].startswith("S-1-5-")
+
+    def test_sid_history_true_false_complement(self, tools: _MockMCP) -> None:
+        total = tools.get_users()["total"]
+        with_sid = tools.get_users(has_sid_history=True)["total"]
+        without_sid = tools.get_users(has_sid_history=False)["total"]
+        assert with_sid + without_sid == total
+
+
+# ---------------------------------------------------------------------------
 # get_users — locked_out filter
 # ---------------------------------------------------------------------------
 

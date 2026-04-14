@@ -8,7 +8,7 @@ function Get-UsersData {
     )
 
     Get-ADUser -Filter * -Properties Enabled, PasswordNeverExpires, LockedOut,
-        LastLogonDate, PasswordLastSet, Description, mail, adminCount @CommonParams |
+        LastLogonDate, PasswordLastSet, Description, mail, adminCount, SIDHistory @CommonParams |
         Select-Object -First $Limit |
         ForEach-Object {
             [PSCustomObject]@{
@@ -24,6 +24,7 @@ function Get-UsersData {
                 PasswordLastSet      = $_.PasswordLastSet
                 Description          = $_.Description
                 AdminCount           = $_.adminCount
+                SIDHistory           = @($_.SIDHistory | ForEach-Object { $_.Value })
             }
         }
 }
