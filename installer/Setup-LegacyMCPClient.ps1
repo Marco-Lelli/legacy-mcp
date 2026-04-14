@@ -156,6 +156,21 @@ Write-OK "API key saved (DPAPI encrypted): $keyFile"
 # explicitly in the process environment (User-scope env vars are not reliably
 # inherited by Claude Desktop child processes).
 $ps1Path    = Join-Path $clientDir 'mcp-remote-live.ps1'
+
+# Copy mcp-remote-live.ps1 to the client directory.
+# Look first alongside this script (installer distribution package);
+# fall back to the repository's client\ folder when running from the repo.
+$ps1Source = Join-Path $PSScriptRoot 'mcp-remote-live.ps1'
+if (-not (Test-Path $ps1Source)) {
+    $ps1Source = Join-Path (Split-Path $PSScriptRoot -Parent) 'client\mcp-remote-live.ps1'
+}
+if (-not (Test-Path $ps1Source)) {
+    Write-Fail "mcp-remote-live.ps1 not found. Expected at: $ps1Source"
+    exit 1
+}
+Copy-Item -Path $ps1Source -Destination $ps1Path -Force
+Write-OK "mcp-remote-live.ps1 copied to: $ps1Path"
+
 $batPath    = Join-Path $clientDir 'mcp-remote-live.bat'
 $batContent  = "@echo off`r`n"
 $batContent += "set NODE_EXTRA_CA_CERTS=$CaCertPath`r`n"
