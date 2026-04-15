@@ -168,6 +168,19 @@ The Core layer includes the `ad-core` module, covering the full AD
 inventory as defined by Carl Webster's ADDS_Inventory.ps1.
 Additional modules are available in the enterprise layer.
 
+### PS artefact fields
+
+PowerShell remoting (`Invoke-Command`) injects `PSComputerName`,
+`RunspaceId`, `PSShowComputerName` into output objects. These are not part
+of the LegacyMCP data model and are stripped in two places:
+
+1. Collector PS1 — `Select-Object -ExcludeProperty` before serialization
+2. `loader.py` — `_strip_ps_artefacts()` scoped to DC Inventory sections
+   (`dc_windows_features`, `dc_services`, `dc_installed_software`)
+
+Any new module that uses `Invoke-Command` must apply both touch points.
+Extend `_DC_INVENTORY_NESTED_FIELDS` in `loader.py` for each new section.
+
 ---
 
 ## Snapshots as Bridge Between Profiles

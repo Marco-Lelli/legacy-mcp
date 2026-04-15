@@ -165,7 +165,8 @@ function Get-DCWindowsFeaturesData {
                     Where-Object { $_.InstallState -eq 'Installed' -and $_.FeatureType -eq 'Role' } |
                     Select-Object @{N='name'; E={$_.Name}},
                                   @{N='display_name'; E={$_.DisplayName}}
-            } -ErrorAction Stop
+            } -ErrorAction Stop |
+                Select-Object -ExcludeProperty PSComputerName, RunspaceId, PSShowComputerName # Strip PowerShell remoting artifacts -- not part of LegacyMCP data model
 
             $successCount++
             [PSCustomObject]@{
@@ -202,7 +203,8 @@ function Get-DCServicesData {
                                   @{N='display_name'; E={$_.DisplayName}},
                                   @{N='status';       E={$_.Status.ToString()}},
                                   @{N='start_type';   E={$_.StartType.ToString()}}
-            } -ErrorAction Stop
+            } -ErrorAction Stop |
+                Select-Object -ExcludeProperty PSComputerName, RunspaceId, PSShowComputerName # Strip PowerShell remoting artifacts -- not part of LegacyMCP data model
 
             $successCount++
             [PSCustomObject]@{
@@ -247,7 +249,8 @@ function Get-DCInstalledSoftwareData {
                                       @{N='_source';      E={'registry'}},
                                       @{N='_note';        E={'data may include stale entries from incomplete uninstalls'}}
                 }
-            } -ErrorAction Stop
+            } -ErrorAction Stop |
+                Select-Object -ExcludeProperty PSComputerName, RunspaceId, PSShowComputerName # Strip PowerShell remoting artifacts -- not part of LegacyMCP data model
 
             $successCount++
             [PSCustomObject]@{

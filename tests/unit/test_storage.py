@@ -4,7 +4,7 @@ import json
 import pytest
 from pathlib import Path
 
-from legacy_mcp.storage.loader import JsonLoader
+from legacy_mcp.storage.loader import JsonLoader, _strip_ps_artefacts
 from legacy_mcp.storage.queries import QueryEngine
 
 
@@ -119,3 +119,87 @@ class TestQueryPage:
         assert result == {
             "items": [], "total": 0, "offset": 0, "limit": 200, "has_more": False
         }
+
+
+# ---------------------------------------------------------------------------
+# PS artefact stripping
+# ---------------------------------------------------------------------------
+
+_PS_FIELDS = ["PSComputerName", "PSShowComputerName", "RunspaceId"]
+
+
+class TestStripPsArtefacts:
+    """Unit tests for _strip_ps_artefacts() and its integration in JsonLoader."""
+
+    def _make_dc_row(self, nested_key: str, extra_fields: dict) -> dict:
+        item = {"name": "AD-Domain-Services"}
+        item.update(extra_fields)
+        return {"DC": "dc01.contoso.local", "Status": "OK", nested_key: [item]}
+
+    def test_features_ps_fields_removed(self) -> None:
+        rows = [self._make_dc_row("Features", {f: "val" for f in _PS_FIELDS})]
+        _strip_ps_artefacts("dc_windows_features", rows)
+        for field in _PS_FIELDS:
+            assert field not in rows[0]["Features"][0]
+
+    def test_services_ps_fields_removed(self) -> None:
+        item = {"name": "NTDS", "PSComputerName": "dc01", "RunspaceId": "abc"}
+        rows = [{"DC": "dc01.contoso.local", "Status": "OK", "Services": [item]}]
+        _strip_ps_artefacts("dc_services", rows)
+        assert "PSComputerName" not in rows[0]["Services"][0]
+        assert "RunspaceId" not in rows[0]["Services"][0]
+        assert rows[0]["Services"][0]["name"] == "NTDS"
+
+    def test_software_ps_fields_removed(self) -> None:
+        item = {"name": "7-Zip", "PSShowComputerName": True, "RunspaceId": "xyz"}
+        rows = [{"DC": "dc01.contoso.local", "Status": "OK", "Software": [item]}]
+        _strip_ps_artefacts("dc_installed_software", rows)
+        assert "PSShowComputerName" not in rows[0]["Software"][0]
+        assert rows[0]["Software"][0]["name"] == "7-Zip"
+
+    def test_no_exception_when_fields_absent(self) -> None:
+        rows = [{"DC": "dc01.contoso.local", "Status": "OK", "Features": [{"name": "AD-DS"}]}]
+        _strip_ps_artefacts("dc_windows_features", rows)  # must not raise
+        assert rows[0]["Features"][0]["name"] == "AD-DS"
+
+    def test_non_dc_inventory_section_unaffected(self) -> None:
+        rows = [{"SamAccountName": "alice", "PSComputerName": "dc01"}]
+        _strip_ps_artefacts("users", rows)
+        # users section is not in the target list — field must remain untouched
+        assert rows[0]["PSComputerName"] == "dc01"
+
+    def test_loader_strips_ps_fields_on_load(self, tmp_path: Path) -> None:
+        """End-to-end: PS* fields in a JSON fixture are absent after loading."""
+        data = {
+            "dc_windows_features": [
+                {
+                    "DC": "dc01.contoso.local",
+                    "Status": "OK",
+                    "Features": [
+                        {
+                            "name": "AD-Domain-Services",
+                            "display_name": "Active Directory Domain Services",
+                            "PSComputerName": "dc01.contoso.local",
+                            "PSShowComputerName": False,
+                            "RunspaceId": "a1b2c3d4-0000-0000-0000-000000000000",
+                        }
+                    ],
+                }
+            ]
+        }
+        p = tmp_path / "ps-artefact-test.json"
+        p.write_text(json.dumps(data))
+
+        db = JsonLoader(p).load()
+        engine = QueryEngine(db, source="test")
+        rows = engine.query("dc_windows_features")
+        assert len(rows) == 1
+        # QueryEngine deserializes JSON columns — Features is already a list.
+        features = rows[0]["Features"]
+        if isinstance(features, str):
+            features = json.loads(features)
+        assert len(features) == 1
+        feat = features[0]
+        assert feat["name"] == "AD-Domain-Services"
+        for ps_field in _PS_FIELDS:
+            assert ps_field not in feat, f"PS artefact field {ps_field!r} was not stripped"

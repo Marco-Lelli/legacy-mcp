@@ -19,6 +19,12 @@ If the collector iterates all Domain Controllers in a forest,
 Live Mode does the same. Silent discrepancies between the two modes
 are never acceptable.
 
+Corollary: every section collected via Invoke-Command must explicitly
+exclude PS* artefact fields (PSComputerName, RunspaceId, PSShowComputerName)
+both in the collector (at source, via Select-Object -ExcludeProperty) and in
+loader.py (as a safety net). When adding a new module that uses Invoke-Command,
+both touch points are mandatory.
+
 ## 3. Kerberos only — NTLM is not a fallback
 
 NTLM is deprecated and must not be used as a transport or fallback mechanism.

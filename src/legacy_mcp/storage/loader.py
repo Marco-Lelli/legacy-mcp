@@ -42,6 +42,50 @@ KNOWN_SECTIONS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# PowerShell remoting artefact stripping
+# ---------------------------------------------------------------------------
+# Invoke-Command injects PSComputerName, PSShowComputerName, RunspaceId into
+# every returned object. These fields are not part of the LegacyMCP data model
+# and must be removed before the data enters storage.
+#
+# The primary strip happens at source in the collector PS1 via
+# Select-Object -ExcludeProperty. This function is a safety net at load time.
+#
+# Extend _DC_INVENTORY_NESTED_FIELDS when adding a new module that uses
+# Invoke-Command — both this list and the collector PS1 must be updated.
+
+_PS_ARTEFACT_FIELDS: frozenset[str] = frozenset({
+    "PSComputerName", "PSShowComputerName", "RunspaceId",
+})
+
+# Maps each DC Inventory section to the field that holds nested PS output objects.
+_DC_INVENTORY_NESTED_FIELDS: dict[str, str] = {
+    "dc_windows_features": "Features",
+    "dc_services": "Services",
+    "dc_installed_software": "Software",
+}
+
+
+def _strip_ps_artefacts(section: str, rows: list[dict]) -> None:
+    """Remove PowerShell remoting artefact fields from nested objects in-place.
+
+    Only applied to DC Inventory sections where Invoke-Command is used.
+    No-op if the fields are absent — safe to call unconditionally.
+    """
+    nested_field = _DC_INVENTORY_NESTED_FIELDS.get(section)
+    if nested_field is None:
+        return
+    for row in rows:
+        items = row.get(nested_field)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict):
+                for key in _PS_ARTEFACT_FIELDS:
+                    item.pop(key, None)
+
+
 class JsonLoader:
     """Loads a collector JSON file into an in-memory SQLite database."""
 
@@ -61,6 +105,7 @@ class JsonLoader:
                 continue
             if isinstance(rows, dict):
                 rows = [rows]
+            _strip_ps_artefacts(section, rows)
             _create_and_insert(db, section, rows)
 
         db.commit()
