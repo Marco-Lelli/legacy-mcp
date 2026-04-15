@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.8] - 2026-04-15 "All-you-can DC"
+
+### Added
+
+- DC Inventory multi-DC support in Live Mode: `get_dc_features`,
+  `get_dc_services`, `get_dc_software` now collect from all Domain Controllers
+  in the forest, not only the configured entry-point DC
+- `LiveConnector.run_ps_on(dc_fqdn, script)` — opens a dedicated WinRM session
+  to any DC FQDN with full retry/backoff support
+- `LiveConnector.enumerate_dcs()` — queries the entry-point DC for the full
+  list of DC FQDNs in the forest; falls back to entry-point DC on error
+- `LiveConnector.collect_dc_inventory(section)` — sequential multi-DC
+  collection with per-DC soft degradation and >10 DC warning
+- DC Inventory collector reporting: found/collected/failed count output for all
+  DC inventory functions in `DomainControllers.psm1`
+- `PRINCIPLES.md` published in repository root — 17 project principles
+- Community Standards: `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue templates,
+  PR template; private vulnerability reporting enabled
+
+### Changed
+
+- Collector version bumped to v1.6.1 (DC inventory reporting)
+- Principle 17 updated: field testing requirement extended to all Live Mode
+  changes, not only Profile B
+
+### Fixed
+
+- AP-1 noted: `PSComputerName`/`RunspaceId`/`PSShowComputerName` residual
+  fields in `loader.py` — tracked for dedicated session
+
 ## [0.1.7] "Field Notes" — 2026-04-14
 
 ### Added

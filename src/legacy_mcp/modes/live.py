@@ -748,6 +748,29 @@ _SCRIPTS: dict[str, str] = {
         " | ConvertTo-Json -Depth 5\n"
         "}"
     ),
+    # ------------------------------------------------------------------
+    # _enumerate_dcs — internal script: returns a JSON array of DC FQDNs
+    # from the forest. Prefixed with _ to signal it is not a queryable
+    # section. Run on the entry-point DC by enumerate_dcs().
+    # ------------------------------------------------------------------
+    "_enumerate_dcs": (
+        "Get-ADDomainController -Filter * | "
+        "Select-Object -ExpandProperty HostName | "
+        "ConvertTo-Json -Depth 1"
+    ),
+}
+
+
+# Sections handled by collect_dc_inventory() — dispatched separately in query().
+_DC_INVENTORY_SECTIONS: frozenset[str] = frozenset({
+    "dc_windows_features", "dc_services", "dc_installed_software"
+})
+
+# Empty data fields for each DC inventory section used in unreachable fallback.
+_DC_INVENTORY_EMPTY_FIELDS: dict[str, dict] = {
+    "dc_windows_features": {"Features": []},
+    "dc_services": {"Services": []},
+    "dc_installed_software": {"Software": []},
 }
 
 
@@ -940,10 +963,151 @@ class LiveConnector:
             f"WinRM retries exhausted on DC '{self.forest.dc}': {last_exc}"
         )
 
+    def run_ps_on(self, dc_fqdn: str, script: str) -> Any:
+        """Run a PowerShell script on a specific DC (not the entry-point DC).
+
+        Opens a dedicated WinRM session toward dc_fqdn, executes the script,
+        then closes the session. Does not modify self._session or self.forest.dc.
+        Applies the same retry/backoff logic as run_ps().
+        """
+        import ssl
+        import winrm  # type: ignore[import]
+
+        def _make_session() -> Any:
+            target = f"https://{dc_fqdn}:5986/wsman"
+            sess = winrm.Session(
+                target=target,
+                auth=self._resolve_auth(),
+                transport="kerberos",
+                kerberos_hostname_override=dc_fqdn,
+                service="WSMAN",
+                server_cert_validation="ignore",
+                operation_timeout_sec=self.forest.timeout_seconds,
+                read_timeout_sec=self.forest.timeout_seconds + 1,
+            )
+            ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+            ssl_ctx.set_ciphers("ALL:@SECLEVEL=0")
+            sess.protocol.transport.build_session()
+            sess.protocol.transport.session.mount(
+                "https://",
+                requests.adapters.HTTPAdapter(pool_connections=1, pool_maxsize=1),
+            )
+            sess.protocol.transport.session.verify = False
+            sess.protocol.transport.session.mount("https://", _SSLAdapter(ssl_ctx))
+            return sess
+
+        encoded_ps = b64encode(script.encode("utf_16_le")).decode("ascii")
+        command = "powershell -encodedcommand {0}".format(encoded_ps)
+
+        session = _make_session()
+        last_exc: Exception | None = None
+        for attempt in range(_WINRM_MAX_RETRIES + 1):
+            shell_id: Any = None
+            try:
+                shell_id = session.protocol.open_shell()
+                command_id = session.protocol.run_command(shell_id, command, ())
+                stdout, stderr, status_code = session.protocol.get_command_output(
+                    shell_id, command_id
+                )
+                session.protocol.cleanup_command(shell_id, command_id)
+                session.protocol.close_shell(shell_id)
+                shell_id = None
+            except Exception as exc:
+                if shell_id is not None:
+                    try:
+                        session.protocol.close_shell(shell_id)
+                    except Exception:
+                        pass
+                if _is_transient_winrm_error(exc):
+                    session = _make_session()
+                    last_exc = exc
+                    if attempt < _WINRM_MAX_RETRIES:
+                        time.sleep(_winrm_backoff(attempt))
+                        continue
+                    raise RuntimeError(
+                        f"WinRM transient error on DC '{dc_fqdn}' "
+                        f"after {_WINRM_MAX_RETRIES} retries: {exc}"
+                    ) from exc
+                if _looks_like_timeout(exc):
+                    raise RuntimeError(
+                        f"WinRM timeout on DC '{dc_fqdn}' "
+                        f"(timeout={self.forest.timeout_seconds}s): {exc}"
+                    ) from exc
+                raise
+            else:
+                if status_code != 0:
+                    raise RuntimeError(
+                        f"PowerShell error on {dc_fqdn}: {stderr.decode()}"
+                    )
+                raw = stdout.decode().strip()
+                if not raw or raw == "null":
+                    return []
+                return json.loads(raw)
+
+        raise RuntimeError(  # pragma: no cover
+            f"WinRM retries exhausted on DC '{dc_fqdn}': {last_exc}"
+        )
+
+    def enumerate_dcs(self) -> list[str]:
+        """Return FQDNs of all DCs in the forest, queried from the entry-point DC.
+
+        If the forest has a single DC, PS returns a bare string instead of an
+        array — wraps it in a list. Falls back to [self.forest.dc] on any error
+        (soft degradation — Principle 10).
+        """
+        try:
+            result = self.run_ps(_SCRIPTS["_enumerate_dcs"])
+            if isinstance(result, str):
+                return [result]
+            if isinstance(result, list):
+                return result
+            return [self.forest.dc]  # type: ignore[list-item]
+        except Exception:
+            return [self.forest.dc]  # type: ignore[list-item]
+
+    def collect_dc_inventory(self, section: str) -> list[dict[str, Any]]:
+        """Collect a DC inventory section from every DC in the forest.
+
+        Enumerates all DCs via enumerate_dcs(), then calls run_ps_on() for
+        each DC sequentially. Unreachable DCs produce a fallback entry with
+        Status='Unreachable' and empty data fields (Principle 10). If the
+        forest has more than 10 DCs a warning entry is prepended to the result.
+        """
+        dcs = self.enumerate_dcs()
+        results: list[dict[str, Any]] = []
+        if len(dcs) > 10:
+            results.append({
+                "warning": (
+                    f"Forest contains {len(dcs)} Domain Controllers. "
+                    "Collection may take time."
+                )
+            })
+        script = _SCRIPTS[section]
+        for dc_fqdn in dcs:
+            try:
+                rows = self.run_ps_on(dc_fqdn, script)
+                if isinstance(rows, list):
+                    results.extend(rows)
+                elif rows:
+                    results.append(rows)
+            except Exception:
+                fallback: dict[str, Any] = {
+                    "DC": dc_fqdn,
+                    "Status": "Unreachable",
+                }
+                fallback.update(_DC_INVENTORY_EMPTY_FIELDS.get(section, {}))
+                results.append(fallback)
+        return results
+
     def query(self, section: str, **filters: Any) -> list[dict[str, Any]]:
         """Execute the appropriate PS script for a given AD section."""
-        script = _build_script(section)
-        rows = self.run_ps(script)
+        if section in _DC_INVENTORY_SECTIONS:
+            rows = self.collect_dc_inventory(section)
+        else:
+            script = _build_script(section)
+            rows = self.run_ps(script)
         if not isinstance(rows, list):
             rows = [rows] if rows else []
         for key, value in filters.items():
@@ -977,7 +1141,10 @@ class LiveConnector:
             return _empty
 
         try:
-            rows = self.run_ps(_SCRIPTS[section])
+            if section in _DC_INVENTORY_SECTIONS:
+                rows = self.collect_dc_inventory(section)
+            else:
+                rows = self.run_ps(_SCRIPTS[section])
         except (RuntimeError, ValueError):
             return _empty
 

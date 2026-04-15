@@ -26,6 +26,9 @@ function Get-NtpConfigData {
     param([hashtable]$CommonParams = @{})
 
     $dcs = Get-ADDomainController -Filter * @CommonParams
+    Write-Host "DC Inventory: found $($dcs.Count) Domain Controller(s)."
+    $successCount = 0
+    $failCount = 0
     foreach ($dc in $dcs) {
         try {
             $reg    = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey("LocalMachine", $dc.HostName)
@@ -33,6 +36,7 @@ function Get-NtpConfigData {
             $config = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Services\W32Time\Config")
             $vmic   = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\VMICTimeProvider")
 
+            $successCount++
             [PSCustomObject]@{
                 DC                      = $dc.HostName
                 NtpServer               = $params.GetValue("NtpServer")
@@ -45,6 +49,7 @@ function Get-NtpConfigData {
                 Status                  = "OK"
             }
         } catch {
+            $failCount++
             [PSCustomObject]@{
                 DC                      = $dc.HostName
                 NtpServer               = $null
@@ -58,6 +63,7 @@ function Get-NtpConfigData {
             }
         }
     }
+    Write-Host "DC Inventory: collected $successCount, failed $failCount."
 }
 
 function Get-EventLogConfigData {
@@ -65,10 +71,14 @@ function Get-EventLogConfigData {
     param([hashtable]$CommonParams = @{})
 
     $dcs = Get-ADDomainController -Filter * @CommonParams
+    Write-Host "DC Inventory: found $($dcs.Count) Domain Controller(s)."
+    $successCount = 0
+    $failCount = 0
     foreach ($dc in $dcs) {
         try {
             $logs = Get-WinEvent -ListLog "Application", "System", "Security" `
                 -ComputerName $dc.HostName -ErrorAction Stop
+            $successCount++
             foreach ($log in $logs) {
                 [PSCustomObject]@{
                     DC             = $dc.HostName
@@ -80,6 +90,7 @@ function Get-EventLogConfigData {
                 }
             }
         } catch {
+            $failCount++
             [PSCustomObject]@{
                 DC             = $dc.HostName
                 LogName        = $null
@@ -90,6 +101,7 @@ function Get-EventLogConfigData {
             }
         }
     }
+    Write-Host "DC Inventory: collected $successCount, failed $failCount."
 }
 
 $SysvolStateMap = @{
@@ -105,14 +117,19 @@ function Get-SysvolData {
     [CmdletBinding()]
     param([hashtable]$CommonParams = @{})
 
-    Get-ADDomainController -Filter * @CommonParams | ForEach-Object {
-        $dcName = $_.HostName
+    $dcs = Get-ADDomainController -Filter * @CommonParams
+    Write-Host "DC Inventory: found $($dcs.Count) Domain Controller(s)."
+    $successCount = 0
+    $failCount = 0
+    foreach ($dc in $dcs) {
+        $dcName = $dc.HostName
         try {
             $dfsr = Get-WmiObject -Namespace "root\MicrosoftDFS" `
                 -Class DfsrReplicatedFolderInfo `
                 -ComputerName $dcName `
                 -Filter "ReplicatedFolderName='SYSVOL Share'" `
                 -ErrorAction Stop
+            $successCount++
             [PSCustomObject]@{
                 DC        = $dcName
                 Mechanism = "DFSR"
@@ -120,6 +137,7 @@ function Get-SysvolData {
                 Status    = "OK"
             }
         } catch {
+            $failCount++
             [PSCustomObject]@{
                 DC        = $dcName
                 Mechanism = "Unknown"
@@ -128,6 +146,7 @@ function Get-SysvolData {
             }
         }
     }
+    Write-Host "DC Inventory: collected $successCount, failed $failCount."
 }
 
 function Get-DCWindowsFeaturesData {
@@ -135,6 +154,9 @@ function Get-DCWindowsFeaturesData {
     param([hashtable]$CommonParams = @{})
 
     $dcs = Get-ADDomainController -Filter * @CommonParams
+    Write-Host "DC Inventory: found $($dcs.Count) Domain Controller(s)."
+    $successCount = 0
+    $failCount = 0
     foreach ($dc in $dcs) {
         try {
             $features = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
@@ -145,12 +167,14 @@ function Get-DCWindowsFeaturesData {
                                   @{N='display_name'; E={$_.DisplayName}}
             } -ErrorAction Stop
 
+            $successCount++
             [PSCustomObject]@{
                 DC       = $dc.HostName
                 Status   = "OK"
                 Features = @($features)
             }
         } catch {
+            $failCount++
             [PSCustomObject]@{
                 DC       = $dc.HostName
                 Status   = "Unreachable"
@@ -158,6 +182,7 @@ function Get-DCWindowsFeaturesData {
             }
         }
     }
+    Write-Host "DC Inventory: collected $successCount, failed $failCount."
 }
 
 function Get-DCServicesData {
@@ -165,6 +190,9 @@ function Get-DCServicesData {
     param([hashtable]$CommonParams = @{})
 
     $dcs = Get-ADDomainController -Filter * @CommonParams
+    Write-Host "DC Inventory: found $($dcs.Count) Domain Controller(s)."
+    $successCount = 0
+    $failCount = 0
     foreach ($dc in $dcs) {
         try {
             $services = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
@@ -176,12 +204,14 @@ function Get-DCServicesData {
                                   @{N='start_type';   E={$_.StartType.ToString()}}
             } -ErrorAction Stop
 
+            $successCount++
             [PSCustomObject]@{
                 DC       = $dc.HostName
                 Status   = "OK"
                 Services = @($services)
             }
         } catch {
+            $failCount++
             [PSCustomObject]@{
                 DC       = $dc.HostName
                 Status   = "Unreachable"
@@ -189,6 +219,7 @@ function Get-DCServicesData {
             }
         }
     }
+    Write-Host "DC Inventory: collected $successCount, failed $failCount."
 }
 
 function Get-DCInstalledSoftwareData {
@@ -196,6 +227,9 @@ function Get-DCInstalledSoftwareData {
     param([hashtable]$CommonParams = @{})
 
     $dcs = Get-ADDomainController -Filter * @CommonParams
+    Write-Host "DC Inventory: found $($dcs.Count) Domain Controller(s)."
+    $successCount = 0
+    $failCount = 0
     foreach ($dc in $dcs) {
         try {
             $software = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
@@ -215,12 +249,14 @@ function Get-DCInstalledSoftwareData {
                 }
             } -ErrorAction Stop
 
+            $successCount++
             [PSCustomObject]@{
                 DC       = $dc.HostName
                 Status   = "OK"
                 Software = @($software | Sort-Object name -Unique)
             }
         } catch {
+            $failCount++
             [PSCustomObject]@{
                 DC       = $dc.HostName
                 Status   = "Unreachable"
@@ -228,6 +264,7 @@ function Get-DCInstalledSoftwareData {
             }
         }
     }
+    Write-Host "DC Inventory: collected $successCount, failed $failCount."
 }
 
 Export-ModuleMember -Function Get-DCData, Get-NtpConfigData, Get-EventLogConfigData, Get-SysvolData, Get-DCWindowsFeaturesData, Get-DCServicesData, Get-DCInstalledSoftwareData

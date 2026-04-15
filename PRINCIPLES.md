@@ -98,6 +98,6 @@ the corresponding documentation. Code and docs move together.
 
 ## 17. Field testing before closing
 
-No session involving Profile B changes is closed without testing
-on the reference environment (LORENZO against PUPP) to confirm
+No session involving Live Mode or Profile B changes is closed without 
+testing on the reference environment (LegacyMCP live against DC) to confirm
 end-to-end behavior in a real AD context.
