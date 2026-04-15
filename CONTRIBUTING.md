@@ -1,6 +1,8 @@
 # Contributing to LegacyMCP
 
 Thank you for your interest in contributing to LegacyMCP.
+Before contributing, read [PRINCIPLES.md](PRINCIPLES.md) — it defines the
+design principles that govern every decision in this project.
 
 ---
 

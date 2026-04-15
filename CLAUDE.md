@@ -237,6 +237,8 @@ loadable in any offline workspace regardless of the profile that produced it.
   files without BOM using the system ANSI code page (CP1252) and
   misinterprets multi-byte UTF-8 sequences, causing hard-to-diagnose
   parse errors
+- Do not implement anything that conflicts with PRINCIPLES.md without
+  an explicit architectural discussion first
 
 ---
 
@@ -302,8 +304,10 @@ Full coverage requires cross-referencing `LinkedGPOs` from OUs via
 ## Session baseline
 
 At the beginning of every new Claude Code session:
-1. Read `STATUS.md` in the repository root.
-2. Use it as the primary baseline for project status, recent decisions,
+1. Read `PRINCIPLES.md` in the repository root — these are the non-negotiable
+   design principles that govern every implementation decision.
+2. Read `STATUS.md` in the repository root.
+3. Use it as the primary baseline for project status, recent decisions,
    open tasks, constraints, and next steps.
-3. Do not assume prior chat memory is available.
-4. If something is unclear or missing, say so explicitly before proceeding.
+4. Do not assume prior chat memory is available.
+5. If something is unclear or missing, say so explicitly before proceeding.

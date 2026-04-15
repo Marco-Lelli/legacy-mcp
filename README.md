@@ -207,6 +207,7 @@ Already know which profile you need?
 - [Deployment profiles](docs/deployment-profiles.md)
 - [Architecture](docs/architecture.md)
 - [TLS certificate setup](docs/tls-certificate-setup.md)
+- [Design principles](PRINCIPLES.md)
 
 ---
 
