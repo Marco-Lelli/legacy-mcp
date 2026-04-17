@@ -130,6 +130,8 @@ function Get-SysvolData {
     param([hashtable]$CommonParams = @{})
 
     $dcs = Get-ADDomainController -Filter * @CommonParams
+    # Derive DomainDN once for LDAP queries
+    $domainDN = (Get-ADDomain @CommonParams).DistinguishedName
     Write-Host "DC Inventory: found $($dcs.Count) Domain Controller(s)."
     $successCount = 0
     $failCount = 0
@@ -158,32 +160,63 @@ function Get-SysvolData {
                     Status    = "OK"
                 }
             } else {
-                # No DFSR replicated folders found -- check if NTFRS is present
-                # CimSession with WSMan: same channel as Remote Management Users.
-                $cimOpt     = New-CimSessionOption -Protocol WSMan
-                $cimSession = New-CimSession -ComputerName $dcName -SessionOption $cimOpt -ErrorAction Stop
+                # No DFSR replicated folders found.
+                # Step 2a: check AD for DFSR-GlobalSettings via LDAP (no extra permissions needed)
+                # Wrapped in try/catch: SearchRoot assignment can throw DirectoryServicesCOMException
+                # if the DN does not exist (FRS environment).
                 try {
-                    $ntfrs = Get-CimInstance -CimSession $cimSession -ClassName Win32_Service `
-                        -Filter "Name='NTFRS'" -ErrorAction SilentlyContinue
-                } finally {
-                    Remove-CimSession $cimSession
+                    $dfsrGlobalDN = "CN=DFSR-GlobalSettings,CN=System,$domainDN"
+                    $searcher = New-Object DirectoryServices.DirectorySearcher
+                    $searcher.SearchRoot = New-Object DirectoryServices.DirectoryEntry(
+                        "LDAP://$dcName/$dfsrGlobalDN")
+                    $searcher.SearchScope = "Base"
+                    $dfsrGlobal = $searcher.FindOne()
+                } catch [System.Runtime.InteropServices.COMException] {
+                    # CN=DFSR-GlobalSettings does not exist -> FRS environment
+                    $dfsrGlobal = $null
+                } catch {
+                    # Any other LDAP error -> treat as FRS, log error
+                    $dfsrGlobal = $null
                 }
 
-                $successCount++
-                if ($ntfrs) {
-                    # FRS detected -- state not measurable without unreliable proxy
+                if ($dfsrGlobal) {
+                    # DFSR-GlobalSettings exists but no replicated folders on this DC yet
+                    $successCount++
                     [PSCustomObject]@{
                         DC        = $dcName
-                        Mechanism = "FRS"
-                        State     = $null
+                        Mechanism = "DFSR"
+                        State     = "Not Configured"
                         Status    = "OK"
                     }
                 } else {
-                    [PSCustomObject]@{
-                        DC        = $dcName
-                        Mechanism = "Unknown"
-                        State     = $null
-                        Status    = "OK"
+                    # DFSR-GlobalSettings absent -- FRS environment.
+                    # Step 2b: confirm NtFrs service via Invoke-Command registry read
+                    # (Remote Management Users already granted -- no extra permissions)
+                    $ntfrs = Invoke-Command -ComputerName $dcName -ScriptBlock {
+                        $svc = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\NtFrs" `
+                            -ErrorAction SilentlyContinue
+                        [PSCustomObject]@{
+                            ServiceFound = [bool]$svc
+                            Start        = if ($svc) { $svc.Start } else { $null }
+                        }
+                    } -ErrorAction SilentlyContinue |
+                        Select-Object -ExcludeProperty PSComputerName, RunspaceId, PSShowComputerName
+
+                    $successCount++
+                    if ($ntfrs -and $ntfrs.ServiceFound) {
+                        [PSCustomObject]@{
+                            DC        = $dcName
+                            Mechanism = "FRS"
+                            State     = $null
+                            Status    = "OK"
+                        }
+                    } else {
+                        [PSCustomObject]@{
+                            DC        = $dcName
+                            Mechanism = "Unknown"
+                            State     = $null
+                            Status    = "OK"
+                        }
                     }
                 }
             }

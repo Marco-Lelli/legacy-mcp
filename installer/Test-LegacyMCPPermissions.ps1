@@ -371,25 +371,53 @@ if (Should-Run "T21") {
             -ErrorAction Stop)
 
         if ($dfsr.Count -gt 0) {
+            # DFSR active
             $stateInt = [int]$dfsr[0].State
-            $stateStr = if ($SysvolStateMap.ContainsKey($stateInt)) { $SysvolStateMap[$stateInt] } else { "Unknown ($stateInt)" }
+            $stateStr = if ($SysvolStateMap.ContainsKey($stateInt)) {
+                $SysvolStateMap[$stateInt]
+            } else { "Unknown ($stateInt)" }
             Write-Result "T21" "SYSVOL replication (DFSR)" "PASS" "Mechanism: DFSR, State: $stateStr"
         } else {
-            # No DFSR folders -- check for FRS via CimSession WSMan
-            $cimOpt     = New-CimSessionOption -Protocol WSMan
-            $cimSession = New-CimSession -ComputerName $DCHostName -SessionOption $cimOpt -ErrorAction Stop
+            # Step 2a: LDAP check for DFSR-GlobalSettings (domain user, no extra permissions)
+            # Wrapped in try/catch: SearchRoot assignment can throw DirectoryServicesCOMException
+            # if the DN does not exist (FRS environment).
             try {
-                $ntfrs = Get-CimInstance -CimSession $cimSession -ClassName Win32_Service `
-                    -Filter "Name='NTFRS'" -ErrorAction SilentlyContinue
-            } finally {
-                Remove-CimSession $cimSession
+                $dfsrGlobalDN = "CN=DFSR-GlobalSettings,CN=System,$DomainDN"
+                $searcher = New-Object DirectoryServices.DirectorySearcher
+                $searcher.SearchRoot = New-Object DirectoryServices.DirectoryEntry(
+                    "LDAP://$DCHostName/$dfsrGlobalDN")
+                $searcher.SearchScope = "Base"
+                $dfsrGlobal = $searcher.FindOne()
+            } catch [System.Runtime.InteropServices.COMException] {
+                # CN=DFSR-GlobalSettings does not exist -> FRS environment
+                $dfsrGlobal = $null
+            } catch {
+                # Any other LDAP error -> treat as FRS, log error
+                $dfsrGlobal = $null
             }
-            if ($ntfrs) {
-                Write-Result "T21" "SYSVOL replication (FRS)" "WARN" `
-                    "Mechanism: FRS (pre-migration) -- DFSR state not available"
+
+            if ($dfsrGlobal) {
+                Write-Result "T21" "SYSVOL replication (DFSR)" "PASS" `
+                    "Mechanism: DFSR, replicated folders not yet configured on this DC"
             } else {
-                Write-Result "T21" "SYSVOL replication (Unknown)" "WARN" `
-                    "Neither DFSR folders nor NTFRS service detected"
+                # Step 2b: confirm NtFrs via registry Invoke-Command
+                # (Remote Management Users already granted)
+                $ntfrs = Invoke-Command -ComputerName $DCHostName -ScriptBlock {
+                    $svc = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\NtFrs" `
+                        -ErrorAction SilentlyContinue
+                    [PSCustomObject]@{
+                        ServiceFound = [bool]$svc
+                        Start        = if ($svc) { $svc.Start } else { $null }
+                    }
+                } -ErrorAction SilentlyContinue
+
+                if ($ntfrs -and $ntfrs.ServiceFound) {
+                    Write-Result "T21" "SYSVOL replication (FRS)" "WARN" `
+                        "Mechanism: FRS (pre-migration) -- DFSR state not available"
+                } else {
+                    Write-Result "T21" "SYSVOL replication (Unknown)" "WARN" `
+                        "Neither DFSR folders nor NtFrs service detected"
+                }
             }
         }
     } catch {
