@@ -97,14 +97,14 @@ class TestGetEventlogConfig:
         assert set(result.keys()) == {"items", "total", "offset", "limit", "has_more"}
 
     def test_total_matches_fixture(self, tools: _MockMCP) -> None:
-        # Fixture has 12 rows (5 DCs x ~3 logs, minus any unreachable).
+        # Fixture has 16 rows (4 DCs x 4 logs: Application, System, Directory Service, DNS Server).
         result = tools.get_eventlog_config()
-        assert result["total"] == 12
+        assert result["total"] == 16
 
     def test_default_limit_fits_all(self, tools: _MockMCP) -> None:
         result = tools.get_eventlog_config()
         assert result["limit"] == 100
-        assert len(result["items"]) == 12
+        assert len(result["items"]) == 16
         assert result["has_more"] is False
 
     def test_items_have_expected_keys(self, tools: _MockMCP) -> None:

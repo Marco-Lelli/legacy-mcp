@@ -53,6 +53,11 @@ function Get-NtpConfigData {
             $regData = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
                 # Read NTP config via Invoke-Command: OpenRemoteBaseKey is not delegable
                 # on WS2012R2 without local Administrators. Remote Management Users is sufficient.
+                $timeSource = $null
+                try {
+                    $ts = (w32tm /query /source 2>&1) -join ""
+                    if ($ts -notmatch "(?i)error|denied|0x8") { $timeSource = $ts.Trim() }
+                } catch { $timeSource = $null }
                 [PSCustomObject]@{
                     NtpServer               = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters" -ErrorAction SilentlyContinue).NtpServer
                     Type                    = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters" -ErrorAction SilentlyContinue).Type
@@ -60,10 +65,12 @@ function Get-NtpConfigData {
                     MaxNegPhaseCorrection   = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Config" -ErrorAction SilentlyContinue).MaxNegPhaseCorrection
                     MaxPosPhaseCorrection   = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Config" -ErrorAction SilentlyContinue).MaxPosPhaseCorrection
                     SpecialPollInterval     = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Config" -ErrorAction SilentlyContinue).SpecialPollInterval
+                    NtpClientPollInterval   = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient" -ErrorAction SilentlyContinue).SpecialPollInterval
                     VMICTimeProviderEnabled = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\VMICTimeProvider" -ErrorAction SilentlyContinue).Enabled
+                    TimeSource              = $timeSource
                 }
             } -ErrorAction Stop |
-                Select-Object -ExcludeProperty PSComputerName, RunspaceId, PSShowComputerName # Strip PowerShell remoting artifacts -- not part of LegacyMCP data model
+                Select-Object -ExcludeProperty PSComputerName, RunspaceId, PSShowComputerName
 
             $successCount++
             [PSCustomObject]@{
@@ -74,7 +81,9 @@ function Get-NtpConfigData {
                 MaxNegPhaseCorrection   = $regData.MaxNegPhaseCorrection
                 MaxPosPhaseCorrection   = $regData.MaxPosPhaseCorrection
                 SpecialPollInterval     = $regData.SpecialPollInterval
+                NtpClientPollInterval   = $regData.NtpClientPollInterval
                 VMICTimeProviderEnabled = $regData.VMICTimeProviderEnabled
+                TimeSource              = $regData.TimeSource
                 Status                  = "OK"
             }
         } catch {
@@ -87,7 +96,9 @@ function Get-NtpConfigData {
                 MaxNegPhaseCorrection   = $null
                 MaxPosPhaseCorrection   = $null
                 SpecialPollInterval     = $null
+                NtpClientPollInterval   = $null
                 VMICTimeProviderEnabled = $null
+                TimeSource              = $null
                 Status                  = "Unreachable"
             }
         }
@@ -105,10 +116,18 @@ function Get-EventLogConfigData {
     $failCount = 0
     foreach ($dc in $dcs) {
         try {
-            # "Security" log removed: its ACL is not delegable without local Administrators.
-            # Application and System are sufficient for EventLog configuration assessment.
-            $logs = Get-WinEvent -ListLog "Application", "System" `
-                -ComputerName $dc.HostName -ErrorAction Stop
+            # Explicit list: Get-WinEvent -ListLog * requires elevated privileges with POLP.
+            # Application and System: certified with Event Log Readers (T20).
+            # DC-specific logs: per-log try/catch -- absent or inaccessible logs skipped silently.
+            $dcLogs = @("Application", "System", "Directory Service",
+                        "DNS Server", "File Replication Service", "DFS Replication")
+            $logs = foreach ($logName in $dcLogs) {
+                try {
+                    Get-WinEvent -ListLog $logName -ComputerName $dc.HostName -ErrorAction Stop
+                } catch {
+                    # Log not present or not accessible on this DC -- skip silently
+                }
+            }
             $successCount++
             foreach ($log in $logs) {
                 [PSCustomObject]@{
@@ -402,4 +421,55 @@ function Get-DCInstalledSoftwareData {
     Write-Host "DC Inventory: collected $successCount, failed $failCount."
 }
 
-Export-ModuleMember -Function Get-DCData, Get-NtpConfigData, Get-EventLogConfigData, Get-SysvolData, Get-DCWindowsFeaturesData, Get-DCServicesData, Get-DCInstalledSoftwareData
+function Get-DCFileLocationsData {
+    [CmdletBinding()]
+    param([hashtable]$CommonParams = @{})
+
+    $dcs = Get-ADDomainController -Filter * @CommonParams
+    Write-Host "DC Inventory: found $($dcs.Count) Domain Controller(s)."
+    $successCount = 0
+    $failCount = 0
+    foreach ($dc in $dcs) {
+        try {
+            $regData = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
+                # Read AD file locations from registry via Invoke-Command.
+                # Remote Management Users sufficient -- no Administrators required.
+                # DIT file size NOT collected: requires filesystem access to %windir%\NTDS
+                # which is blocked without local Administrators (POLP limitation, by design).
+                $ntdsParams = Get-ItemProperty `
+                    "HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters" `
+                    -ErrorAction SilentlyContinue
+                $netlogon = Get-ItemProperty `
+                    "HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters" `
+                    -ErrorAction SilentlyContinue
+                [PSCustomObject]@{
+                    DatabasePath = $ntdsParams."DSA Working Directory"
+                    LogPath      = $ntdsParams."Database log files path"
+                    SysvolPath   = $netlogon.SysVol
+                }
+            } -ErrorAction Stop |
+                Select-Object -ExcludeProperty PSComputerName, RunspaceId, PSShowComputerName
+
+            $successCount++
+            [PSCustomObject]@{
+                DC           = $dc.HostName
+                DatabasePath = $regData.DatabasePath
+                LogPath      = $regData.LogPath
+                SysvolPath   = $regData.SysvolPath
+                Status       = "OK"
+            }
+        } catch {
+            $failCount++
+            [PSCustomObject]@{
+                DC           = $dc.HostName
+                DatabasePath = $null
+                LogPath      = $null
+                SysvolPath   = $null
+                Status       = "Unreachable"
+            }
+        }
+    }
+    Write-Host "DC Inventory: collected $successCount, failed $failCount."
+}
+
+Export-ModuleMember -Function Get-DCData, Get-NtpConfigData, Get-EventLogConfigData, Get-SysvolData, Get-DCWindowsFeaturesData, Get-DCServicesData, Get-DCInstalledSoftwareData, Get-DCFileLocationsData

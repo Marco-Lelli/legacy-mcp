@@ -361,6 +361,15 @@ if ($null -ne $data["dc_installed_software"]) {
         -Message "collected: $(@($data['dc_installed_software']).Count) DCs"
 }
 
+# --- DC File Locations ---
+$data["dc_file_locations"] = Invoke-Section "DC File Locations" {
+    Get-DCFileLocationsData -CommonParams $commonParams
+}
+if ($null -ne $data["dc_file_locations"]) {
+    Write-CollectorLog -Level INFO -Section "DC File Locations" `
+        -Message "collected: $(@($data['dc_file_locations']).Count) DCs"
+}
+
 # --- Sites ---
 $data["sites"] = Invoke-Section "Sites" {
     Get-SitesData -CommonParams $commonParams

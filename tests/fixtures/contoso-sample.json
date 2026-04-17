@@ -164,75 +164,131 @@
   "eventlog_config": [
     {
       "DC": "DC01.contoso.local",
-      "LogName": "Security",
+      "LogName": "Application",
       "MaxSizeBytes": 1073741824,
-      "OverflowAction": "Circular"
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
     },
     {
       "DC": "DC01.contoso.local",
       "LogName": "System",
-      "MaxSizeBytes": 524288000,
-      "OverflowAction": "Circular"
+      "MaxSizeBytes": 1073741824,
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
     },
     {
       "DC": "DC01.contoso.local",
-      "LogName": "Application",
-      "MaxSizeBytes": 104857600,
-      "OverflowAction": "Circular"
+      "LogName": "Directory Service",
+      "MaxSizeBytes": 20971520,
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
+    },
+    {
+      "DC": "DC01.contoso.local",
+      "LogName": "DNS Server",
+      "MaxSizeBytes": 20971520,
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
     },
     {
       "DC": "DC02.contoso.local",
-      "LogName": "Security",
+      "LogName": "Application",
       "MaxSizeBytes": 1073741824,
-      "OverflowAction": "Circular"
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
     },
     {
       "DC": "DC02.contoso.local",
       "LogName": "System",
-      "MaxSizeBytes": 524288000,
-      "OverflowAction": "Circular"
+      "MaxSizeBytes": 1073741824,
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
     },
     {
       "DC": "DC02.contoso.local",
-      "LogName": "Application",
-      "MaxSizeBytes": 104857600,
-      "OverflowAction": "Circular"
+      "LogName": "Directory Service",
+      "MaxSizeBytes": 20971520,
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
+    },
+    {
+      "DC": "DC02.contoso.local",
+      "LogName": "DNS Server",
+      "MaxSizeBytes": 20971520,
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
     },
     {
       "DC": "DC-ROME01.contoso.local",
-      "LogName": "Security",
+      "LogName": "Application",
       "MaxSizeBytes": 20971520,
-      "OverflowAction": "Circular"
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
     },
     {
       "DC": "DC-ROME01.contoso.local",
       "LogName": "System",
       "MaxSizeBytes": 20971520,
-      "OverflowAction": "Circular"
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
     },
     {
       "DC": "DC-ROME01.contoso.local",
-      "LogName": "Application",
+      "LogName": "Directory Service",
       "MaxSizeBytes": 20971520,
-      "OverflowAction": "Circular"
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
+    },
+    {
+      "DC": "DC-ROME01.contoso.local",
+      "LogName": "DNS Server",
+      "MaxSizeBytes": 20971520,
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
     },
     {
       "DC": "DC-LON01.contoso.local",
-      "LogName": "Security",
+      "LogName": "Application",
       "MaxSizeBytes": 20971520,
-      "OverflowAction": "Circular"
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
     },
     {
       "DC": "DC-LON01.contoso.local",
       "LogName": "System",
       "MaxSizeBytes": 20971520,
-      "OverflowAction": "Circular"
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
     },
     {
       "DC": "DC-LON01.contoso.local",
-      "LogName": "Application",
+      "LogName": "Directory Service",
       "MaxSizeBytes": 20971520,
-      "OverflowAction": "Circular"
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
+    },
+    {
+      "DC": "DC-LON01.contoso.local",
+      "LogName": "DNS Server",
+      "MaxSizeBytes": 20971520,
+      "RetentionDays": 0,
+      "OverflowAction": "Circular",
+      "Status": "OK"
     }
   ],
   "ntp_config": [
@@ -245,7 +301,9 @@
       "MaxPosPhaseCorrection": 172800,
       "SpecialPollInterval": 3600,
       "VMICTimeProviderEnabled": 0,
-      "Status": "OK"
+      "Status": "OK",
+      "NtpClientPollInterval": 3600,
+      "TimeSource": "Local CMOS Clock"
     },
     {
       "DC": "DC02.contoso.local",
@@ -256,7 +314,9 @@
       "MaxPosPhaseCorrection": 172800,
       "SpecialPollInterval": 3600,
       "VMICTimeProviderEnabled": 0,
-      "Status": "OK"
+      "Status": "OK",
+      "NtpClientPollInterval": 3600,
+      "TimeSource": "Local CMOS Clock"
     },
     {
       "DC": "DC-ROME01.contoso.local",
@@ -267,7 +327,9 @@
       "MaxPosPhaseCorrection": 172800,
       "SpecialPollInterval": 3600,
       "VMICTimeProviderEnabled": 0,
-      "Status": "OK"
+      "Status": "OK",
+      "NtpClientPollInterval": 3600,
+      "TimeSource": "Local CMOS Clock"
     },
     {
       "DC": "DC-LON01.contoso.local",
@@ -278,7 +340,9 @@
       "MaxPosPhaseCorrection": null,
       "SpecialPollInterval": null,
       "VMICTimeProviderEnabled": null,
-      "Status": "Unreachable"
+      "Status": "Unreachable",
+      "NtpClientPollInterval": null,
+      "TimeSource": null
     },
     {
       "DC": "EUDC01.eu.contoso.local",
@@ -289,7 +353,9 @@
       "MaxPosPhaseCorrection": 172800,
       "SpecialPollInterval": 3600,
       "VMICTimeProviderEnabled": 1,
-      "Status": "OK"
+      "Status": "OK",
+      "NtpClientPollInterval": 3600,
+      "TimeSource": "Local CMOS Clock"
     }
   ],
   "sysvol": [
@@ -1819,5 +1885,14 @@
     "Lync_SfB": false,
     "AzureADConnect": false
   },
-  "fsp": []
+  "fsp": [],
+  "dc_file_locations": [
+    {
+      "DC": "dc01.contoso.local",
+      "DatabasePath": "C:\\Windows\\NTDS",
+      "LogPath": "C:\\Windows\\NTDS",
+      "SysvolPath": "C:\\Windows\\SYSVOL",
+      "Status": "OK"
+    }
+  ]
 }
