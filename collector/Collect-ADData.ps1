@@ -67,6 +67,10 @@ param(
     [System.Management.Automation.PSCredential]$Credential
 )
 
+# Import DC inventory module
+$modulePath = Join-Path $PSScriptRoot "modules\DomainControllers.psm1"
+Import-Module $modulePath -Force
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -285,23 +289,7 @@ if ($null -ne $data["fsmo_roles"]) {
 
 # --- EventLog Config ---
 $data["eventlog_config"] = Invoke-Section "EventLog Config" {
-    $dcs = Get-ADDomainController -Filter * @commonParams
-    $results = foreach ($dc in $dcs) {
-        try {
-            $logs = Get-WinEvent -ListLog "Application","System","Security" -ComputerName $dc.HostName -ErrorAction Stop
-            foreach ($log in $logs) {
-                [PSCustomObject]@{
-                    DC             = $dc.HostName
-                    LogName        = $log.LogName
-                    MaxSizeBytes   = $log.MaximumSizeInBytes
-                    OverflowAction = $log.LogMode
-                }
-            }
-        } catch {
-            [PSCustomObject]@{ DC = $dc.HostName; LogName = "ERROR"; MaxSizeBytes = 0; OverflowAction = $_.ToString() }
-        }
-    }
-    $results
+    Get-EventLogConfigData -CommonParams $commonParams
 }
 if ($null -ne $data["eventlog_config"]) {
     Write-CollectorLog -Level INFO -Section "EventLog Config" `
@@ -310,36 +298,7 @@ if ($null -ne $data["eventlog_config"]) {
 
 # --- NTP Config (per DC from registry) ---
 $data["ntp_config"] = Invoke-Section "NTP Config" {
-    $dcs = Get-ADDomainController -Filter * @commonParams
-    foreach ($dc in $dcs) {
-        try {
-            $reg    = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey("LocalMachine", $dc.HostName)
-            $params = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Services\W32Time\Parameters")
-            $config = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Services\W32Time\Config")
-            $vmic   = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\VMICTimeProvider")
-            [PSCustomObject]@{
-                DC                      = $dc.HostName
-                NtpServer               = $params.GetValue("NtpServer")
-                Type                    = $params.GetValue("Type")
-                AnnounceFlags           = $config.GetValue("AnnounceFlags")
-                MaxNegPhaseCorrection   = $config.GetValue("MaxNegPhaseCorrection")
-                MaxPosPhaseCorrection   = $config.GetValue("MaxPosPhaseCorrection")
-                SpecialPollInterval     = $config.GetValue("SpecialPollInterval")
-                VMICTimeProviderEnabled = if ($vmic) { $vmic.GetValue("Enabled") } else { $null }
-            }
-        } catch {
-            [PSCustomObject]@{
-                DC                      = $dc.HostName
-                NtpServer               = $null
-                Type                    = $null
-                AnnounceFlags           = $null
-                MaxNegPhaseCorrection   = $null
-                MaxPosPhaseCorrection   = $null
-                SpecialPollInterval     = $null
-                VMICTimeProviderEnabled = $null
-            }
-        }
-    }
+    Get-NtpConfigData -CommonParams $commonParams
 }
 if ($null -ne $data["ntp_config"]) {
     Write-CollectorLog -Level INFO -Section "NTP Config" `
@@ -348,20 +307,7 @@ if ($null -ne $data["ntp_config"]) {
 
 # --- SYSVOL ---
 $data["sysvol"] = Invoke-Section "SYSVOL" {
-    Get-ADDomainController -Filter * @commonParams | ForEach-Object {
-        $dcName = $_.HostName
-        try {
-            $dfsr = Get-WmiObject -Namespace "root\MicrosoftDFS" -Class DfsrReplicatedFolderInfo `
-                -ComputerName $dcName -Filter "ReplicatedFolderName='SYSVOL Share'" -ErrorAction Stop
-            [PSCustomObject]@{
-                DC        = $dcName
-                Mechanism = "DFSR"
-                State     = $dfsr.State
-            }
-        } catch {
-            [PSCustomObject]@{ DC = $dcName; Mechanism = "Unknown"; State = "Unreachable" }
-        }
-    }
+    Get-SysvolData -CommonParams $commonParams
 }
 if ($null -ne $data["sysvol"]) {
     Write-CollectorLog -Level INFO -Section "SYSVOL" `
@@ -370,29 +316,7 @@ if ($null -ne $data["sysvol"]) {
 
 # --- DC Windows Features ---
 $data["dc_windows_features"] = Invoke-Section "DC Windows Features" {
-    $dcs = Get-ADDomainController -Filter * @commonParams
-    foreach ($dc in $dcs) {
-        try {
-            $features = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
-                Import-Module ServerManager -ErrorAction SilentlyContinue
-                Get-WindowsFeature |
-                    Where-Object { $_.InstallState -eq 'Installed' -and $_.FeatureType -eq 'Role' } |
-                    Select-Object @{N='name'; E={$_.Name}},
-                                  @{N='display_name'; E={$_.DisplayName}}
-            } -ErrorAction Stop
-            [PSCustomObject]@{
-                DC       = $dc.HostName
-                Status   = "OK"
-                Features = @($features)
-            }
-        } catch {
-            [PSCustomObject]@{
-                DC       = $dc.HostName
-                Status   = "Unreachable"
-                Features = @()
-            }
-        }
-    }
+    Get-DCWindowsFeaturesData -CommonParams $commonParams
 }
 if ($null -ne $data["dc_windows_features"]) {
     Write-CollectorLog -Level INFO -Section "DC Windows Features" `
@@ -401,30 +325,7 @@ if ($null -ne $data["dc_windows_features"]) {
 
 # --- DC Services ---
 $data["dc_services"] = Invoke-Section "DC Services" {
-    $dcs = Get-ADDomainController -Filter * @commonParams
-    foreach ($dc in $dcs) {
-        try {
-            $services = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
-                Get-Service |
-                    Where-Object { $_.Status -eq 'Running' -or $_.StartType -eq 'Automatic' } |
-                    Select-Object @{N='name';         E={$_.ServiceName}},
-                                  @{N='display_name'; E={$_.DisplayName}},
-                                  @{N='status';       E={$_.Status.ToString()}},
-                                  @{N='start_type';   E={$_.StartType.ToString()}}
-            } -ErrorAction Stop
-            [PSCustomObject]@{
-                DC       = $dc.HostName
-                Status   = "OK"
-                Services = @($services)
-            }
-        } catch {
-            [PSCustomObject]@{
-                DC       = $dc.HostName
-                Status   = "Unreachable"
-                Services = @()
-            }
-        }
-    }
+    Get-DCServicesData -CommonParams $commonParams
 }
 if ($null -ne $data["dc_services"]) {
     Write-CollectorLog -Level INFO -Section "DC Services" `
@@ -433,38 +334,7 @@ if ($null -ne $data["dc_services"]) {
 
 # --- DC Installed Software ---
 $data["dc_installed_software"] = Invoke-Section "DC Installed Software" {
-    $dcs = Get-ADDomainController -Filter * @commonParams
-    foreach ($dc in $dcs) {
-        try {
-            $software = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
-                $paths = @(
-                    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
-                    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
-                )
-                foreach ($path in $paths) {
-                    Get-ItemProperty $path -ErrorAction SilentlyContinue |
-                        Where-Object { $_.DisplayName } |
-                        Select-Object @{N='name';         E={$_.DisplayName}},
-                                      @{N='version';      E={$_.DisplayVersion}},
-                                      @{N='vendor';       E={$_.Publisher}},
-                                      @{N='install_date'; E={$_.InstallDate}},
-                                      @{N='_source';      E={'registry'}},
-                                      @{N='_note';        E={'data may include stale entries from incomplete uninstalls'}}
-                }
-            } -ErrorAction Stop
-            [PSCustomObject]@{
-                DC       = $dc.HostName
-                Status   = "OK"
-                Software = @($software | Sort-Object name -Unique)
-            }
-        } catch {
-            [PSCustomObject]@{
-                DC       = $dc.HostName
-                Status   = "Unreachable"
-                Software = @()
-            }
-        }
-    }
+    Get-DCInstalledSoftwareData -CommonParams $commonParams
 }
 if ($null -ne $data["dc_installed_software"]) {
     Write-CollectorLog -Level INFO -Section "DC Installed Software" `

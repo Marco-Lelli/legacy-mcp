@@ -282,10 +282,14 @@ function Get-DCServicesData {
         try {
             # CimSession with WSMan protocol: forces Get-CimInstance to use the WinRM channel
             # already authorized for Remote Management Users. DCOM is not used.
+            # -ErrorVariable cimError captures access denied errors that PS 5.1 does not
+            # propagate as catchable exceptions from remote CimInstance calls.
             $cimOpt     = New-CimSessionOption -Protocol WSMan
             $cimSession = New-CimSession -ComputerName $dc.HostName -SessionOption $cimOpt -ErrorAction Stop
+            $cimError   = $null
             try {
-                $services = Get-CimInstance -CimSession $cimSession -ClassName Win32_Service |
+                $services = Get-CimInstance -CimSession $cimSession -ClassName Win32_Service `
+                    -ErrorAction Stop -ErrorVariable cimError |
                     Where-Object { $_.State -eq 'Running' -or $_.StartMode -eq 'Auto' } |
                     Select-Object @{N='name';         E={$_.Name}},
                                   @{N='display_name'; E={$_.DisplayName}},
@@ -295,17 +299,37 @@ function Get-DCServicesData {
                 Remove-CimSession $cimSession
             }
 
-            $successCount++
-            [PSCustomObject]@{
-                DC       = $dc.HostName
-                Status   = "OK"
-                Services = @($services)
+            if ($cimError) {
+                $errMsg = $cimError[0].Exception.Message
+                $statusValue = if ($errMsg -match "(?i)access.denied|0x80070005|0x80338104") {
+                    "PermissionDenied"
+                } else {
+                    "Unreachable"
+                }
+                $failCount++
+                [PSCustomObject]@{
+                    DC       = $dc.HostName
+                    Status   = $statusValue
+                    Services = @()
+                }
+            } else {
+                $successCount++
+                [PSCustomObject]@{
+                    DC       = $dc.HostName
+                    Status   = "OK"
+                    Services = @($services)
+                }
             }
         } catch {
             $failCount++
+            $statusValue = if ($_.Exception.Message -match "(?i)access.denied|0x80070005|0x80338104") {
+                "PermissionDenied"
+            } else {
+                "Unreachable"
+            }
             [PSCustomObject]@{
                 DC       = $dc.HostName
-                Status   = "Unreachable"
+                Status   = $statusValue
                 Services = @()
             }
         }
