@@ -39,6 +39,8 @@ KNOWN_SECTIONS = [
     "dc_windows_features",
     "dc_services",
     "dc_installed_software",
+    "schema_products",
+    "fsp",
 ]
 
 

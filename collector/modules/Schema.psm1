@@ -20,4 +20,38 @@ function Get-SchemaExtensionsData {
         }
 }
 
-Export-ModuleMember -Function Get-SchemaExtensionsData
+function Get-SchemaProductPresenceData {
+    [CmdletBinding()]
+    param([hashtable]$CommonParams = @{})
+
+    $schemaDN = (Get-ADRootDSE @CommonParams).schemaNamingContext
+
+    function Test-SchemaObject {
+        param([string]$LdapName)
+        try {
+            $obj = Get-ADObject -SearchBase $schemaDN `
+                -Filter "lDAPDisplayName -eq '$LdapName'" @CommonParams
+            return ($null -ne $obj)
+        } catch {
+            return $false
+        }
+    }
+
+    $lapsLegacy  = Test-SchemaObject "ms-Mcs-AdmPwd"
+    $lapsWindows = Test-SchemaObject "msLAPS-Password"
+    $exchange    = Test-SchemaObject "msExchMailboxGuid"
+    $sccm        = Test-SchemaObject "mSSMSSite"
+    $lync        = Test-SchemaObject "msRTCSIP-UserEnabled"
+    $adConnect   = Test-SchemaObject "msDS-ExternalDirectoryObjectId"
+
+    [PSCustomObject]@{
+        LAPS_Legacy    = $lapsLegacy
+        LAPS_Windows   = $lapsWindows
+        Exchange       = $exchange
+        SCCM           = $sccm
+        Lync_SfB       = $lync
+        AzureADConnect = $adConnect
+    }
+}
+
+Export-ModuleMember -Function Get-SchemaExtensionsData, Get-SchemaProductPresenceData

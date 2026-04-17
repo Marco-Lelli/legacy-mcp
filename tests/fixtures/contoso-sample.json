@@ -383,7 +383,11 @@
       "AllowedToDelegateTo": null,
       "SIDHistory": [
         "S-1-5-21-9876543210-9876543210-9876543210-1105"
-      ]
+      ],
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "m.ferrari",
@@ -401,7 +405,11 @@
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
       "AllowedToDelegateTo": null,
-      "SIDHistory": []
+      "SIDHistory": [],
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "l.bianchi",
@@ -418,7 +426,11 @@
       "AdminCount": null,
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "g.conti",
@@ -435,7 +447,11 @@
       "AdminCount": null,
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "s.martini",
@@ -452,7 +468,11 @@
       "AdminCount": null,
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "r.greco",
@@ -469,7 +489,11 @@
       "AdminCount": null,
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "f.esposito",
@@ -486,7 +510,11 @@
       "AdminCount": null,
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "svc.backup",
@@ -503,7 +531,11 @@
       "AdminCount": null,
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "svc.monitor",
@@ -520,7 +552,11 @@
       "AdminCount": null,
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "svc.deploy",
@@ -537,7 +573,11 @@
       "AdminCount": null,
       "TrustedForDelegation": "True",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "adm.rossi",
@@ -554,7 +594,11 @@
       "AdminCount": 1,
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "adm.ferrari",
@@ -571,7 +615,11 @@
       "AdminCount": 1,
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "Administrator",
@@ -588,7 +636,11 @@
       "AdminCount": 1,
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "Guest",
@@ -605,7 +657,11 @@
       "AdminCount": null,
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     },
     {
       "SamAccountName": "krbtgt",
@@ -622,7 +678,11 @@
       "AdminCount": 1,
       "TrustedForDelegation": "False",
       "TrustedToAuthForDelegation": "False",
-      "AllowedToDelegateTo": null
+      "AllowedToDelegateTo": null,
+      "PasswordNotRequired": false,
+      "HomeDrive": null,
+      "HomeDirectory": null,
+      "PrimaryGroupID": 513
     }
   ],
   "privileged_accounts": [
@@ -1750,5 +1810,14 @@
       "DistinguishedName": "CN=Contoso-IssuingCA,CN=Enrollment Services,CN=Public Key Services,CN=Services,CN=Configuration,DC=contoso,DC=local",
       "ObjectClass": "pKIEnrollmentService"
     }
-  ]
+  ],
+  "schema_products": {
+    "LAPS_Legacy": false,
+    "LAPS_Windows": false,
+    "Exchange": false,
+    "SCCM": false,
+    "Lync_SfB": false,
+    "AzureADConnect": false
+  },
+  "fsp": []
 }

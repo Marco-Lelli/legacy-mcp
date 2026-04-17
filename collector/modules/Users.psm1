@@ -8,23 +8,32 @@ function Get-UsersData {
     )
 
     Get-ADUser -Filter * -Properties Enabled, PasswordNeverExpires, LockedOut,
-        LastLogonDate, PasswordLastSet, Description, mail, adminCount, SIDHistory @CommonParams |
+        LastLogonDate, PasswordLastSet, Description, mail, adminCount, SIDHistory,
+        TrustedForDelegation, TrustedToAuthForDelegation, "msDS-AllowedToDelegateTo",
+        userAccountControl, homeDirectory, homeDrive, primaryGroupID @CommonParams |
         Select-Object -First $Limit |
         ForEach-Object {
             [PSCustomObject]@{
-                SamAccountName       = $_.SamAccountName
-                DisplayName          = $_.DisplayName
-                UserPrincipalName    = $_.UserPrincipalName
-                DistinguishedName    = $_.DistinguishedName
-                Mail                 = $_.mail
-                Enabled              = $_.Enabled
-                PasswordNeverExpires = $_.PasswordNeverExpires
-                LockedOut            = $_.LockedOut
-                LastLogonDate        = $_.LastLogonDate
-                PasswordLastSet      = $_.PasswordLastSet
-                Description          = $_.Description
-                AdminCount           = $_.adminCount
-                SIDHistory           = @($_.SIDHistory | ForEach-Object { $_.Value })
+                SamAccountName               = $_.SamAccountName
+                DisplayName                  = $_.DisplayName
+                UserPrincipalName            = $_.UserPrincipalName
+                DistinguishedName            = $_.DistinguishedName
+                Mail                         = $_.mail
+                Enabled                      = $_.Enabled
+                PasswordNeverExpires         = $_.PasswordNeverExpires
+                LockedOut                    = $_.LockedOut
+                LastLogonDate                = $_.LastLogonDate
+                PasswordLastSet              = $_.PasswordLastSet
+                Description                  = $_.Description
+                AdminCount                   = $_.adminCount
+                SIDHistory                   = @($_.SIDHistory | ForEach-Object { $_.Value })
+                TrustedForDelegation         = $_.TrustedForDelegation
+                TrustedToAuthForDelegation   = $_.TrustedToAuthForDelegation
+                AllowedToDelegateTo          = @($_."msDS-AllowedToDelegateTo") -join ", "
+                PasswordNotRequired          = [bool]($_.userAccountControl -band 0x20)
+                HomeDrive                    = $_.homeDrive
+                HomeDirectory                = $_.homeDirectory
+                PrimaryGroupID               = $_.primaryGroupID
             }
         }
 }

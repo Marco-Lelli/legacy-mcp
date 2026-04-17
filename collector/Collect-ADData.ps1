@@ -92,6 +92,8 @@ $modulePath = Join-Path $PSScriptRoot "modules\DNS.psm1"
 Import-Module $modulePath -Force
 $modulePath = Join-Path $PSScriptRoot "modules\PKI.psm1"
 Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\Schema.psm1"
+Import-Module $modulePath -Force
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -256,6 +258,14 @@ if ($null -ne $data["schema"]) {
         -Message "collected: $(@($data['schema']).Count) custom extensions"
 }
 
+# --- Schema Product Presence ---
+$data["schema_products"] = Invoke-Section "Schema Products" {
+    Get-SchemaProductPresenceData -CommonParams $commonParams
+}
+if ($null -ne $data["schema_products"]) {
+    Write-CollectorLog -Level INFO -Section "Schema Products" -Message "collected"
+}
+
 # --- Domains ---
 $data["domains"] = Invoke-Section "Domains" {
     Get-DomainData -CommonParams $commonParams
@@ -371,30 +381,7 @@ if ($null -ne $data["site_links"]) {
 
 # --- Users ---
 $data["users"] = Invoke-Section "Users" {
-    Get-ADUser -Filter * -Properties Enabled, PasswordNeverExpires, LockedOut,
-        LastLogonDate, PasswordLastSet, Description, mail, adminCount,
-        TrustedForDelegation, TrustedToAuthForDelegation,
-        "msDS-AllowedToDelegateTo" @commonParams |
-        Select-Object -First 5000 |
-        ForEach-Object {
-            [PSCustomObject]@{
-                SamAccountName              = $_.SamAccountName
-                DisplayName                 = $_.DisplayName
-                UserPrincipalName           = $_.UserPrincipalName
-                DistinguishedName           = $_.DistinguishedName
-                Mail                        = $_.mail
-                Enabled                     = $_.Enabled
-                PasswordNeverExpires        = $_.PasswordNeverExpires
-                LockedOut                   = $_.LockedOut
-                LastLogonDate               = $_.LastLogonDate
-                PasswordLastSet             = $_.PasswordLastSet
-                Description                 = $_.Description
-                AdminCount                  = $_.adminCount
-                TrustedForDelegation        = $_.TrustedForDelegation
-                TrustedToAuthForDelegation  = $_.TrustedToAuthForDelegation
-                AllowedToDelegateTo         = $_.("msDS-AllowedToDelegateTo")
-            }
-        }
+    Get-UsersData -CommonParams $commonParams
 }
 if ($null -ne $data["users"]) {
     $usersArr = @($data["users"])
@@ -555,6 +542,41 @@ $data["trusts"] = Invoke-Section "Trusts" {
 if ($null -ne $data["trusts"]) {
     Write-CollectorLog -Level INFO -Section "Trusts" `
         -Message "collected: $(@($data['trusts']).Count)"
+}
+
+# --- Foreign Security Principals ---
+$data["fsp"] = Invoke-Section "Foreign Security Principals" {
+    $domainDN = (Get-ADDomain @commonParams).DistinguishedName
+    $fspDN    = "CN=ForeignSecurityPrincipals,$domainDN"
+    try {
+        Get-ADObject -SearchBase $fspDN -Filter * `
+            -Properties objectSid, description @commonParams |
+            Where-Object { $_.ObjectClass -eq "foreignSecurityPrincipal" } |
+            ForEach-Object {
+                $sidStr   = $_.objectSid.Value
+                $resolved = $null
+                try {
+                    $sid      = New-Object System.Security.Principal.SecurityIdentifier($sidStr)
+                    $resolved = $sid.Translate([System.Security.Principal.NTAccount]).Value
+                } catch {
+                    $resolved = $null
+                }
+                [PSCustomObject]@{
+                    Name              = $_.Name
+                    DistinguishedName = $_.DistinguishedName
+                    SID               = $sidStr
+                    ResolvedName      = $resolved
+                    IsOrphaned        = ($null -eq $resolved)
+                    Description       = $_.description
+                }
+            }
+    } catch {
+        @()
+    }
+}
+if ($null -ne $data["fsp"]) {
+    Write-CollectorLog -Level INFO -Section "Foreign Security Principals" `
+        -Message "collected: $(@($data['fsp']).Count) FSP(s)"
 }
 
 # --- Fine-Grained Password Policies ---
