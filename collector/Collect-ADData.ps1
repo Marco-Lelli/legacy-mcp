@@ -370,6 +370,15 @@ if ($null -ne $data["dc_file_locations"]) {
         -Message "collected: $(@($data['dc_file_locations']).Count) DCs"
 }
 
+# --- DC Network Configuration ---
+$data["dc_network_config"] = Invoke-Section "DC Network Config" {
+    Get-DCNetworkConfigData -CommonParams $commonParams
+}
+if ($null -ne $data["dc_network_config"]) {
+    Write-CollectorLog -Level INFO -Section "DC Network Config" `
+        -Message "collected: $(@($data['dc_network_config']).Count) DCs"
+}
+
 # --- Sites ---
 $data["sites"] = Invoke-Section "Sites" {
     Get-SitesData -CommonParams $commonParams

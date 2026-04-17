@@ -472,4 +472,57 @@ function Get-DCFileLocationsData {
     Write-Host "DC Inventory: collected $successCount, failed $failCount."
 }
 
-Export-ModuleMember -Function Get-DCData, Get-NtpConfigData, Get-EventLogConfigData, Get-SysvolData, Get-DCWindowsFeaturesData, Get-DCServicesData, Get-DCInstalledSoftwareData, Get-DCFileLocationsData
+function Get-DCNetworkConfigData {
+    [CmdletBinding()]
+    param([hashtable]$CommonParams = @{})
+
+    $dcs = Get-ADDomainController -Filter * @CommonParams
+    Write-Host "DC Inventory: found $($dcs.Count) Domain Controller(s)."
+    $successCount = 0
+    $failCount    = 0
+    foreach ($dc in $dcs) {
+        try {
+            # CimSession with WSMan: accessible with Remote Management Users.
+            # Field-tested on WS2012R2 with POLP account -- confirmed working.
+            $cimOpt     = New-CimSessionOption -Protocol WSMan
+            $cimSession = New-CimSession -ComputerName $dc.HostName `
+                -SessionOption $cimOpt -ErrorAction Stop
+            $adapters = $null
+            try {
+                $adapters = Get-CimInstance -CimSession $cimSession `
+                    -ClassName Win32_NetworkAdapterConfiguration |
+                    Where-Object { $_.IPEnabled } |
+                    Select-Object Description,
+                                  @{N='IPAddresses';    E={ $_.IPAddress -join ", " }},
+                                  @{N='DNSServers';     E={ $_.DNSServerSearchOrder -join ", " }},
+                                  @{N='DefaultGateway'; E={ $_.DefaultIPGateway -join ", " }},
+                                  DHCPEnabled
+            } finally {
+                Remove-CimSession $cimSession
+            }
+
+            $successCount++
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Adapters = @($adapters)
+                Status   = "OK"
+            }
+        } catch {
+            $failCount++
+            $errMsg      = $_.Exception.Message
+            $statusValue = if ($errMsg -match "(?i)access.denied|0x80070005|0x80338104") {
+                "PermissionDenied"
+            } else {
+                "Unreachable"
+            }
+            [PSCustomObject]@{
+                DC       = $dc.HostName
+                Adapters = @()
+                Status   = $statusValue
+            }
+        }
+    }
+    Write-Host "DC Inventory: collected $successCount, failed $failCount."
+}
+
+Export-ModuleMember -Function Get-DCData, Get-NtpConfigData, Get-EventLogConfigData, Get-SysvolData, Get-DCWindowsFeaturesData, Get-DCServicesData, Get-DCInstalledSoftwareData, Get-DCFileLocationsData, Get-DCNetworkConfigData

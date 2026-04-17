@@ -42,6 +42,7 @@ KNOWN_SECTIONS = [
     "schema_products",
     "fsp",
     "dc_file_locations",
+    "dc_network_config",
 ]
 
 

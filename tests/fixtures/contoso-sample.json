@@ -1894,5 +1894,20 @@
       "SysvolPath": "C:\\Windows\\SYSVOL",
       "Status": "OK"
     }
+  ],
+  "dc_network_config": [
+    {
+      "DC": "dc01.contoso.local",
+      "Adapters": [
+        {
+          "Description": "Microsoft Hyper-V Network Adapter",
+          "IPAddresses": "192.168.1.10, fe80::1",
+          "DNSServers": "192.168.1.10",
+          "DefaultGateway": "192.168.1.1",
+          "DHCPEnabled": false
+        }
+      ],
+      "Status": "OK"
+    }
   ]
 }
