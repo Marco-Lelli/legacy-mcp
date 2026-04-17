@@ -41,3 +41,15 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         """
         conn = workspace.connector(forest_name)
         return conn.query_page("schema", offset=offset, limit=limit)
+
+    @mcp.tool()
+    def get_schema_product_presence(forest_name: str | None = None) -> dict[str, Any]:
+        """Return schema-based product presence detection for the forest.
+        Checks for LAPS (legacy and Windows), Exchange, SCCM/ConfigMgr,
+        Lync/Skype for Business, and Azure AD Connect schema extensions.
+
+        Returns a dict with boolean values for each product.
+        """
+        conn = workspace.connector(forest_name)
+        result = conn.scalar("schema_products")
+        return result or {}

@@ -41,8 +41,9 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         offset: int = 0,
         limit: int = 100,
     ) -> dict[str, Any]:
-        """Return EventLog configuration for each DC: log size, retention policy,
-        and overwrite behavior for Application, System, and Security logs.
+        """Return EventLog configuration for each DC: log name, max size, retention,
+        and overflow behavior for all enabled logs except Security
+        (Security log ACL not delegable without local Administrators).
 
         Returns a paginated result: {items, total, offset, limit, has_more}.
         Default limit is 100 (5 DCs x 3 logs = 15 rows in a typical domain;
@@ -58,7 +59,8 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         limit: int = 100,
     ) -> dict[str, Any]:
         """Return NTP configuration from the registry of each DC:
-        NtpServer, Type, and AnnounceFlags -- retrieved per-DC via WinRM.
+        NtpServer, Type, AnnounceFlags, poll intervals, VMICTimeProvider state,
+        and current time source (w32tm /query /source) -- retrieved per-DC via WinRM.
 
         Returns a paginated result: {items, total, offset, limit, has_more}.
         Default limit is 100.
@@ -134,6 +136,50 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         result = conn.query_page("dc_installed_software", offset=offset, limit=limit)
         if result["total"] == 0:
             result["_note"] = "data not available \u2014 collector < v1.6"
+        if dc_name:
+            result["items"] = [i for i in result["items"] if i.get("DC") == dc_name]
+            result["total"] = len(result["items"])
+        return result
+
+    @mcp.tool()
+    def get_dc_file_locations(
+        forest_name: str | None = None,
+        dc_name: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Return AD database file locations for each Domain Controller:
+        NTDS database path, log files path, and SYSVOL path -- read from
+        the registry via WinRM (Remote Management Users sufficient).
+
+        Note: DIT file size is not reported -- requires local Administrators.
+        Use dc_name to filter results to a specific Domain Controller.
+        Returns a paginated result: {items, total, offset, limit, has_more}.
+        """
+        conn = workspace.connector(forest_name)
+        result = conn.query_page("dc_file_locations", offset=offset, limit=limit)
+        if dc_name:
+            result["items"] = [i for i in result["items"] if i.get("DC") == dc_name]
+            result["total"] = len(result["items"])
+        return result
+
+    @mcp.tool()
+    def get_dc_network_config(
+        forest_name: str | None = None,
+        dc_name: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Return network adapter configuration for each Domain Controller:
+        IP addresses (IPv4 and IPv6), DNS server IPs, default gateway,
+        and DHCP status -- per IP-enabled adapter.
+
+        Field-tested on WS2012R2 with Remote Management Users (POLP-safe).
+        Use dc_name to filter results to a specific Domain Controller.
+        Returns a paginated result: {items, total, offset, limit, has_more}.
+        """
+        conn = workspace.connector(forest_name)
+        result = conn.query_page("dc_network_config", offset=offset, limit=limit)
         if dc_name:
             result["items"] = [i for i in result["items"] if i.get("DC") == dc_name]
             result["total"] = len(result["items"])

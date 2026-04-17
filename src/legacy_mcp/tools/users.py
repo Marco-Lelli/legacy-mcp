@@ -18,15 +18,41 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
     @mcp.tool()
     def get_user_summary(forest_name: str | None = None) -> dict[str, Any]:
         """Return user counts by state: total, enabled, disabled, locked out,
-        password-never-expires, and accounts inactive for more than 90 days."""
+        password-never-expires, password-not-required, delegation configured,
+        and accounts inactive for more than 90 days."""
         conn = workspace.connector(forest_name)
         users = conn.query("users")
+        now = datetime.now(tz=timezone.utc)
+
+        stale = 0
+        for u in users:
+            last_logon = u.get("LastLogonDate")
+            is_stale = True
+            if last_logon:
+                try:
+                    dt = datetime.fromisoformat(str(last_logon).rstrip("Z"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    is_stale = (now - dt).days > _STALE_DAYS
+                except ValueError:
+                    pass
+            if is_stale:
+                stale += 1
+
         return {
-            "total": len(users),
-            "enabled": sum(1 for u in users if u.get("Enabled") == "True"),
-            "disabled": sum(1 for u in users if u.get("Enabled") == "False"),
+            "total":                  len(users),
+            "enabled":                sum(1 for u in users if u.get("Enabled") == "True"),
+            "disabled":               sum(1 for u in users if u.get("Enabled") == "False"),
             "password_never_expires": sum(1 for u in users if u.get("PasswordNeverExpires") == "True"),
-            "locked_out": sum(1 for u in users if u.get("LockedOut") == "True"),
+            "password_not_required":  sum(1 for u in users if u.get("PasswordNotRequired") == "True"),
+            "locked_out":             sum(1 for u in users if u.get("LockedOut") == "True"),
+            "delegation_configured":  sum(
+                1 for u in users
+                if u.get("TrustedForDelegation") == "True"
+                or u.get("TrustedToAuthForDelegation") == "True"
+                or u.get("AllowedToDelegateTo")
+            ),
+            "stale_90d":              stale,
         }
 
     @mcp.tool()

@@ -79,34 +79,54 @@ _SCRIPTS: dict[str, str] = {
     # ------------------------------------------------------------------
     "forest": (
         "$forest = Get-ADForest\n"
-        "$schemaVersion = (Get-ADObject (Get-ADRootDSE).schemaNamingContext"
+        "$rootDSE = Get-ADRootDSE\n"
+        "$schemaVersion = (Get-ADObject $rootDSE.schemaNamingContext"
         " -Properties objectVersion).objectVersion\n"
+        "$configNC = $rootDSE.configurationNamingContext\n"
+        "$dsSvcDN = 'CN=Directory Service,CN=Windows NT,CN=Services,' + $configNC\n"
+        "$tombstone = $null\n"
+        "try {\n"
+        "  $dsObj = Get-ADObject $dsSvcDN -Properties tombstoneLifetime\n"
+        "  $tombstone = if ($null -ne $dsObj.tombstoneLifetime -and"
+        " $dsObj.tombstoneLifetime -gt 0) { [int]$dsObj.tombstoneLifetime } else { 180 }\n"
+        "} catch { $tombstone = $null }\n"
         "[PSCustomObject]@{\n"
-        "  Name              = $forest.Name\n"
-        "  ForestMode        = $forest.ForestMode.ToString()\n"
-        "  SchemaMaster      = $forest.SchemaMaster\n"
-        "  DomainNamingMaster = $forest.DomainNamingMaster\n"
-        "  Sites             = $forest.Sites -join ', '\n"
-        "  Domains           = $forest.Domains -join ', '\n"
-        "  GlobalCatalogs    = $forest.GlobalCatalogs -join ', '\n"
-        "  SchemaVersion     = $schemaVersion\n"
+        "  Name                  = $forest.Name\n"
+        "  ForestMode            = $forest.ForestMode.ToString()\n"
+        "  SchemaMaster          = $forest.SchemaMaster\n"
+        "  DomainNamingMaster    = $forest.DomainNamingMaster\n"
+        "  Sites                 = $forest.Sites -join ', '\n"
+        "  Domains               = $forest.Domains -join ', '\n"
+        "  GlobalCatalogs        = $forest.GlobalCatalogs -join ', '\n"
+        "  SchemaVersion         = $schemaVersion\n"
+        "  SPNSuffixes           = $forest.SPNSuffixes -join ', '\n"
+        "  UPNSuffixes           = $forest.UPNSuffixes -join ', '\n"
+        "  ApplicationPartitions = $forest.ApplicationPartitions -join ', '\n"
+        "  TombstoneLifetime     = $tombstone\n"
         "} | ConvertTo-Json -Depth 5"
     ),
     # ------------------------------------------------------------------
     # domains — adds ChildDomains (joined) and Forest.
     # ------------------------------------------------------------------
     "domains": (
-        "Get-ADDomain | ForEach-Object {\n"
-        "  [PSCustomObject]@{\n"
-        "    Name                 = $_.Name\n"
-        "    DNSRoot              = $_.DNSRoot\n"
-        "    DomainMode           = $_.DomainMode.ToString()\n"
-        "    PDCEmulator          = $_.PDCEmulator\n"
-        "    RIDMaster            = $_.RIDMaster\n"
-        "    InfrastructureMaster = $_.InfrastructureMaster\n"
-        "    ChildDomains         = $_.ChildDomains -join ', '\n"
-        "    Forest               = $_.Forest\n"
-        "  }\n"
+        "$domain = Get-ADDomain\n"
+        "$rootDSE = Get-ADRootDSE\n"
+        "$domainObj = Get-ADObject $rootDSE.defaultNamingContext"
+        " -Properties 'ms-DS-MachineAccountQuota'\n"
+        "$maq = $domainObj.'ms-DS-MachineAccountQuota'\n"
+        "[PSCustomObject]@{\n"
+        "  Name                 = $domain.Name\n"
+        "  DNSRoot              = $domain.DNSRoot\n"
+        "  NetBIOSName          = $domain.NetBIOSName\n"
+        "  DomainSID            = $domain.DomainSID.Value\n"
+        "  DomainMode           = $domain.DomainMode.ToString()\n"
+        "  PDCEmulator          = $domain.PDCEmulator\n"
+        "  RIDMaster            = $domain.RIDMaster\n"
+        "  InfrastructureMaster = $domain.InfrastructureMaster\n"
+        "  ChildDomains         = $domain.ChildDomains -join ', '\n"
+        "  Forest               = $domain.Forest\n"
+        "  AllowedDNSSuffixes   = $domain.AllowedDNSSuffixes -join ', '\n"
+        "  MachineAccountQuota  = $maq\n"
         "} | ConvertTo-Json -Depth 5"
     ),
     # ------------------------------------------------------------------
@@ -115,17 +135,29 @@ _SCRIPTS: dict[str, str] = {
     # ------------------------------------------------------------------
     "dcs": (
         "Get-ADDomainController -Filter * | ForEach-Object {\n"
+        "  $dc = $_\n"
+        "  $isServerCore = $null\n"
+        "  try {\n"
+        "    $installType = (Get-ItemProperty"
+        " 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion'"
+        " -ErrorAction SilentlyContinue).InstallationType\n"
+        "    $isServerCore = ($installType -eq 'Server Core')\n"
+        "  } catch { $isServerCore = $null }\n"
         "  [PSCustomObject]@{\n"
-        "    Name                   = $_.Name\n"
-        "    HostName               = $_.HostName\n"
-        "    IPv4Address            = $_.IPv4Address\n"
-        "    Site                   = $_.Site\n"
-        "    OperatingSystem        = $_.OperatingSystem\n"
-        "    OperatingSystemVersion = $_.OperatingSystemVersion\n"
-        "    IsGlobalCatalog        = $_.IsGlobalCatalog\n"
-        "    IsReadOnly             = $_.IsReadOnly\n"
-        "    Enabled                = $_.Enabled\n"
-        "    Reachable              = (Test-Connection $_.HostName -Count 1 -Quiet)\n"
+        "    Name                   = $dc.Name\n"
+        "    HostName               = $dc.HostName\n"
+        "    IPv4Address            = $dc.IPv4Address\n"
+        "    Site                   = $dc.Site\n"
+        "    OperatingSystem        = $dc.OperatingSystem\n"
+        "    OperatingSystemVersion = $dc.OperatingSystemVersion\n"
+        "    IsGlobalCatalog        = $dc.IsGlobalCatalog\n"
+        "    IsReadOnly             = $dc.IsReadOnly\n"
+        "    Enabled                = $dc.Enabled\n"
+        "    Reachable              = (Test-Connection $dc.HostName -Count 1 -Quiet)\n"
+        "    LdapPort               = 389\n"
+        "    SslPort                = 636\n"
+        "    OperationMasterRoles   = ($dc.OperationMasterRoles -join ', ')\n"
+        "    IsServerCore           = $isServerCore\n"
         "  }\n"
         "} | ConvertTo-Json -Depth 5"
     ),
@@ -134,8 +166,9 @@ _SCRIPTS: dict[str, str] = {
     # ------------------------------------------------------------------
     "users": (
         "Get-ADUser -Filter * -Properties Enabled,PasswordNeverExpires,LockedOut,"
-        "LastLogonDate,PasswordLastSet,Description,mail,adminCount,"
-        "TrustedForDelegation,TrustedToAuthForDelegation,'msDS-AllowedToDelegateTo' |\n"
+        "LastLogonDate,PasswordLastSet,Description,mail,adminCount,SIDHistory,"
+        "TrustedForDelegation,TrustedToAuthForDelegation,'msDS-AllowedToDelegateTo',"
+        "userAccountControl,homeDirectory,homeDrive,primaryGroupID |\n"
         "  Select-Object -First 5000 |\n"
         "  ForEach-Object {\n"
         "    [PSCustomObject]@{\n"
@@ -151,9 +184,14 @@ _SCRIPTS: dict[str, str] = {
         "      PasswordLastSet            = $_.PasswordLastSet\n"
         "      Description                = $_.Description\n"
         "      AdminCount                 = $_.adminCount\n"
+        "      SIDHistory                 = @($_.SIDHistory | ForEach-Object { $_.Value })\n"
         "      TrustedForDelegation       = $_.TrustedForDelegation\n"
         "      TrustedToAuthForDelegation = $_.TrustedToAuthForDelegation\n"
-        "      AllowedToDelegateTo        = $_.'msDS-AllowedToDelegateTo'\n"
+        "      AllowedToDelegateTo        = ($_.'msDS-AllowedToDelegateTo') -join ', '\n"
+        "      PasswordNotRequired        = [bool]($_.userAccountControl -band 0x20)\n"
+        "      HomeDrive                  = $_.homeDrive\n"
+        "      HomeDirectory              = $_.homeDirectory\n"
+        "      PrimaryGroupID             = $_.primaryGroupID\n"
         "    }\n"
         "  } | ConvertTo-Json -Depth 3"
     ),
@@ -359,27 +397,57 @@ _SCRIPTS: dict[str, str] = {
         "} | ConvertTo-Json -Depth 3"
     ),
     # ------------------------------------------------------------------
-    # sysvol — DFSR replication state per DC. Degrades gracefully for
-    # unreachable DCs (WMI query may fail on remote DCs).
+    # sysvol — DFSR/FRS replication state for the local DC. Runs on each
+    # DC via collect_dc_inventory(). Dual-mode: WMI DFSR, then LDAP
+    # CN=DFSR-GlobalSettings, then NtFrs registry fallback (Principle 9).
     # ------------------------------------------------------------------
     "sysvol": (
-        "Get-ADDomainController -Filter * | ForEach-Object {\n"
-        "  $dcName = $_.HostName\n"
-        "  try {\n"
-        "    $dfsr = Get-WmiObject -Namespace 'root\\MicrosoftDFS'"
-        " -Class DfsrReplicatedFolderInfo -ComputerName $dcName"
-        " -Filter \"ReplicatedFolderName='SYSVOL Share'\" -ErrorAction Stop\n"
-        "    [PSCustomObject]@{\n"
-        "      DC        = $dcName\n"
-        "      Mechanism = 'DFSR'\n"
-        "      State     = if ($dfsr) { $dfsr.State } else { 'Not Found' }\n"
-        "      Status    = 'OK'\n"
+        "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
+        "$SysvolStateMap = @{ 0='Uninitialized'; 1='Initialized'; 2='Initial Sync';"
+        " 3='Auto Recovery'; 4='Normal'; 5='In Error' }\n"
+        "try {\n"
+        "  $dfsr = @(Get-WmiObject -Namespace 'root\\MicrosoftDFS'"
+        " -Class DfsrReplicatedFolderInfo"
+        " -Filter \"ReplicatedFolderName='SYSVOL Share'\" -ErrorAction Stop)\n"
+        "  if ($dfsr.Count -gt 0) {\n"
+        "    $stateInt = [int]$dfsr[0].State\n"
+        "    $stateStr = if ($SysvolStateMap.ContainsKey($stateInt))"
+        " { $SysvolStateMap[$stateInt] } else { \"Unknown ($stateInt)\" }\n"
+        "    [PSCustomObject]@{ DC=$dcFqdn; Mechanism='DFSR'; State=$stateStr; Status='OK' }"
+        " | ConvertTo-Json -Depth 3\n"
+        "  } else {\n"
+        "    $domainDN = (Get-ADDomain).DistinguishedName\n"
+        "    $dfsrGlobalDN = 'CN=DFSR-GlobalSettings,CN=System,' + $domainDN\n"
+        "    $dfsrGlobal = $null\n"
+        "    try {\n"
+        "      $searcher = New-Object DirectoryServices.DirectorySearcher\n"
+        "      $searcher.SearchRoot = New-Object DirectoryServices.DirectoryEntry("
+        "'LDAP://' + $dfsrGlobalDN)\n"
+        "      $searcher.SearchScope = 'Base'\n"
+        "      $dfsrGlobal = $searcher.FindOne()\n"
+        "    } catch [System.Runtime.InteropServices.COMException] {"
+        " $dfsrGlobal = $null }\n"
+        "    catch { $dfsrGlobal = $null }\n"
+        "    if ($dfsrGlobal) {\n"
+        "      [PSCustomObject]@{ DC=$dcFqdn; Mechanism='DFSR';"
+        " State='Not Configured'; Status='OK' } | ConvertTo-Json -Depth 3\n"
+        "    } else {\n"
+        "      $ntfrs = Get-ItemProperty"
+        " 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NtFrs'"
+        " -ErrorAction SilentlyContinue\n"
+        "      if ($ntfrs) {\n"
+        "        [PSCustomObject]@{ DC=$dcFqdn; Mechanism='FRS';"
+        " State=$null; Status='OK' } | ConvertTo-Json -Depth 3\n"
+        "      } else {\n"
+        "        [PSCustomObject]@{ DC=$dcFqdn; Mechanism='Unknown';"
+        " State=$null; Status='OK' } | ConvertTo-Json -Depth 3\n"
+        "      }\n"
         "    }\n"
-        "  } catch {\n"
-        "    [PSCustomObject]@{ DC = $dcName; Mechanism = 'Unknown';"
-        " State = 'Unreachable'; Status = 'Unreachable' }\n"
         "  }\n"
-        "} | ConvertTo-Json -Depth 3"
+        "} catch {\n"
+        "  [PSCustomObject]@{ DC=$dcFqdn; Mechanism='Unknown';"
+        " State='Unreachable'; Status='Unreachable' } | ConvertTo-Json -Depth 3\n"
+        "}"
     ),
     # ------------------------------------------------------------------
     # site_links — AD replication site links topology.
@@ -581,87 +649,74 @@ _SCRIPTS: dict[str, str] = {
         "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
     ),
     # ------------------------------------------------------------------
-    # ntp_config — W32Time registry settings per DC.
-    # Uses WMI StdRegProv (-ComputerName) to avoid WinRM double-hop.
-    # Fields: DC, NtpServer, Type, AnnounceFlags, MaxNeg/MaxPosPhaseCorrection,
-    #         SpecialPollInterval, VMICTimeProviderEnabled, Status.
+    # ntp_config — W32Time registry settings for the local DC.
+    # Runs on each DC via collect_dc_inventory(). Uses local registry
+    # reads (Get-ItemProperty) — fixes N-DC-1 (StdRegProv null on WS2012R2).
+    # Adds NtpClientPollInterval and TimeSource (null with POLP by design).
     # ------------------------------------------------------------------
     "ntp_config": (
-        "$HKLM = [uint32]2147483650\n"
-        "$paramKey  = 'SYSTEM\\CurrentControlSet\\Services\\W32Time\\Parameters'\n"
-        "$configKey = 'SYSTEM\\CurrentControlSet\\Services\\W32Time\\Config'\n"
-        "$vmicKey   = 'SYSTEM\\CurrentControlSet\\Services\\W32Time"
-        "\\TimeProviders\\VMICTimeProvider'\n"
-        "$dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName\n"
-        "$results = foreach ($dcName in $dcs) {\n"
-        "  try {\n"
-        "    $reg = Get-WmiObject -Namespace root\\default -Class StdRegProv"
-        " -ComputerName $dcName -ErrorAction Stop\n"
-        "    $ntpServer   = ($reg.GetStringValue($HKLM, $paramKey,  'NtpServer')).sValue\n"
-        "    $type        = ($reg.GetStringValue($HKLM, $paramKey,  'Type')).sValue\n"
-        "    $announce    = ($reg.GetDWORDValue($HKLM,  $configKey, 'AnnounceFlags')).uValue\n"
-        "    $maxNeg      = ($reg.GetDWORDValue($HKLM,  $configKey, 'MaxNegPhaseCorrection')).uValue\n"
-        "    $maxPos      = ($reg.GetDWORDValue($HKLM,  $configKey, 'MaxPosPhaseCorrection')).uValue\n"
-        "    $pollInt     = ($reg.GetDWORDValue($HKLM,  $configKey, 'SpecialPollInterval')).uValue\n"
-        "    $vmicEnabled = ($reg.GetDWORDValue($HKLM,  $vmicKey,   'Enabled')).uValue\n"
-        "    [PSCustomObject]@{\n"
-        "      DC                      = $dcName\n"
-        "      NtpServer               = $ntpServer\n"
-        "      Type                    = $type\n"
-        "      AnnounceFlags           = $announce\n"
-        "      MaxNegPhaseCorrection   = $maxNeg\n"
-        "      MaxPosPhaseCorrection   = $maxPos\n"
-        "      SpecialPollInterval     = $pollInt\n"
-        "      VMICTimeProviderEnabled = [bool]$vmicEnabled\n"
-        "      Status                  = 'OK'\n"
-        "    }\n"
-        "  } catch {\n"
-        "    [PSCustomObject]@{\n"
-        "      DC                      = $dcName\n"
-        "      NtpServer               = $null\n"
-        "      Type                    = $null\n"
-        "      AnnounceFlags           = $null\n"
-        "      MaxNegPhaseCorrection   = $null\n"
-        "      MaxPosPhaseCorrection   = $null\n"
-        "      SpecialPollInterval     = $null\n"
-        "      VMICTimeProviderEnabled = $null\n"
-        "      Status                  = 'Unreachable'\n"
-        "    }\n"
-        "  }\n"
-        "}\n"
-        "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
+        "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
+        "$timeSource = $null\n"
+        "try {\n"
+        "  $ts = (w32tm /query /source 2>&1) -join ''\n"
+        "  if ($ts -notmatch '(?i)error|denied|0x8') { $timeSource = $ts.Trim() }\n"
+        "} catch { $timeSource = $null }\n"
+        "try {\n"
+        "  [PSCustomObject]@{\n"
+        "    DC                    = $dcFqdn\n"
+        "    NtpServer             = (Get-ItemProperty"
+        " 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\W32Time\\Parameters'"
+        " -EA SilentlyContinue).NtpServer\n"
+        "    Type                  = (Get-ItemProperty"
+        " 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\W32Time\\Parameters'"
+        " -EA SilentlyContinue).Type\n"
+        "    AnnounceFlags         = (Get-ItemProperty"
+        " 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\W32Time\\Config'"
+        " -EA SilentlyContinue).AnnounceFlags\n"
+        "    MaxNegPhaseCorrection = (Get-ItemProperty"
+        " 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\W32Time\\Config'"
+        " -EA SilentlyContinue).MaxNegPhaseCorrection\n"
+        "    MaxPosPhaseCorrection = (Get-ItemProperty"
+        " 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\W32Time\\Config'"
+        " -EA SilentlyContinue).MaxPosPhaseCorrection\n"
+        "    SpecialPollInterval   = (Get-ItemProperty"
+        " 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\W32Time\\Config'"
+        " -EA SilentlyContinue).SpecialPollInterval\n"
+        "    NtpClientPollInterval = (Get-ItemProperty"
+        " 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\W32Time\\TimeProviders\\NtpClient'"
+        " -EA SilentlyContinue).SpecialPollInterval\n"
+        "    VMICTimeProviderEnabled = (Get-ItemProperty"
+        " 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\W32Time\\TimeProviders\\VMICTimeProvider'"
+        " -EA SilentlyContinue).Enabled\n"
+        "    TimeSource            = $timeSource\n"
+        "    Status                = 'OK'\n"
+        "  } | ConvertTo-Json -Depth 3\n"
+        "} catch {\n"
+        "  [PSCustomObject]@{ DC = $dcFqdn; Status = 'Unreachable' } | ConvertTo-Json -Depth 3\n"
+        "}"
     ),
     # ------------------------------------------------------------------
-    # eventlog_config — Application/System/Security log settings per DC.
-    # Uses Get-WinEvent -ComputerName (Event Log Remoting Protocol / RPC)
-    # to avoid WinRM double-hop.
-    # Fields: DC, LogName, MaxSizeBytes, OverflowAction (LogMode), Status.
-    # LogMode values: Circular / AutoBackup / Retain
+    # eventlog_config — Event log settings for the local DC.
+    # Runs on each DC via collect_dc_inventory(). Security log removed
+    # (ACL not delegatable — N-POLP-3). DC-specific logs added.
+    # Fields: DC, LogName, MaxSizeBytes, RetentionDays, OverflowAction, Status.
     # ------------------------------------------------------------------
     "eventlog_config": (
-        "$logNames = @('Application', 'System', 'Security')\n"
-        "$dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName\n"
-        "$results = foreach ($dcName in $dcs) {\n"
-        "  foreach ($logName in $logNames) {\n"
-        "    try {\n"
-        "      $log = Get-WinEvent -ListLog $logName -ComputerName $dcName -ErrorAction Stop\n"
-        "      [PSCustomObject]@{\n"
-        "        DC             = $dcName\n"
-        "        LogName        = $logName\n"
-        "        MaxSizeBytes   = $log.MaximumSizeInBytes\n"
-        "        OverflowAction = $log.LogMode.ToString()\n"
-        "        Status         = 'OK'\n"
-        "      }\n"
-        "    } catch {\n"
-        "      [PSCustomObject]@{\n"
-        "        DC             = $dcName\n"
-        "        LogName        = $logName\n"
-        "        MaxSizeBytes   = $null\n"
-        "        OverflowAction = $null\n"
-        "        Status         = 'Unreachable'\n"
-        "      }\n"
+        "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
+        "$dcLogs = @('Application', 'System', 'Directory Service',"
+        " 'DNS Server', 'File Replication Service', 'DFS Replication')\n"
+        "$results = foreach ($logName in $dcLogs) {\n"
+        "  try {\n"
+        "    $log = Get-WinEvent -ListLog $logName -ErrorAction Stop\n"
+        "    [PSCustomObject]@{\n"
+        "      DC             = $dcFqdn\n"
+        "      LogName        = $logName\n"
+        "      MaxSizeBytes   = $log.MaximumSizeInBytes\n"
+        "      RetentionDays  = $log.LogRetentionDays\n"
+        "      OverflowAction = $log.LogMode.ToString()\n"
+        "      Status         = 'OK'\n"
         "    }\n"
-        "  }\n"
+        "  } catch { }\n"
         "}\n"
         "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
     ),
@@ -749,6 +804,107 @@ _SCRIPTS: dict[str, str] = {
         "}"
     ),
     # ------------------------------------------------------------------
+    # dc_file_locations — NTDS/log/SYSVOL paths from local registry.
+    # Runs on each DC via collect_dc_inventory().
+    # ------------------------------------------------------------------
+    "dc_file_locations": (
+        "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
+        "try {\n"
+        "  $ntdsParams = Get-ItemProperty"
+        " 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Parameters'"
+        " -ErrorAction SilentlyContinue\n"
+        "  $netlogon  = Get-ItemProperty"
+        " 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Netlogon\\Parameters'"
+        " -ErrorAction SilentlyContinue\n"
+        "  [PSCustomObject]@{\n"
+        "    DC           = $dcFqdn\n"
+        "    DatabasePath = $ntdsParams.'DSA Working Directory'\n"
+        "    LogPath      = $ntdsParams.'Database log files path'\n"
+        "    SysvolPath   = $netlogon.SysVol\n"
+        "    Status       = 'OK'\n"
+        "  } | ConvertTo-Json -Depth 3\n"
+        "} catch {\n"
+        "  [PSCustomObject]@{ DC=$dcFqdn; DatabasePath=$null; LogPath=$null;"
+        " SysvolPath=$null; Status='Unreachable' } | ConvertTo-Json -Depth 3\n"
+        "}"
+    ),
+    # ------------------------------------------------------------------
+    # dc_network_config — NIC configuration for the local DC.
+    # Runs on each DC via collect_dc_inventory(). Local WMI, no -ComputerName,
+    # no double-hop. Accessible with Remote Management Users (N-POLP-12).
+    # ------------------------------------------------------------------
+    "dc_network_config": (
+        "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
+        "try {\n"
+        "  $adapters = Get-WmiObject -Class Win32_NetworkAdapterConfiguration |\n"
+        "    Where-Object { $_.IPEnabled } |\n"
+        "    ForEach-Object {\n"
+        "      [PSCustomObject]@{\n"
+        "        Description    = $_.Description\n"
+        "        IPAddresses    = ($_.IPAddress -join ', ')\n"
+        "        DNSServers     = ($_.DNSServerSearchOrder -join ', ')\n"
+        "        DefaultGateway = ($_.DefaultIPGateway -join ', ')\n"
+        "        DHCPEnabled    = $_.DHCPEnabled\n"
+        "      }\n"
+        "    }\n"
+        "  [PSCustomObject]@{ DC=$dcFqdn; Adapters=@($adapters); Status='OK' }"
+        " | ConvertTo-Json -Depth 5\n"
+        "} catch {\n"
+        "  [PSCustomObject]@{ DC=$dcFqdn; Adapters=@(); Status='Unreachable' }"
+        " | ConvertTo-Json -Depth 5\n"
+        "}"
+    ),
+    # ------------------------------------------------------------------
+    # schema_products — product presence detection via schema attribute
+    # lookup. Scalar section (single dict). Covers LAPS (legacy + Windows),
+    # Exchange, SCCM, Lync/SfB, AzureADConnect.
+    # ------------------------------------------------------------------
+    "schema_products": (
+        "$schemaDN = (Get-ADRootDSE).schemaNamingContext\n"
+        "function Test-SchemaObject($name) {\n"
+        "  try { $null -ne (Get-ADObject -SearchBase $schemaDN"
+        " -Filter \"lDAPDisplayName -eq '$name'\") } catch { $false }\n"
+        "}\n"
+        "[PSCustomObject]@{\n"
+        "  LAPS_Legacy    = Test-SchemaObject 'ms-Mcs-AdmPwd'\n"
+        "  LAPS_Windows   = Test-SchemaObject 'msLAPS-Password'\n"
+        "  Exchange       = Test-SchemaObject 'msExchMailboxGuid'\n"
+        "  SCCM           = Test-SchemaObject 'mSSMSSite'\n"
+        "  Lync_SfB       = Test-SchemaObject 'msRTCSIP-UserEnabled'\n"
+        "  AzureADConnect = Test-SchemaObject 'msDS-ExternalDirectoryObjectId'\n"
+        "} | ConvertTo-Json -Depth 3"
+    ),
+    # ------------------------------------------------------------------
+    # fsp — Foreign Security Principals with orphan detection.
+    # IsOrphaned=True when the SID cannot be resolved to an NTAccount.
+    # ------------------------------------------------------------------
+    "fsp": (
+        "$domainDN = (Get-ADDomain).DistinguishedName\n"
+        "$fspDN = 'CN=ForeignSecurityPrincipals,' + $domainDN\n"
+        "try {\n"
+        "  $results = Get-ADObject -SearchBase $fspDN -Filter *"
+        " -Properties objectSid,description |\n"
+        "    Where-Object { $_.ObjectClass -eq 'foreignSecurityPrincipal' } |\n"
+        "    ForEach-Object {\n"
+        "      $sidStr = $_.objectSid.Value\n"
+        "      $resolved = $null\n"
+        "      try {\n"
+        "        $sid = New-Object System.Security.Principal.SecurityIdentifier($sidStr)\n"
+        "        $resolved = $sid.Translate([System.Security.Principal.NTAccount]).Value\n"
+        "      } catch { $resolved = $null }\n"
+        "      [PSCustomObject]@{\n"
+        "        Name              = $_.Name\n"
+        "        DistinguishedName = $_.DistinguishedName\n"
+        "        SID               = $sidStr\n"
+        "        ResolvedName      = $resolved\n"
+        "        IsOrphaned        = ($null -eq $resolved)\n"
+        "        Description       = $_.description\n"
+        "      }\n"
+        "    }\n"
+        "  if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }\n"
+        "} catch { '[]' }"
+    ),
+    # ------------------------------------------------------------------
     # _enumerate_dcs — internal script: returns a JSON array of DC FQDNs
     # from the forest. Prefixed with _ to signal it is not a queryable
     # section. Run on the entry-point DC by enumerate_dcs().
@@ -763,7 +919,14 @@ _SCRIPTS: dict[str, str] = {
 
 # Sections handled by collect_dc_inventory() — dispatched separately in query().
 _DC_INVENTORY_SECTIONS: frozenset[str] = frozenset({
-    "dc_windows_features", "dc_services", "dc_installed_software"
+    "dc_windows_features",
+    "dc_services",
+    "dc_installed_software",
+    "sysvol",
+    "ntp_config",
+    "eventlog_config",
+    "dc_file_locations",
+    "dc_network_config",
 })
 
 # Empty data fields for each DC inventory section used in unreachable fallback.
@@ -771,6 +934,14 @@ _DC_INVENTORY_EMPTY_FIELDS: dict[str, dict] = {
     "dc_windows_features": {"Features": []},
     "dc_services": {"Services": []},
     "dc_installed_software": {"Software": []},
+    "sysvol":           {"Mechanism": None, "State": None},
+    "ntp_config":       {"NtpServer": None, "Type": None, "AnnounceFlags": None,
+                         "MaxNegPhaseCorrection": None, "MaxPosPhaseCorrection": None,
+                         "SpecialPollInterval": None, "NtpClientPollInterval": None,
+                         "VMICTimeProviderEnabled": None, "TimeSource": None},
+    "eventlog_config":  {},
+    "dc_file_locations": {"DatabasePath": None, "LogPath": None, "SysvolPath": None},
+    "dc_network_config": {"Adapters": []},
 }
 
 
