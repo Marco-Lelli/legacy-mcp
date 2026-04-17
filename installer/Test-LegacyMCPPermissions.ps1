@@ -333,7 +333,12 @@ if (Should-Run "T18") {
         }
         Write-Result "T18" "Services via WinRM (CimSession WSMan)" "PASS" "$($services.Count) running service(s)"
     } catch {
-        Write-Result "T18" "Services via WinRM (CimSession WSMan)" "FAIL" $_.Exception.Message
+        $statusValue = if ($_.Exception.Message -match "Access is denied|Access denied|0x80070005") {
+            "PermissionDenied"
+        } else {
+            "Unreachable"
+        }
+        Write-Result "T18" "Services via WinRM (CimSession WSMan)" "FAIL" "Status: $statusValue -- $($_.Exception.Message)"
     }
 }
 
