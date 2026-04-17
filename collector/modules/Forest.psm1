@@ -15,8 +15,12 @@ function Get-ForestData {
     $dsSvcDN   = "CN=Directory Service,CN=Windows NT,CN=Services,$configNC"
     $tombstone = $null
     try {
-        $dsObj     = Get-ADObject $dsSvcDN -Properties tombstoneLifetime @CommonParams
-        $tombstone = $dsObj.tombstoneLifetime
+        $dsObj    = Get-ADObject $dsSvcDN -Properties tombstoneLifetime @CommonParams
+        $tombstone = if ($null -ne $dsObj.tombstoneLifetime -and $dsObj.tombstoneLifetime -gt 0) {
+            [int]$dsObj.tombstoneLifetime
+        } else {
+            180  # AD default when tombstoneLifetime attribute is not explicitly set
+        }
     } catch {
         $tombstone = $null
     }
