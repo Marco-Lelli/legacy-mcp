@@ -5,18 +5,37 @@ function Get-DCData {
     param([hashtable]$CommonParams = @{})
 
     Get-ADDomainController -Filter * @CommonParams | ForEach-Object {
+        $dc = $_
+
+        # Server Core detection via registry -- Remote Management Users sufficient
+        $isServerCore = $null
+        try {
+            $installType = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
+                (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" `
+                    -ErrorAction SilentlyContinue).InstallationType
+            } -ErrorAction SilentlyContinue
+            $isServerCore = ($installType -eq "Server Core")
+        } catch {
+            $isServerCore = $null
+        }
+
         [PSCustomObject]@{
-            Name                   = $_.Name
-            HostName               = $_.HostName
-            IPv4Address            = $_.IPv4Address
-            Site                   = $_.Site
-            OperatingSystem        = $_.OperatingSystem
-            OperatingSystemVersion = $_.OperatingSystemVersion
-            IsGlobalCatalog        = $_.IsGlobalCatalog
-            IsReadOnly             = $_.IsReadOnly
-            Enabled                = $_.Enabled
-            DistinguishedName      = $_.ComputerObjectDN
-            Reachable              = (Test-Connection $_.HostName -Count 1 -Quiet)
+            Name                   = $dc.Name
+            HostName               = $dc.HostName
+            IPv4Address            = $dc.IPv4Address
+            Site                   = $dc.Site
+            OperatingSystem        = $dc.OperatingSystem
+            OperatingSystemVersion = $dc.OperatingSystemVersion
+            IsGlobalCatalog        = $dc.IsGlobalCatalog
+            IsReadOnly             = $dc.IsReadOnly
+            Enabled                = $dc.Enabled
+            DistinguishedName      = $dc.ComputerObjectDN
+            Reachable              = (Test-Connection $dc.HostName -Count 1 -Quiet)
+            # New fields -- Webster gap closure
+            LdapPort               = 389
+            SslPort                = 636
+            OperationMasterRoles   = ($dc.OperationMasterRoles -join ", ")
+            IsServerCore           = $isServerCore
         }
     }
 }

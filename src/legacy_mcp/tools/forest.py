@@ -14,8 +14,8 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
     @mcp.tool()
     def get_forest_info(forest_name: str | None = None) -> dict[str, Any]:
         """Return forest-level information: name, functional level, schema version,
-        FSMO roles (SchemaMaster, DomainNamingMaster), sites, and optional features
-        such as the AD Recycle Bin."""
+        FSMO roles (SchemaMaster, DomainNamingMaster), sites, domains, global catalogs,
+        SPN suffixes, UPN suffixes, application partitions, and tombstone lifetime."""
         conn = workspace.connector(forest_name)
         result = conn.scalar("forest")
         return result or {}

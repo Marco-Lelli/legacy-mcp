@@ -4,17 +4,28 @@ function Get-DomainData {
     [CmdletBinding()]
     param([hashtable]$CommonParams = @{})
 
-    Get-ADDomain @CommonParams | ForEach-Object {
-        [PSCustomObject]@{
-            Name                 = $_.Name
-            DNSRoot              = $_.DNSRoot
-            DomainMode           = $_.DomainMode.ToString()
-            PDCEmulator          = $_.PDCEmulator
-            RIDMaster            = $_.RIDMaster
-            InfrastructureMaster = $_.InfrastructureMaster
-            ChildDomains         = $_.ChildDomains -join ", "
-            Forest               = $_.Forest
-        }
+    $domain  = Get-ADDomain @CommonParams
+    $rootDSE = Get-ADRootDSE @CommonParams
+
+    # MachineAccountQuota -- raw LDAP attribute on domain root object
+    $domainObj = Get-ADObject $rootDSE.defaultNamingContext `
+        -Properties "ms-DS-MachineAccountQuota" @CommonParams
+    $maq = $domainObj."ms-DS-MachineAccountQuota"
+
+    [PSCustomObject]@{
+        Name                 = $domain.Name
+        DNSRoot              = $domain.DNSRoot
+        NetBIOSName          = $domain.NetBIOSName
+        DomainSID            = $domain.DomainSID.Value
+        DomainMode           = $domain.DomainMode.ToString()
+        PDCEmulator          = $domain.PDCEmulator
+        RIDMaster            = $domain.RIDMaster
+        InfrastructureMaster = $domain.InfrastructureMaster
+        ChildDomains         = $domain.ChildDomains -join ", "
+        Forest               = $domain.Forest
+        # New fields -- Webster gap closure
+        AllowedDNSSuffixes   = $domain.AllowedDNSSuffixes -join ", "
+        MachineAccountQuota  = $maq
     }
 }
 

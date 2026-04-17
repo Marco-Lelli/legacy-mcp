@@ -67,8 +67,30 @@ param(
     [System.Management.Automation.PSCredential]$Credential
 )
 
-# Import DC inventory module
+# Import collector modules
 $modulePath = Join-Path $PSScriptRoot "modules\DomainControllers.psm1"
+Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\Forest.psm1"
+Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\Domains.psm1"
+Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\Sites.psm1"
+Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\Users.psm1"
+Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\Groups.psm1"
+Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\OUs.psm1"
+Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\GPO.psm1"
+Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\Trusts.psm1"
+Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\FGPP.psm1"
+Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\DNS.psm1"
+Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\PKI.psm1"
 Import-Module $modulePath -Force
 
 Set-StrictMode -Version Latest
@@ -193,9 +215,7 @@ $data = [ordered]@{}
 
 # --- Forest ---
 $data["forest"] = Invoke-Section "Forest" {
-    Get-ADForest @commonParams | Select-Object Name, ForestMode, SchemaMaster,
-        DomainNamingMaster, Sites, Domains, GlobalCatalogs,
-        @{N="SchemaVersion"; E={ (Get-ADObject (Get-ADRootDSE @commonParams).schemaNamingContext -Properties objectVersion @commonParams).objectVersion }}
+    Get-ForestData -CommonParams $commonParams
 }
 if ($null -ne $data["forest"]) {
     Write-CollectorLog -Level INFO -Section "Forest" -Message "collected: $($data['forest'].Name)"
@@ -203,8 +223,7 @@ if ($null -ne $data["forest"]) {
 
 # --- Optional Features ---
 $data["optional_features"] = Invoke-Section "Optional Features" {
-    Get-ADOptionalFeature -Filter * @commonParams | Select-Object Name, EnabledScopes,
-        @{N="Enabled"; E={ $_.EnabledScopes.Count -gt 0 }}
+    Get-OptionalFeaturesData -CommonParams $commonParams
 }
 if ($null -ne $data["optional_features"]) {
     Write-CollectorLog -Level INFO -Section "Optional Features" `
@@ -239,9 +258,7 @@ if ($null -ne $data["schema"]) {
 
 # --- Domains ---
 $data["domains"] = Invoke-Section "Domains" {
-    Get-ADDomain @commonParams | Select-Object Name, DNSRoot, DomainMode,
-        PDCEmulator, RIDMaster, InfrastructureMaster, ChildDomains,
-        @{N="Forest"; E={ $_.Forest }}
+    Get-DomainData -CommonParams $commonParams
 }
 if ($null -ne $data["domains"]) {
     Write-CollectorLog -Level INFO -Section "Domains" -Message "collected"
@@ -249,11 +266,7 @@ if ($null -ne $data["domains"]) {
 
 # --- Default Password Policy ---
 $data["default_password_policy"] = Invoke-Section "Default Password Policy" {
-    Get-ADDefaultDomainPasswordPolicy @commonParams | Select-Object ComplexityEnabled,
-        LockoutDuration, LockoutObservationWindow, LockoutThreshold,
-        MaxPasswordAge, MinPasswordAge, MinPasswordLength, PasswordHistoryCount,
-        ReversibleEncryptionEnabled,
-        @{N="Domain"; E={ (Get-ADDomain @commonParams).DNSRoot }}
+    Get-DefaultPasswordPolicyData -CommonParams $commonParams
 }
 if ($null -ne $data["default_password_policy"]) {
     Write-CollectorLog -Level INFO -Section "Default Password Policy" -Message "collected"
@@ -261,10 +274,7 @@ if ($null -ne $data["default_password_policy"]) {
 
 # --- Domain Controllers ---
 $data["dcs"] = Invoke-Section "Domain Controllers" {
-    Get-ADDomainController -Filter * @commonParams | Select-Object Name, HostName,
-        IPv4Address, Site, OperatingSystem, OperatingSystemVersion,
-        IsGlobalCatalog, IsReadOnly, Enabled,
-        @{N="Reachable"; E={ Test-Connection $_.HostName -Count 1 -Quiet }}
+    Get-DCData -CommonParams $commonParams
 }
 if ($null -ne $data["dcs"]) {
     Write-CollectorLog -Level INFO -Section "Domain Controllers" `
@@ -343,8 +353,7 @@ if ($null -ne $data["dc_installed_software"]) {
 
 # --- Sites ---
 $data["sites"] = Invoke-Section "Sites" {
-    Get-ADReplicationSite -Filter * @commonParams | Select-Object Name, Description,
-        @{N="Subnets"; E={ (Get-ADReplicationSubnet -Filter "Site -eq '$($_.DistinguishedName)'" @commonParams).Name -join ", " }}
+    Get-SitesData -CommonParams $commonParams
 }
 if ($null -ne $data["sites"]) {
     Write-CollectorLog -Level INFO -Section "Sites" `
@@ -353,9 +362,7 @@ if ($null -ne $data["sites"]) {
 
 # --- Site Links ---
 $data["site_links"] = Invoke-Section "Site Links" {
-    Get-ADReplicationSiteLink -Filter * @commonParams | Select-Object Name, Cost,
-        ReplicationFrequencyInMinutes, SitesIncluded,
-        @{N="Transport"; E={ $_.InterSiteTransportProtocol }}
+    Get-SiteLinksData -CommonParams $commonParams
 }
 if ($null -ne $data["site_links"]) {
     Write-CollectorLog -Level INFO -Section "Site Links" `
@@ -399,25 +406,7 @@ if ($null -ne $data["users"]) {
 
 # --- Privileged Accounts ---
 $data["privileged_accounts"] = Invoke-Section "Privileged Accounts" {
-    $privilegedGroups = @(
-        "Domain Admins", "Enterprise Admins", "Schema Admins",
-        "Administrators", "Account Operators", "Backup Operators",
-        "Print Operators", "Server Operators"
-    )
-    $seen = @{}
-    foreach ($groupName in $privilegedGroups) {
-        try {
-            Get-ADGroupMember -Identity $groupName -Recursive @commonParams |
-                Where-Object { $_.objectClass -eq "user" -and -not $seen[$_.SamAccountName] } |
-                ForEach-Object {
-                    $seen[$_.SamAccountName] = $true
-                    [PSCustomObject]@{
-                        SamAccountName = $_.SamAccountName
-                        Group          = $groupName
-                    }
-                }
-        } catch { }
-    }
+    Get-PrivilegedAccountsData -CommonParams $commonParams
 }
 if ($null -ne $data["privileged_accounts"]) {
     Write-CollectorLog -Level INFO -Section "Privileged Accounts" `
@@ -495,17 +484,7 @@ if ($null -ne $data["group_members"]) {
 
 # --- Privileged Groups (with members) ---
 $data["privileged_groups"] = Invoke-Section "Privileged Groups" {
-    $names = @("Domain Admins","Enterprise Admins","Schema Admins","Administrators",
-               "Account Operators","Backup Operators","Print Operators","Server Operators")
-    foreach ($name in $names) {
-        try {
-            $members = Get-ADGroupMember -Identity $name -Recursive @commonParams |
-                Select-Object SamAccountName, objectClass, distinguishedName
-            [PSCustomObject]@{ Group = $name; Members = $members }
-        } catch {
-            [PSCustomObject]@{ Group = $name; Members = @() }
-        }
-    }
+    Get-PrivilegedGroupsData -CommonParams $commonParams
 }
 if ($null -ne $data["privileged_groups"]) {
     Write-CollectorLog -Level INFO -Section "Privileged Groups" `
@@ -514,10 +493,7 @@ if ($null -ne $data["privileged_groups"]) {
 
 # --- OUs ---
 $data["ous"] = Invoke-Section "OUs" {
-    Get-ADOrganizationalUnit -Filter * -Properties gpLink, gPOptions @commonParams |
-        Select-Object Name, DistinguishedName,
-            @{N="BlockedInheritance"; E={ ($_.gPOptions -band 1) -eq 1 }},
-            @{N="LinkedGPOs";         E={ $_.gpLink }}
+    Get-OUsData -CommonParams $commonParams
 }
 if ($null -ne $data["ous"]) {
     Write-CollectorLog -Level INFO -Section "OUs" `
@@ -526,13 +502,7 @@ if ($null -ne $data["ous"]) {
 
 # --- GPO Inventory ---
 $data["gpos"] = Invoke-Section "GPO Inventory" {
-    try {
-        Get-GPO -All @commonParams | Select-Object DisplayName, Id, GpoStatus,
-            CreationTime, ModificationTime, Owner
-    } catch {
-        Write-Warning "GPO cmdlets not available - skipping GPO inventory"
-        @()
-    }
+    Get-GPOData -CommonParams $commonParams
 }
 if ($null -ne $data["gpos"]) {
     Write-CollectorLog -Level INFO -Section "GPO Inventory" `
@@ -580,9 +550,7 @@ if ($null -ne $data["blocked_inheritance"]) {
 
 # --- Trusts ---
 $data["trusts"] = Invoke-Section "Trusts" {
-    Get-ADTrust -Filter * @commonParams | Select-Object Name, Direction, TrustType,
-        TrustAttributes, SelectiveAuthentication, SIDFilteringForestAware,
-        SIDFilteringQuarantined, DisallowTransivity, DistinguishedName
+    Get-TrustsData -CommonParams $commonParams
 }
 if ($null -ne $data["trusts"]) {
     Write-CollectorLog -Level INFO -Section "Trusts" `
@@ -591,11 +559,7 @@ if ($null -ne $data["trusts"]) {
 
 # --- Fine-Grained Password Policies ---
 $data["fgpp"] = Invoke-Section "FGPP" {
-    Get-ADFineGrainedPasswordPolicy -Filter * @commonParams | Select-Object Name,
-        Precedence, MinPasswordLength, PasswordHistoryCount, ComplexityEnabled,
-        MaxPasswordAge, MinPasswordAge, LockoutThreshold, LockoutDuration,
-        LockoutObservationWindow, ReversibleEncryptionEnabled,
-        @{N="AppliesTo"; E={ ($_ | Get-ADFineGrainedPasswordPolicySubject @commonParams).Name -join ", " }}
+    Get-FGPPData -CommonParams $commonParams
 }
 if ($null -ne $data["fgpp"]) {
     Write-CollectorLog -Level INFO -Section "FGPP" `
@@ -604,12 +568,7 @@ if ($null -ne $data["fgpp"]) {
 
 # --- DNS ---
 $data["dns"] = Invoke-Section "DNS Zones" {
-    try {
-        $dcs = (Get-ADDomainController -Filter * @commonParams).HostName
-        $dc = $dcs | Select-Object -First 1
-        Get-DnsServerZone -ComputerName $dc | Select-Object ZoneName, ZoneType,
-            IsDsIntegrated, ReplicationScope, IsReverseLookupZone, IsAutoCreated
-    } catch { @() }
+    Get-DNSZonesData -CommonParams $commonParams
 }
 if ($null -ne $data["dns"]) {
     Write-CollectorLog -Level INFO -Section "DNS Zones" `
@@ -618,17 +577,7 @@ if ($null -ne $data["dns"]) {
 
 # --- DNS Forwarders ---
 $data["dns_forwarders"] = Invoke-Section "DNS Forwarders" {
-    try {
-        $dcs = (Get-ADDomainController -Filter * @commonParams).HostName
-        foreach ($dc in $dcs) {
-            try {
-                $fwd = Get-DnsServerForwarder -ComputerName $dc
-                [PSCustomObject]@{ DC = $dc; Forwarders = $fwd.IPAddress -join ", "; UseRootHint = $fwd.UseRootHint }
-            } catch {
-                [PSCustomObject]@{ DC = $dc; Forwarders = "UNREACHABLE"; UseRootHint = $null }
-            }
-        }
-    } catch { @() }
+    Get-DNSForwardersData -CommonParams $commonParams
 }
 if ($null -ne $data["dns_forwarders"]) {
     Write-CollectorLog -Level INFO -Section "DNS Forwarders" `
@@ -673,12 +622,7 @@ if ($null -ne $data["computers"]) {
 
 # --- PKI / CA Discovery ---
 $data["pki"] = Invoke-Section "PKI / CA Discovery" {
-    $configDN = (Get-ADRootDSE @commonParams).configurationNamingContext
-    $enrollmentDN = "CN=Enrollment Services,CN=Public Key Services,CN=Services,$configDN"
-    try {
-        Get-ADObject -SearchBase $enrollmentDN -Filter * @commonParams |
-            Select-Object Name, DistinguishedName, ObjectClass
-    } catch { @() }
+    Get-PKIData -CommonParams $commonParams
 }
 if ($null -ne $data["pki"]) {
     Write-CollectorLog -Level INFO -Section "PKI / CA Discovery" `

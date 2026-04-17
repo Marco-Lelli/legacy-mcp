@@ -5,19 +5,36 @@ function Get-ForestData {
     [CmdletBinding()]
     param([hashtable]$CommonParams = @{})
 
-    $forest = Get-ADForest @CommonParams
-    $rootDSE = Get-ADRootDSE @CommonParams
-    $schemaObj = Get-ADObject $rootDSE.schemaNamingContext -Properties objectVersion @CommonParams
+    $forest    = Get-ADForest @CommonParams
+    $rootDSE   = Get-ADRootDSE @CommonParams
+    $schemaObj = Get-ADObject $rootDSE.schemaNamingContext `
+        -Properties objectVersion @CommonParams
+
+    # Tombstone lifetime -- stored in CN=Directory Service,CN=Windows NT,CN=Services,<configNC>
+    $configNC  = $rootDSE.configurationNamingContext
+    $dsSvcDN   = "CN=Directory Service,CN=Windows NT,CN=Services,$configNC"
+    $tombstone = $null
+    try {
+        $dsObj     = Get-ADObject $dsSvcDN -Properties tombstoneLifetime @CommonParams
+        $tombstone = $dsObj.tombstoneLifetime
+    } catch {
+        $tombstone = $null
+    }
 
     [PSCustomObject]@{
-        Name                 = $forest.Name
-        ForestMode           = $forest.ForestMode.ToString()
-        SchemaMaster         = $forest.SchemaMaster
-        DomainNamingMaster   = $forest.DomainNamingMaster
-        Sites                = $forest.Sites -join ", "
-        Domains              = $forest.Domains -join ", "
-        GlobalCatalogs       = $forest.GlobalCatalogs -join ", "
-        SchemaVersion        = $schemaObj.objectVersion
+        Name                  = $forest.Name
+        ForestMode            = $forest.ForestMode.ToString()
+        SchemaMaster          = $forest.SchemaMaster
+        DomainNamingMaster    = $forest.DomainNamingMaster
+        Sites                 = $forest.Sites -join ", "
+        Domains               = $forest.Domains -join ", "
+        GlobalCatalogs        = $forest.GlobalCatalogs -join ", "
+        SchemaVersion         = $schemaObj.objectVersion
+        # New fields -- Webster gap closure
+        SPNSuffixes           = $forest.SPNSuffixes -join ", "
+        UPNSuffixes           = $forest.UPNSuffixes -join ", "
+        ApplicationPartitions = $forest.ApplicationPartitions -join ", "
+        TombstoneLifetime     = $tombstone
     }
 }
 

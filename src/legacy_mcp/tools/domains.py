@@ -18,7 +18,8 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         limit: int = 200,
     ) -> dict[str, Any]:
         """Return all domains in the forest with their configuration:
-        DNS name, functional level, and FSMO role holders.
+        DNS name, NetBIOS name, domain SID, functional level, FSMO role holders,
+        allowed DNS suffixes, and machine account quota (ms-DS-MachineAccountQuota).
 
         Returns a paginated result: {items, total, offset, limit, has_more}.
         Default limit is 200. Bounded by AD architecture (typically 1-20 domains).

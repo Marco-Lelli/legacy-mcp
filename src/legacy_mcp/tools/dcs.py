@@ -18,7 +18,8 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         limit: int = 100,
     ) -> dict[str, Any]:
         """Return all Domain Controllers in the forest with OS version,
-        IP address, GC/RODC status, site, and reachability state.
+        IP address, GC/RODC status, site, reachability state, LDAP/SSL ports,
+        FSMO roles held, and Server Core detection.
 
         Returns a paginated result: {items, total, offset, limit, has_more}.
         Default limit is 100.
