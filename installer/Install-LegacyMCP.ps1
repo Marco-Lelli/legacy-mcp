@@ -542,8 +542,18 @@ if ($DeployProfile -eq 'B') {
         & $NssmExe set LegacyMCP ObjectName $ServiceAccount ""
         Write-OK "Service account set to gMSA: $ServiceAccount"
     } else {
-        $svcPassword = Read-Host "Password for $ServiceAccount"
-        & $NssmExe set LegacyMCP ObjectName $ServiceAccount $svcPassword
+        try {
+            $svcSecure   = Read-Host "Password for $ServiceAccount" -AsSecureString
+            $svcPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+                [Runtime.InteropServices.Marshal]::SecureStringToBSTR($svcSecure))
+            & $NssmExe set LegacyMCP ObjectName $ServiceAccount $svcPassword
+        } catch {
+            Write-Fail "Failed to set service account credentials: $_"
+            exit 1
+        } finally {
+            if ($svcSecure)   { $svcSecure.Dispose() }
+            if ($svcPassword) { $svcPassword = $null }
+        }
         Write-OK "Service account set to: $ServiceAccount"
 
         # SeServiceLogonRight check -- non-gMSA accounts must have this right
