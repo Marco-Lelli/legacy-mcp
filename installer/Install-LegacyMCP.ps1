@@ -121,13 +121,9 @@ if ($Action -eq 'ReplaceCert') {
     # Retrieve and display stored API key so the caller can update their MCP client config
     $displayKey = '<read-from-registry>'
     try {
-        Add-Type -AssemblyName System.Security
-        $encBytes = Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\LegacyMCP' -Name 'ApiKey' -ErrorAction Stop
-        $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
-            $encBytes, $null,
-            [System.Security.Cryptography.DataProtectionScope]::LocalMachine
-        )
-        $displayKey = [System.Text.Encoding]::UTF8.GetString($plainBytes)
+        Import-Module SecretManagement.DpapiNG -ErrorAction Stop
+        $encStr = Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\LegacyMCP' -Name 'ApiKey' -ErrorAction Stop
+        $displayKey = ConvertFrom-DpapiNGSecret -InputObject $encStr
     } catch {
         Write-Warn "Could not read ApiKey from registry: $_"
     }
@@ -366,17 +362,17 @@ if ($DeployProfile -eq 'B') {
         Write-Info 'Using provided API key.'
     }
 
-    Add-Type -AssemblyName System.Security
-    $apiKeyBytes  = [System.Text.Encoding]::UTF8.GetBytes($ApiKey)
-    # DPAPI machine-scope (LocalMachine): any process on this machine can decrypt.
-    # Acceptable for Profile B-core (network access controlled by TLS + firewall).
-    # Re-evaluate for Profile B-enterprise: consider user-scope DPAPI or Key Vault.
-    $encryptedKey = [System.Security.Cryptography.ProtectedData]::Protect(
-        $apiKeyBytes, $null,
-        [System.Security.Cryptography.DataProtectionScope]::LocalMachine
-    )
-    Set-ItemProperty -Path $RegRoot -Name 'ApiKey' -Value $encryptedKey -Type Binary
-    Write-OK 'API key stored encrypted (DPAPI machine-scope) in HKLM:\SOFTWARE\LegacyMCP\ApiKey.'
+    try {
+        Import-Module SecretManagement.DpapiNG -ErrorAction Stop
+        $svcSid = (New-Object System.Security.Principal.NTAccount($ServiceAccount)).Translate(
+            [System.Security.Principal.SecurityIdentifier]).Value
+        $encryptedKey = ConvertTo-DpapiNGSecret -InputObject $ApiKey -Sid $svcSid
+        Set-ItemProperty -Path $RegRoot -Name 'ApiKey' -Value $encryptedKey -Type String
+        Write-OK 'API key stored encrypted (DPAPI-NG, SID-scoped) in HKLM:\SOFTWARE\LegacyMCP\ApiKey.'
+    } catch {
+        Write-Fail "Failed to encrypt API key with DPAPI-NG: $_"
+        exit 1
+    }
 
     # --- TLS Certificate ---
     $CertDir = Join-Path $InstallPath 'certs'

@@ -78,30 +78,22 @@ def read_registry_config() -> dict:
                 except (OSError, ValueError):
                     pass
 
-            # ApiKey is stored as REG_BINARY encrypted with DPAPI machine-scope
-            # (CRYPTPROTECT_LOCAL_MACHINE).  Machine-scope DPAPI is accessible to
-            # any process running on this machine regardless of the user context,
-            # including the NSSM service account.  This is intentional and
-            # acceptable for Profile B-core, whose threat model assumes
-            # network-level access control (TLS + perimeter firewall).
-            # For Profile B-enterprise or multi-tenant scenarios, re-evaluate:
-            # consider user-scope DPAPI or a dedicated secrets manager.
+            # ApiKey is stored as REG_SZ: a Base64 string produced by
+            # ConvertTo-DpapiNGSecret (SecretManagement.DpapiNG) in
+            # Install-LegacyMCP.ps1. The secret is SID-scoped to the
+            # service account -- only that identity can decrypt it.
             try:
-                encrypted, _ = winreg.QueryValueEx(key, "ApiKey")
-                if encrypted:
-                    import win32crypt  # noqa: PLC0415 -- pywin32, Windows only
-                    _desc, plaintext = win32crypt.CryptUnprotectData(
-                        encrypted,
-                        None,   # description
-                        None,   # entropy
-                        None,   # reserved
-                        0x04,   # flags: CRYPTPROTECT_LOCAL_MACHINE
-                    )
+                encrypted_b64, _ = winreg.QueryValueEx(key, "ApiKey")
+                if encrypted_b64:
+                    import base64  # noqa: PLC0415
+                    import dpapi_ng  # noqa: PLC0415
+                    blob = base64.b64decode(encrypted_b64)
+                    plaintext = dpapi_ng.ncrypt_unprotect_secret(blob)
                     result["api_key"] = plaintext.decode("utf-8")
             except OSError:
                 pass  # key absent -- Profile A or not yet configured
             except ImportError:
-                pass  # pywin32 not installed
+                pass  # dpapi-ng not installed
             except Exception as exc:  # noqa: BLE001
                 import sys as _sys
                 print(
