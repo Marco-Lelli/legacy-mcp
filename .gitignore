@@ -34,6 +34,7 @@ reference/
 
 # Project status (internal, not for GitHub)
 STATUS.md
+/status/
 
 # Enterprise layer instructions — proprietario Impresoft 4ward, mai su GitHub
 CLAUDE-ENTERPRISE.md
