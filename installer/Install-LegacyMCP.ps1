@@ -617,6 +617,31 @@ if ($DeployProfile -eq 'B') {
 
     Write-Info "Start with: Start-Service LegacyMCP"
     Write-Info "Status:     Get-Service LegacyMCP"
+
+    # ---------------------------------------------------------------------------
+    # Phase 5.5 -- Windows Firewall
+    # ---------------------------------------------------------------------------
+    Write-Step 'Phase 5.5 -- Windows Firewall'
+
+    $fwRuleName = 'LegacyMCP MCP Server'
+    $existingRule = Get-NetFirewallRule -DisplayName $fwRuleName -ErrorAction SilentlyContinue
+    if ($existingRule) {
+        Write-OK "Firewall rule '$fwRuleName' already exists -- skipping."
+    } else {
+        try {
+            New-NetFirewallRule `
+                -DisplayName $fwRuleName `
+                -Direction Inbound `
+                -Protocol TCP `
+                -LocalPort 8000 `
+                -Action Allow `
+                -Profile Domain,Private | Out-Null
+            Write-OK "Firewall rule created: allow TCP inbound port 8000 (Domain, Private profiles)."
+        } catch {
+            Write-Warn "Could not create firewall rule: $_"
+            Write-Warn "Create it manually: New-NetFirewallRule -DisplayName '$fwRuleName' -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow -Profile Domain,Private"
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------

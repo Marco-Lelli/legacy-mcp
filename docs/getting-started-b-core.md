@@ -129,6 +129,19 @@ The installer will:
 - Generate an API key and store it encrypted (DPAPI machine-scope)
 - Register and start the Windows service via NSSM
 - Register the Windows EventLog source
+- Create a Windows Firewall rule to allow inbound TCP on port 8000
+
+**Windows Firewall**
+The installer automatically creates a firewall rule to allow inbound
+TCP traffic on port 8000 (Domain and Private network profiles).
+If you reinstall the service under a different service account,
+run the installer again to ensure the rule is in place — changing
+the service account does not update existing firewall rules.
+
+To verify manually:
+```powershell
+Get-NetFirewallRule -DisplayName "LegacyMCP MCP Server"
+```
 
 ### 3. Configure workspaces
 
