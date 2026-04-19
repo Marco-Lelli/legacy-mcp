@@ -7,8 +7,9 @@ Windows-only code paths are skipped on non-Windows platforms.
 
 from __future__ import annotations
 
+import subprocess
 import sys
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -326,60 +327,108 @@ def test_main_priority_port_from_registry():
 
 
 # ---------------------------------------------------------------------------
-# DPAPI-NG decryption: ApiKey stored as REG_SZ Base64, decrypted via dpapi_ng
+# DPAPI-NG decryption: ApiKey stored as REG_SZ Base64, decrypted via PS subprocess
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
-def test_dpapi_ng_decodes_base64_before_ncrypt():
-    """ApiKey is REG_SZ Base64. The code must base64-decode the string and pass
-    raw bytes to ncrypt_unprotect_secret -- not the encoded string directly.
-    """
-    import base64
-    import importlib
-    import legacy_mcp.config_registry as m
-
-    raw_blob = b"\x01\x02\x03\x04"
-    encoded_value = base64.b64encode(raw_blob).decode()
-
-    mock_dpapi_ng = MagicMock()
-    mock_dpapi_ng.ncrypt_unprotect_secret = MagicMock(return_value=b"secret-key")
-
-    values = {"ApiKey": (encoded_value, 1)}  # 1 = REG_SZ
-    mock_winreg = _make_winreg_mock(values=values)
-
-    with patch.dict("sys.modules", {"winreg": mock_winreg, "dpapi_ng": mock_dpapi_ng}):
-        importlib.reload(m)
-        result = m.read_registry_config()
-
-    mock_dpapi_ng.ncrypt_unprotect_secret.assert_called_once_with(raw_blob)
-    assert result["api_key"] == "secret-key"
+def _make_proc(returncode: int, stdout: bytes) -> MagicMock:
+    proc = MagicMock()
+    proc.returncode = returncode
+    proc.stdout = stdout
+    return proc
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
-def test_dpapi_ng_ncrypt_called_with_one_positional_arg():
-    """ncrypt_unprotect_secret must receive exactly one positional argument
-    (the raw blob). Any extra args would raise TypeError at runtime.
-    """
-    import base64
+def test_apikey_decrypted_via_subprocess():
+    """Successful decryption: subprocess returns the plaintext API key."""
     import importlib
     import legacy_mcp.config_registry as m
 
-    raw_blob = b"\xde\xad\xbe\xef"
-    encoded_value = base64.b64encode(raw_blob).decode()
-
-    mock_dpapi_ng = MagicMock()
-    mock_dpapi_ng.ncrypt_unprotect_secret = MagicMock(return_value=b"key")
-
-    values = {"ApiKey": (encoded_value, 1)}  # 1 = REG_SZ
+    values = {"ApiKey": ("AQIDBA==", 1)}
     mock_winreg = _make_winreg_mock(values=values)
 
-    with patch.dict("sys.modules", {"winreg": mock_winreg, "dpapi_ng": mock_dpapi_ng}):
+    with patch.dict("sys.modules", {"winreg": mock_winreg}):
         importlib.reload(m)
-        m.read_registry_config()
+        with patch.object(m.subprocess, "run", return_value=_make_proc(0, b"my-secret-key\n")):
+            result = m.read_registry_config()
 
-    call_args = mock_dpapi_ng.ncrypt_unprotect_secret.call_args[0]
-    assert len(call_args) == 1, (
-        f"ncrypt_unprotect_secret called with {len(call_args)} positional args, expected 1. "
-        "The correct signature is ncrypt_unprotect_secret(blob)."
-    )
+    assert result["api_key"] == "my-secret-key"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
+def test_apikey_powershell_not_found(capsys):
+    """FileNotFoundError is handled and api_key is absent from result."""
+    import importlib
+    import legacy_mcp.config_registry as m
+
+    values = {"ApiKey": ("AQIDBA==", 1)}
+    mock_winreg = _make_winreg_mock(values=values)
+
+    with patch.dict("sys.modules", {"winreg": mock_winreg}):
+        importlib.reload(m)
+        with patch.object(m.subprocess, "run", side_effect=FileNotFoundError):
+            result = m.read_registry_config()
+
+    assert "api_key" not in result
+    captured = capsys.readouterr()
+    assert "powershell.exe not found at expected path" in captured.err
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
+def test_apikey_subprocess_timeout(capsys):
+    """TimeoutExpired is handled and api_key is absent from result."""
+    import importlib
+    import legacy_mcp.config_registry as m
+
+    values = {"ApiKey": ("AQIDBA==", 1)}
+    mock_winreg = _make_winreg_mock(values=values)
+
+    with patch.dict("sys.modules", {"winreg": mock_winreg}):
+        importlib.reload(m)
+        with patch.object(
+            m.subprocess, "run",
+            side_effect=subprocess.TimeoutExpired(cmd=["powershell.exe"], timeout=10),
+        ):
+            result = m.read_registry_config()
+
+    assert "api_key" not in result
+    captured = capsys.readouterr()
+    assert "timed out after 10s" in captured.err
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
+def test_apikey_empty_output(capsys):
+    """Empty stdout (returncode 0) falls back gracefully without api_key."""
+    import importlib
+    import legacy_mcp.config_registry as m
+
+    values = {"ApiKey": ("AQIDBA==", 1)}
+    mock_winreg = _make_winreg_mock(values=values)
+
+    with patch.dict("sys.modules", {"winreg": mock_winreg}):
+        importlib.reload(m)
+        with patch.object(m.subprocess, "run", return_value=_make_proc(0, b"")):
+            result = m.read_registry_config()
+
+    assert "api_key" not in result
+    captured = capsys.readouterr()
+    assert "decryption returned empty result" in captured.err
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
+def test_apikey_nonzero_returncode(capsys):
+    """Non-zero returncode (e.g. module not installed) falls back gracefully."""
+    import importlib
+    import legacy_mcp.config_registry as m
+
+    values = {"ApiKey": ("AQIDBA==", 1)}
+    mock_winreg = _make_winreg_mock(values=values)
+
+    with patch.dict("sys.modules", {"winreg": mock_winreg}):
+        importlib.reload(m)
+        with patch.object(m.subprocess, "run", return_value=_make_proc(1, b"")):
+            result = m.read_registry_config()
+
+    assert "api_key" not in result
+    captured = capsys.readouterr()
+    assert "SecretManagement.DpapiNG module not available" in captured.err

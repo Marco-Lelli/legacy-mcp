@@ -10,7 +10,10 @@ Priority applied by the caller: CLI > registry > default.
 
 from __future__ import annotations
 
+import subprocess
 import sys
+
+_PS_EXE = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
 
 _REGISTRY_KEY = r"SOFTWARE\LegacyMCP"
 _SERVICE_SUBKEY = r"SOFTWARE\LegacyMCP\Service"
@@ -82,24 +85,58 @@ def read_registry_config() -> dict:
             # ConvertTo-DpapiNGSecret (SecretManagement.DpapiNG) in
             # Install-LegacyMCP.ps1. The secret is SID-scoped to the
             # service account -- only that identity can decrypt it.
+            # Decryption via PowerShell subprocess: NCryptUnprotectSecret works
+            # for any SID-authorised account; the dpapi_ng Python library fails
+            # with 0x80070005 because MS-GKDI root key retrieval requires DC RPC.
             try:
                 encrypted_b64, _ = winreg.QueryValueEx(key, "ApiKey")
                 if encrypted_b64:
-                    import base64  # noqa: PLC0415
-                    import dpapi_ng  # noqa: PLC0415
-                    blob = base64.b64decode(encrypted_b64)
-                    plaintext = dpapi_ng.ncrypt_unprotect_secret(blob)
-                    result["api_key"] = plaintext.decode("utf-8")
+                    ps_cmd = (
+                        "Import-Module SecretManagement.DpapiNG -ErrorAction Stop; "
+                        f"$blob = '{encrypted_b64}'; "
+                        "$secure = ConvertFrom-DpapiNGSecret -InputObject $blob; "
+                        "[Runtime.InteropServices.Marshal]::PtrToStringAuto("
+                        "[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))"
+                    )
+                    try:
+                        proc = subprocess.run(
+                            [_PS_EXE, "-NoProfile", "-NonInteractive",
+                             "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+                            capture_output=True,
+                            timeout=10,
+                            check=False,
+                        )
+                        api_key = proc.stdout.decode("utf-8", errors="replace").strip()
+                        if proc.returncode != 0:
+                            print(
+                                "[LegacyMCP] Warning: DPAPI-NG: SecretManagement.DpapiNG module not available",
+                                file=sys.stderr,
+                            )
+                        elif not api_key:
+                            print(
+                                "[LegacyMCP] Warning: DPAPI-NG: decryption returned empty result",
+                                file=sys.stderr,
+                            )
+                        else:
+                            result["api_key"] = api_key
+                    except FileNotFoundError:
+                        print(
+                            "[LegacyMCP] Warning: DPAPI-NG: powershell.exe not found at expected path",
+                            file=sys.stderr,
+                        )
+                    except subprocess.TimeoutExpired:
+                        print(
+                            "[LegacyMCP] Warning: DPAPI-NG: decryption timed out after 10s",
+                            file=sys.stderr,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        print(
+                            f"[LegacyMCP] Warning: DPAPI-NG: decryption failed: "
+                            f"{type(exc).__name__}: {exc}",
+                            file=sys.stderr,
+                        )
             except OSError:
                 pass  # key absent -- Profile A or not yet configured
-            except ImportError:
-                pass  # dpapi-ng not installed
-            except Exception as exc:  # noqa: BLE001
-                import sys as _sys
-                print(
-                    f"[LegacyMCP] Warning: failed to decrypt ApiKey: {exc}",
-                    file=_sys.stderr,
-                )
 
     except Exception as exc:  # noqa: BLE001
         import sys as _sys
