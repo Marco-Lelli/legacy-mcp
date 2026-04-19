@@ -59,11 +59,10 @@ git diff status/ST-history.md
 ```
 Riporta il diff completo e attendi approvazione esplicita prima di procedere.
 
-### 4. Commit (solo dopo approvazione)
-```bash
-git add status/ST-status.md status/ST-backlog.md status/ST-envs.md status/ST-arch.md status/ST-history.md
-git add status/delta/delta-NN.md
-git commit -m "session #NN close — apply delta-NN"
+### 4. Completato
+/status/ è gitignored — nessun commit necessario.
+Le modifiche ai file ST-* sono locali by design.
+Comunica a Marco il riepilogo delle modifiche applicate e chiudi.
 ```
 
 ---
