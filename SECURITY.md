@@ -46,7 +46,7 @@ authentication — not STDIO over the network.
 
 **Profile A**: not affected — `mcp-remote` is not used.
 
-**Profile B-core**: addressed in this release.
+**Profile B-core**: addressed in commit 48df1f3.
 - The `mcp-remote` client is pinned to version 0.1.38 (patched in >= 0.1.16).
 - The OAuth metadata endpoint no longer derives `authorization_endpoint`
   from request input.
