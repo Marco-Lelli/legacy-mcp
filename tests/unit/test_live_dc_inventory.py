@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from legacy_mcp.modes.live import LiveConnector
-from legacy_mcp.workspace.workspace import ForestConfig, ForestRelation
+from legacy_mcp.workspace.workspace import ForestConfig, ForestRelation, Workspace
 
 
 @pytest.fixture
@@ -162,3 +162,76 @@ class TestCollectDcInventory:
         assert result[0]["Status"] == "Unreachable"
         assert result[0]["Software"] == []
         assert "Features" not in result[0]
+
+
+# ---------------------------------------------------------------------------
+# _resolve_auth
+# ---------------------------------------------------------------------------
+
+class TestResolveAuth:
+
+    def test_gmsa_returns_empty_credentials(self) -> None:
+        forest = ForestConfig(name="test.local", dc="dc01.test.local", credentials="gmsa")
+        connector = LiveConnector(forest)
+        assert connector._resolve_auth() == ("", "")
+
+    def test_default_credentials_is_gmsa(self) -> None:
+        forest = ForestConfig(name="test.local", dc="dc01.test.local")
+        connector = LiveConnector(forest)
+        assert forest.credentials == "gmsa"
+        assert connector._resolve_auth() == ("", "")
+
+    def test_env_reads_from_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LEGACYMCP_AD_USER", "HOUSE\\svc_legacymcp")
+        monkeypatch.setenv("LEGACYMCP_AD_PASSWORD", "secret123")
+        forest = ForestConfig(name="test.local", dc="dc01.test.local", credentials="env")
+        connector = LiveConnector(forest)
+        assert connector._resolve_auth() == ("HOUSE\\svc_legacymcp", "secret123")
+
+    def test_env_missing_vars_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LEGACYMCP_AD_USER", raising=False)
+        monkeypatch.delenv("LEGACYMCP_AD_PASSWORD", raising=False)
+        forest = ForestConfig(name="test.local", dc="dc01.test.local", credentials="env")
+        connector = LiveConnector(forest)
+        assert connector._resolve_auth() == ("", "")
+
+
+# ---------------------------------------------------------------------------
+# credentials propagation through Workspace.from_config()
+# ---------------------------------------------------------------------------
+
+class TestCredentialsPropagation:
+
+    def test_credentials_gmsa_propagated_from_config(self) -> None:
+        cfg = {
+            "mode": "live",
+            "workspace": {
+                "forests": [
+                    {"name": "house.local", "dc": "dc01.house.local", "credentials": "gmsa"}
+                ]
+            },
+        }
+        workspace = Workspace.from_config(cfg)
+        assert workspace.forests[0].credentials == "gmsa"
+
+    def test_credentials_default_is_gmsa_when_omitted(self) -> None:
+        cfg = {
+            "mode": "live",
+            "workspace": {
+                "forests": [{"name": "house.local", "dc": "dc01.house.local"}]
+            },
+        }
+        workspace = Workspace.from_config(cfg)
+        assert workspace.forests[0].credentials == "gmsa"
+
+    def test_credentials_env_propagated_from_config(self) -> None:
+        cfg = {
+            "mode": "live",
+            "workspace": {
+                "forests": [
+                    {"name": "house.local", "dc": "dc01.house.local", "credentials": "env"}
+                ]
+            },
+        }
+        workspace = Workspace.from_config(cfg)
+        assert workspace.forests[0].credentials == "env"
