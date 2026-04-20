@@ -30,11 +30,9 @@ from starlette.types import ASGIApp
 _pending_codes: dict[str, str] = {}
 
 
-def build_oauth_app(api_key: str, fallback: ASGIApp) -> Starlette:
+def build_oauth_app(api_key: str, fallback: ASGIApp, base_url: str) -> Starlette:
 
     async def oauth_discovery(request: Request) -> JSONResponse:
-        host = request.headers.get("host", "localhost")
-        base_url = f"https://{host}"
         return JSONResponse(
             {
                 "issuer": base_url,

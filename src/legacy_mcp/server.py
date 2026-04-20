@@ -136,7 +136,8 @@ def _run_with_tls(
         if api_key:
             from legacy_mcp.oauth import build_oauth_app       # noqa: PLC0415
             from legacy_mcp.auth import BearerApiKeyMiddleware  # noqa: PLC0415
-            app = build_oauth_app(api_key, fallback=app)
+            server_base_url = f"https://{mcp.settings.host}:{mcp.settings.port}"
+            app = build_oauth_app(api_key, fallback=app, base_url=server_base_url)
             app = BearerApiKeyMiddleware(app, api_key)
         config = uvicorn.Config(
             app,

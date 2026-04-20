@@ -25,4 +25,4 @@ if ($CaCertPath -eq "") {
 }
 $env:NODE_EXTRA_CA_CERTS = $CaCertPath
 
-& npx mcp-remote $ServerUrl --header "Authorization:Bearer $apiKey"
+& npx --yes mcp-remote@0.1.38 $ServerUrl --header "Authorization:Bearer $apiKey"

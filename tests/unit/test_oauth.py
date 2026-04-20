@@ -15,16 +15,17 @@ from starlette.routing import Route
 from legacy_mcp.oauth import build_oauth_app
 
 _API_KEY = "test-static-key-abc"
+_BASE_URL = "https://legacymcp.example.com:8000"
 
 
-def _make_app(api_key: str = _API_KEY) -> Starlette:
+def _make_app(api_key: str = _API_KEY, base_url: str = _BASE_URL) -> Starlette:
     """Build an oauth app whose fallback is a simple 200 OK echo."""
 
     async def fallback_home(request):
         return PlainTextResponse("ok from fallback")
 
     fallback = Starlette(routes=[Route("/mcp", fallback_home, methods=["GET"])])
-    return build_oauth_app(api_key, fallback=fallback)
+    return build_oauth_app(api_key, fallback=fallback, base_url=base_url)
 
 
 # ---------------------------------------------------------------------------
@@ -78,16 +79,26 @@ async def test_discovery_contains_grant_types_supported():
 
 
 @pytest.mark.anyio
-async def test_discovery_issuer_reflects_host_header():
-    """Feature H: issuer is built from the Host header, not the binding address."""
+async def test_discovery_issuer_reflects_configured_base_url():
+    """Discovery issuer is derived from the server config, not from the request Host header."""
+    async with _async_client() as client:
+        response = await client.get("/.well-known/oauth-authorization-server")
+    data = response.json()
+    assert data["issuer"] == _BASE_URL
+    assert data["token_endpoint"] == f"{_BASE_URL}/token"
+
+
+@pytest.mark.anyio
+async def test_discovery_host_header_injection_blocked():
+    """CVE-2025-6514: a crafted Host header must not appear in authorization_endpoint."""
     async with _async_client() as client:
         response = await client.get(
             "/.well-known/oauth-authorization-server",
-            headers={"host": "LORENZO.house.local:8000"},
+            headers={"host": "evil.example.com"},
         )
     data = response.json()
-    assert data["issuer"] == "https://LORENZO.house.local:8000"
-    assert data["token_endpoint"] == "https://LORENZO.house.local:8000/token"
+    assert "evil.example.com" not in data["authorization_endpoint"]
+    assert data["authorization_endpoint"] == f"{_BASE_URL}/authorize"
 
 
 # ---------------------------------------------------------------------------
