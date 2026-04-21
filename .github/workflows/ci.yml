@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
 
   # ── Job 1: Python unit tests (Linux, no Windows deps) ──────────────────────
