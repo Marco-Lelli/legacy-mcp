@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+import json
+import subprocess
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -77,7 +79,7 @@ class TestCollectDcInventory:
             return [dc1_row] if dc_fqdn == "dc01.contoso.local" else [dc2_row]
 
         with patch.object(connector, "enumerate_dcs", return_value=dcs):
-            with patch.object(connector, "run_ps_on", side_effect=_run_ps_on):
+            with patch.object(connector, "_run_ps_on", side_effect=_run_ps_on):
                 result = connector.collect_dc_inventory("dc_windows_features")
 
         assert len(result) == 2
@@ -97,7 +99,7 @@ class TestCollectDcInventory:
             raise RuntimeError("Connection refused")
 
         with patch.object(connector, "enumerate_dcs", return_value=dcs):
-            with patch.object(connector, "run_ps_on", side_effect=_run_ps_on):
+            with patch.object(connector, "_run_ps_on", side_effect=_run_ps_on):
                 result = connector.collect_dc_inventory("dc_windows_features")
 
         assert len(result) == 2
@@ -112,7 +114,7 @@ class TestCollectDcInventory:
         dc_row = {"DC": "dc01.contoso.local", "Status": "OK", "Features": []}
 
         with patch.object(connector, "enumerate_dcs", return_value=dcs):
-            with patch.object(connector, "run_ps_on", return_value=[dc_row]):
+            with patch.object(connector, "_run_ps_on", return_value=[dc_row]):
                 result = connector.collect_dc_inventory("dc_windows_features")
 
         warning_entries = [r for r in result if "warning" in r]
@@ -127,7 +129,7 @@ class TestCollectDcInventory:
         dcs = [f"dc{i:02d}.contoso.local" for i in range(1, 12)]
 
         with patch.object(connector, "enumerate_dcs", return_value=dcs):
-            with patch.object(connector, "run_ps_on", return_value=[]):
+            with patch.object(connector, "_run_ps_on", return_value=[]):
                 result = connector.collect_dc_inventory("dc_services")
 
         warning = next(r for r in result if "warning" in r)
@@ -140,7 +142,7 @@ class TestCollectDcInventory:
 
         with patch.object(connector, "enumerate_dcs", return_value=dcs):
             with patch.object(
-                connector, "run_ps_on", side_effect=RuntimeError("timeout")
+                connector, "_run_ps_on", side_effect=RuntimeError("timeout")
             ):
                 result = connector.collect_dc_inventory("dc_services")
 
@@ -155,45 +157,13 @@ class TestCollectDcInventory:
 
         with patch.object(connector, "enumerate_dcs", return_value=dcs):
             with patch.object(
-                connector, "run_ps_on", side_effect=RuntimeError("timeout")
+                connector, "_run_ps_on", side_effect=RuntimeError("timeout")
             ):
                 result = connector.collect_dc_inventory("dc_installed_software")
 
         assert result[0]["Status"] == "Unreachable"
         assert result[0]["Software"] == []
         assert "Features" not in result[0]
-
-
-# ---------------------------------------------------------------------------
-# _resolve_auth
-# ---------------------------------------------------------------------------
-
-class TestResolveAuth:
-
-    def test_gmsa_returns_empty_credentials(self) -> None:
-        forest = ForestConfig(name="test.local", dc="dc01.test.local", credentials="gmsa")
-        connector = LiveConnector(forest)
-        assert connector._resolve_auth() == ("", "")
-
-    def test_default_credentials_is_gmsa(self) -> None:
-        forest = ForestConfig(name="test.local", dc="dc01.test.local")
-        connector = LiveConnector(forest)
-        assert forest.credentials == "gmsa"
-        assert connector._resolve_auth() == ("", "")
-
-    def test_env_reads_from_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("LEGACYMCP_AD_USER", "HOUSE\\svc_legacymcp")
-        monkeypatch.setenv("LEGACYMCP_AD_PASSWORD", "secret123")
-        forest = ForestConfig(name="test.local", dc="dc01.test.local", credentials="env")
-        connector = LiveConnector(forest)
-        assert connector._resolve_auth() == ("HOUSE\\svc_legacymcp", "secret123")
-
-    def test_env_missing_vars_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("LEGACYMCP_AD_USER", raising=False)
-        monkeypatch.delenv("LEGACYMCP_AD_PASSWORD", raising=False)
-        forest = ForestConfig(name="test.local", dc="dc01.test.local", credentials="env")
-        connector = LiveConnector(forest)
-        assert connector._resolve_auth() == ("", "")
 
 
 # ---------------------------------------------------------------------------
@@ -235,3 +205,84 @@ class TestCredentialsPropagation:
         }
         workspace = Workspace.from_config(cfg)
         assert workspace.forests[0].credentials == "env"
+
+
+# ---------------------------------------------------------------------------
+# _run_ps_on — subprocess execution
+# ---------------------------------------------------------------------------
+
+class TestRunPsOn:
+
+    def test_valid_json_list_returned(self, connector: LiveConnector) -> None:
+        expected = [{"Name": "dc01", "Site": "Default"}]
+        with patch("legacy_mcp.modes.live.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=json.dumps(expected).encode(),
+                stderr=b"",
+            )
+            result = connector._run_ps_on("dc01.contoso.local", "Get-ADDomain | ConvertTo-Json")
+        assert result == expected
+
+    def test_nonzero_returncode_raises_runtime_error(self, connector: LiveConnector) -> None:
+        with patch("legacy_mcp.modes.live.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=1,
+                stdout=b"",
+                stderr=b"Access is denied.",
+            )
+            with pytest.raises(RuntimeError, match="PowerShell error"):
+                connector._run_ps_on("dc01.contoso.local", "some script")
+
+    def test_empty_stdout_returns_empty_list(self, connector: LiveConnector) -> None:
+        with patch("legacy_mcp.modes.live.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=b"",
+                stderr=b"",
+            )
+            result = connector._run_ps_on("dc01.contoso.local", "some script")
+        assert result == []
+
+    def test_null_stdout_returns_empty_list(self, connector: LiveConnector) -> None:
+        with patch("legacy_mcp.modes.live.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=b"null",
+                stderr=b"",
+            )
+            result = connector._run_ps_on("dc01.contoso.local", "some script")
+        assert result == []
+
+    def test_timeout_raises_runtime_error(self, connector: LiveConnector) -> None:
+        with patch("legacy_mcp.modes.live.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(
+                cmd=["powershell.exe"], timeout=30
+            )
+            with pytest.raises(RuntimeError, match="timeout"):
+                connector._run_ps_on("dc01.contoso.local", "some script")
+
+    def test_stderr_included_in_error_message(self, connector: LiveConnector) -> None:
+        with patch("legacy_mcp.modes.live.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=1,
+                stdout=b"",
+                stderr=b"Cannot find module ServerManager.",
+            )
+            with pytest.raises(RuntimeError, match="Cannot find module ServerManager"):
+                connector._run_ps_on("dc01.contoso.local", "some script")
+
+
+# ---------------------------------------------------------------------------
+# run_ps — entry-point DC delegation
+# ---------------------------------------------------------------------------
+
+class TestRunPs:
+
+    def test_delegates_to_run_ps_on_with_entry_point_dc(
+        self, connector: LiveConnector
+    ) -> None:
+        with patch.object(connector, "_run_ps_on", return_value=[{"x": 1}]) as mock:
+            result = connector.run_ps("Get-ADForest | ConvertTo-Json")
+        mock.assert_called_once_with("dc01.contoso.local", "Get-ADForest | ConvertTo-Json")
+        assert result == [{"x": 1}]

@@ -1,14 +1,9 @@
-"""Live Mode connector — executes PowerShell on Domain Controllers via WinRM."""
+"""Live Mode connector — executes PowerShell on Domain Controllers via subprocess."""
 
 from __future__ import annotations
 
 import json
-import random
-import time
-import requests.adapters
-import requests.exceptions
-import urllib3
-import urllib3.exceptions
+import subprocess
 from base64 import b64encode
 from typing import Any, TYPE_CHECKING
 
@@ -16,54 +11,6 @@ if TYPE_CHECKING:
     from legacy_mcp.workspace.workspace import ForestConfig
 
 from legacy_mcp.eventlog import writer as eventlog
-
-
-class _SSLAdapter(requests.adapters.HTTPAdapter):
-    """Custom SSL adapter to inject a specific SSL context into requests."""
-    def __init__(self, ssl_context: "ssl.SSLContext", **kwargs: Any) -> None:
-        self.ssl_context = ssl_context
-        super().__init__(**kwargs)
-
-    def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
-        kwargs["ssl_context"] = self.ssl_context
-        super().init_poolmanager(*args, **kwargs)
-
-
-# ---------------------------------------------------------------------------
-# winkerberos SPN separator fix
-# ---------------------------------------------------------------------------
-# pywinrm's vendored requests-kerberos builds the Kerberos SPN with '@' as
-# separator (e.g. HTTP@dc01.contoso.local). Windows SSPI rejects this and
-# returns "InitializeSecurityContext: The logon attempt failed". The correct
-# format for SSPI is HTTP/dc01.contoso.local.
-#
-# We patch winkerberos.authGSSClientInit once at import time to normalise the
-# separator. The vendor module imports winkerberos as 'kerberos' and accesses
-# authGSSClientInit via attribute lookup on the module object at call time, so
-# patching the module attribute is sufficient -- no venv files are modified.
-
-
-def _patch_winkerberos_spn() -> None:
-    try:
-        import winkerberos as _wkrb  # type: ignore[import]
-    except ImportError:
-        return
-    if getattr(_wkrb, "_spn_separator_patched", False):
-        return
-    _orig_init = _wkrb.authGSSClientInit
-
-    def _fixed_init(spn: str, *args: Any, **kwargs: Any) -> Any:
-        if "@" in spn and "/" not in spn:
-            spn = spn.replace("@", "/", 1)
-        if kwargs.get("principal") == "":
-            kwargs["principal"] = None
-        return _orig_init(spn, *args, **kwargs)
-
-    _wkrb.authGSSClientInit = _fixed_init
-    _wkrb._spn_separator_patched = True
-
-
-_patch_winkerberos_spn()
 
 
 # ---------------------------------------------------------------------------
@@ -945,65 +892,6 @@ _DC_INVENTORY_EMPTY_FIELDS: dict[str, dict] = {
 }
 
 
-def _looks_like_timeout(exc: Exception) -> bool:
-    """Return True if the exception looks like a WinRM / network timeout."""
-    name = type(exc).__name__.lower()
-    msg = str(exc).lower()
-    return "timeout" in name or "timed out" in msg or "timeout" in msg
-
-
-_WINRM_MAX_RETRIES: int = 3
-_WINRM_RETRY_BASE_DELAY: float = 1.0   # seconds
-_WINRM_RETRY_MAX_DELAY: float = 12.0   # cap
-
-
-def _winrm_backoff(attempt: int) -> float:
-    """Exponential backoff with ±20% jitter."""
-    delay = min(_WINRM_RETRY_BASE_DELAY * (2 ** attempt), _WINRM_RETRY_MAX_DELAY)
-    jitter = random.uniform(-delay * 0.2, delay * 0.2)
-    return max(0.0, delay + jitter)
-
-
-def _is_transient_winrm_error(exc: Exception, _seen: set | None = None) -> bool:
-    """Return True if exc is or wraps a transient WinRM connection error.
-
-    Performs recursive unwrap of the exception chain (args[0], __cause__,
-    __context__) to handle ConnectionResetError buried inside
-    requests.exceptions.ConnectionError or urllib3.exceptions.ProtocolError.
-    A 'seen' set prevents infinite loops on circular exception chains.
-    """
-    _TRANSIENT = (
-        ConnectionResetError,
-        ConnectionAbortedError,
-        BrokenPipeError,
-        EOFError,
-    )
-    _WRAPPERS = (
-        requests.exceptions.ConnectionError,
-        requests.exceptions.ChunkedEncodingError,
-        urllib3.exceptions.ProtocolError,
-        urllib3.exceptions.NewConnectionError,
-    )
-    if _seen is None:
-        _seen = set()
-    exc_id = id(exc)
-    if exc_id in _seen:
-        return False
-    _seen.add(exc_id)
-
-    if isinstance(exc, _TRANSIENT):
-        return True
-    if isinstance(exc, _WRAPPERS):
-        # unwrap args[0]
-        cause = exc.args[0] if exc.args else None
-        if isinstance(cause, Exception) and _is_transient_winrm_error(cause, _seen):
-            return True
-        # unwrap __cause__ and __context__
-        for chained in (exc.__cause__, exc.__context__):
-            if isinstance(chained, Exception) and _is_transient_winrm_error(chained, _seen):
-                return True
-    return False
-
 
 def _build_script(section: str) -> str:
     """Return the PowerShell script for *section*, or an error stub."""
@@ -1015,211 +903,48 @@ def _build_script(section: str) -> str:
 # ---------------------------------------------------------------------------
 
 class LiveConnector:
-    """Connects to AD via WinRM and runs PowerShell to collect data."""
+    """Connects to AD via subprocess PowerShell and Invoke-Command."""
 
     def __init__(self, forest: "ForestConfig") -> None:
         self.forest = forest
-        self._session: Any = None
 
-    def _ensure_connected(self) -> Any:
-        if self._session is None:
-            import ssl
-            import winrm  # type: ignore[import]
-            target = f"https://{self.forest.dc}:5986/wsman"
-            self._session = winrm.Session(
-                target=target,
-                auth=self._resolve_auth(),
-                transport="kerberos",
-                kerberos_hostname_override=self.forest.dc,
-                service="WSMAN",
-                server_cert_validation="ignore",
-                # read_timeout_sec must be strictly greater than operation_timeout_sec.
-                operation_timeout_sec=self.forest.timeout_seconds,
-                read_timeout_sec=self.forest.timeout_seconds + 1,
-            )
-            # Windows Server 2012 R2 uses cipher suites incompatible with
-            # Python 3.11 default SECLEVEL=2. Inject a custom SSL context.
-            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            ssl_context.set_ciphers("ALL:@SECLEVEL=0")
-            self._session.protocol.transport.build_session()
-            self._session.protocol.transport.session.mount(
-                "https://",
-                requests.adapters.HTTPAdapter(
-                    pool_connections=1,
-                    pool_maxsize=1,
-                ),
-            )
-            self._session.protocol.transport.session.verify = False
-            self._session.protocol.transport.session.mount(
-                "https://",
-                _SSLAdapter(ssl_context),
-            )
-        return self._session
+    def _run_ps_on(self, dc_fqdn: str, script: str) -> Any:
+        """Run a PowerShell script on a specific DC via Invoke-Command subprocess.
 
-    def _resolve_auth(self) -> tuple[str, str]:
-        if self.forest.credentials == "gmsa":
-            return ("", "")  # gMSA: Kerberos, no explicit credentials
-        import os
-        user = os.environ.get("LEGACYMCP_AD_USER", "")
-        password = os.environ.get("LEGACYMCP_AD_PASSWORD", "")
-        return (user, password)
+        Wraps the script in Invoke-Command targeting dc_fqdn with UseSSL and
+        Kerberos authentication. The caller's process identity is used for
+        Kerberos -- no explicit credentials required (Principle 3).
+        Raises RuntimeError on non-zero exit code. Returns [] on empty output
+        (Principle 10).
+        """
+        wrapped = (
+            f"Invoke-Command -ComputerName {dc_fqdn} "
+            f"-UseSSL -Authentication Kerberos "
+            f"-ScriptBlock {{ {script} }}"
+        )
+        encoded = b64encode(wrapped.encode("utf_16_le")).decode("ascii")
+        try:
+            result = subprocess.run(
+                ["powershell.exe", "-NonInteractive", "-EncodedCommand", encoded],
+                capture_output=True,
+                timeout=self.forest.timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"PowerShell timeout on DC '{dc_fqdn}' "
+                f"(timeout={self.forest.timeout_seconds}s): {exc}"
+            ) from exc
+        if result.returncode != 0:
+            stderr = result.stderr.decode(errors="replace").strip()
+            raise RuntimeError(f"PowerShell error on {dc_fqdn}: {stderr}")
+        raw = result.stdout.decode(errors="replace").strip()
+        if not raw or raw == "null":
+            return []
+        return json.loads(raw)
 
     def run_ps(self, script: str) -> Any:
-        """Run a PowerShell script and return parsed JSON output.
-
-        Retries up to _WINRM_MAX_RETRIES times on transient WinRM errors
-        (ConnectionResetError, ConnectionAbortedError, etc.) with exponential
-        backoff. Opens and closes the WinRM shell explicitly on every attempt
-        to avoid shell leaks that cause MaxShellsPerUser exhaustion on
-        Windows Server 2012 R2.
-        """
-        # Encoding identical to winrm.Session.run_ps()
-        encoded_ps = b64encode(script.encode("utf_16_le")).decode("ascii")
-        command = "powershell -encodedcommand {0}".format(encoded_ps)
-
-        last_exc: Exception | None = None
-        for attempt in range(_WINRM_MAX_RETRIES + 1):
-            session = self._ensure_connected()
-            shell_id: Any = None
-            try:
-                shell_id = session.protocol.open_shell()
-                command_id = session.protocol.run_command(shell_id, command, ())
-                stdout, stderr, status_code = session.protocol.get_command_output(
-                    shell_id, command_id
-                )
-                session.protocol.cleanup_command(shell_id, command_id)
-                session.protocol.close_shell(shell_id)
-                shell_id = None
-            except Exception as exc:
-                if shell_id is not None:
-                    try:
-                        session.protocol.close_shell(shell_id)
-                    except Exception:
-                        pass
-                if _is_transient_winrm_error(exc):
-                    self._session = None
-                    last_exc = exc
-                    if attempt < _WINRM_MAX_RETRIES:
-                        time.sleep(_winrm_backoff(attempt))
-                        continue
-                    raise RuntimeError(
-                        f"WinRM transient error on DC '{self.forest.dc}' "
-                        f"after {_WINRM_MAX_RETRIES} retries: {exc}"
-                    ) from exc
-                if _looks_like_timeout(exc):
-                    eventlog.warn_dc_unreachable(
-                        self.forest.dc or "",
-                        f"WinRM timeout after {self.forest.timeout_seconds}s: {exc}",
-                    )
-                    raise RuntimeError(
-                        f"WinRM timeout on DC '{self.forest.dc}' "
-                        f"(timeout={self.forest.timeout_seconds}s): {exc}"
-                    ) from exc
-                raise
-            else:
-                if status_code != 0:
-                    raise RuntimeError(
-                        f"PowerShell error on {self.forest.dc}: {stderr.decode()}"
-                    )
-                raw = stdout.decode().strip()
-                if not raw or raw == "null":
-                    return []
-                return json.loads(raw)
-
-        # Unreachable: the loop raises before exhausting retries on transient
-        # errors, and non-transient errors raise immediately inside the loop.
-        raise RuntimeError(  # pragma: no cover
-            f"WinRM retries exhausted on DC '{self.forest.dc}': {last_exc}"
-        )
-
-    def run_ps_on(self, dc_fqdn: str, script: str) -> Any:
-        """Run a PowerShell script on a specific DC (not the entry-point DC).
-
-        Opens a dedicated WinRM session toward dc_fqdn, executes the script,
-        then closes the session. Does not modify self._session or self.forest.dc.
-        Applies the same retry/backoff logic as run_ps().
-        """
-        import ssl
-        import winrm  # type: ignore[import]
-
-        def _make_session() -> Any:
-            target = f"https://{dc_fqdn}:5986/wsman"
-            sess = winrm.Session(
-                target=target,
-                auth=self._resolve_auth(),
-                transport="kerberos",
-                kerberos_hostname_override=dc_fqdn,
-                service="WSMAN",
-                server_cert_validation="ignore",
-                operation_timeout_sec=self.forest.timeout_seconds,
-                read_timeout_sec=self.forest.timeout_seconds + 1,
-            )
-            ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-            ssl_ctx.check_hostname = False
-            ssl_ctx.verify_mode = ssl.CERT_NONE
-            ssl_ctx.set_ciphers("ALL:@SECLEVEL=0")
-            sess.protocol.transport.build_session()
-            sess.protocol.transport.session.mount(
-                "https://",
-                requests.adapters.HTTPAdapter(pool_connections=1, pool_maxsize=1),
-            )
-            sess.protocol.transport.session.verify = False
-            sess.protocol.transport.session.mount("https://", _SSLAdapter(ssl_ctx))
-            return sess
-
-        encoded_ps = b64encode(script.encode("utf_16_le")).decode("ascii")
-        command = "powershell -encodedcommand {0}".format(encoded_ps)
-
-        session = _make_session()
-        last_exc: Exception | None = None
-        for attempt in range(_WINRM_MAX_RETRIES + 1):
-            shell_id: Any = None
-            try:
-                shell_id = session.protocol.open_shell()
-                command_id = session.protocol.run_command(shell_id, command, ())
-                stdout, stderr, status_code = session.protocol.get_command_output(
-                    shell_id, command_id
-                )
-                session.protocol.cleanup_command(shell_id, command_id)
-                session.protocol.close_shell(shell_id)
-                shell_id = None
-            except Exception as exc:
-                if shell_id is not None:
-                    try:
-                        session.protocol.close_shell(shell_id)
-                    except Exception:
-                        pass
-                if _is_transient_winrm_error(exc):
-                    session = _make_session()
-                    last_exc = exc
-                    if attempt < _WINRM_MAX_RETRIES:
-                        time.sleep(_winrm_backoff(attempt))
-                        continue
-                    raise RuntimeError(
-                        f"WinRM transient error on DC '{dc_fqdn}' "
-                        f"after {_WINRM_MAX_RETRIES} retries: {exc}"
-                    ) from exc
-                if _looks_like_timeout(exc):
-                    raise RuntimeError(
-                        f"WinRM timeout on DC '{dc_fqdn}' "
-                        f"(timeout={self.forest.timeout_seconds}s): {exc}"
-                    ) from exc
-                raise
-            else:
-                if status_code != 0:
-                    raise RuntimeError(
-                        f"PowerShell error on {dc_fqdn}: {stderr.decode()}"
-                    )
-                raw = stdout.decode().strip()
-                if not raw or raw == "null":
-                    return []
-                return json.loads(raw)
-
-        raise RuntimeError(  # pragma: no cover
-            f"WinRM retries exhausted on DC '{dc_fqdn}': {last_exc}"
-        )
+        """Run a PowerShell script on the forest entry-point DC via subprocess."""
+        return self._run_ps_on(self.forest.dc, script)
 
     def enumerate_dcs(self) -> list[str]:
         """Return FQDNs of all DCs in the forest, queried from the entry-point DC.
@@ -1241,7 +966,7 @@ class LiveConnector:
     def collect_dc_inventory(self, section: str) -> list[dict[str, Any]]:
         """Collect a DC inventory section from every DC in the forest.
 
-        Enumerates all DCs via enumerate_dcs(), then calls run_ps_on() for
+        Enumerates all DCs via enumerate_dcs(), then calls _run_ps_on() for
         each DC sequentially. Unreachable DCs produce a fallback entry with
         Status='Unreachable' and empty data fields (Principle 10). If the
         forest has more than 10 DCs a warning entry is prepended to the result.
@@ -1258,7 +983,7 @@ class LiveConnector:
         script = _SCRIPTS[section]
         for dc_fqdn in dcs:
             try:
-                rows = self.run_ps_on(dc_fqdn, script)
+                rows = self._run_ps_on(dc_fqdn, script)
                 if isinstance(rows, list):
                     results.extend(rows)
                 elif rows:
