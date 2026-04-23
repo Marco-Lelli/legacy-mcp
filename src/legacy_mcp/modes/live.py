@@ -376,8 +376,16 @@ _SCRIPTS: dict[str, str] = {
         " $dfsrGlobal = $null }\n"
         "    catch { $dfsrGlobal = $null }\n"
         "    if ($dfsrGlobal) {\n"
-        "      [PSCustomObject]@{ DC=$dcFqdn; Mechanism='DFSR';"
-        " State='Not Configured'; Status='OK' } | ConvertTo-Json -Depth 3\n"
+        "      $flags = $dfsrGlobal.Properties['msDFSR-Flags']\n"
+        "      $flagInt = if ($flags -and $flags.Count -gt 0) { [int]$flags[0] } else { $null }\n"
+        "      $DfsrMigrationStateMap = @{ 0='Start'; 16='Prepared'; 32='Redirected'; 48='Eliminated' }\n"
+        "      $stateStr = if ($null -ne $flagInt -and $DfsrMigrationStateMap.ContainsKey($flagInt)) {\n"
+        "        $DfsrMigrationStateMap[$flagInt]\n"
+        "      } elseif ($null -ne $flagInt) {\n"
+        "        \"Unknown ($flagInt)\"\n"
+        "      } else { 'Not Configured' }\n"
+        "      [PSCustomObject]@{ DC=$dcFqdn; Mechanism='DFSR'; State=$stateStr; Status='OK' }"
+        " | ConvertTo-Json -Depth 3\n"
         "    } else {\n"
         "      $ntfrs = Get-ItemProperty"
         " 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NtFrs'"
@@ -691,30 +699,29 @@ _SCRIPTS: dict[str, str] = {
     ),
     # ------------------------------------------------------------------
     # dc_services — Running or Auto-start services on the configured DC.
-    # Runs locally on the WinRM target (no -ComputerName).
-    # Uses Win32_Service (WMI local) for compatibility with PS 5.1 /
-    # Windows Server 2012 R2 (Get-Service does not expose StartType on
-    # PS 5.1). WMI StartMode 'Auto' is normalised to 'Automatic' to
-    # match the collector output from Get-Service.StartType.ToString().
+    # Runs on each DC via collect_dc_inventory(). Get-CimInstance local,
+    # no -ComputerName — script already executes on the DC via Invoke-Command.
+    # -ErrorAction Stop propagates access-denied as a catchable exception.
+    # Certified on WS2012R2 with POLP account (field test PUPP).
     # ------------------------------------------------------------------
     "dc_services": (
         "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
+        "$cimError = $null\n"
         "try {\n"
-        "  $services = Get-WmiObject -Class Win32_Service |\n"
+        "  $services = Get-CimInstance -ClassName Win32_Service `\n"
+        "    -ErrorAction Stop -ErrorVariable cimError |\n"
         "    Where-Object { $_.State -eq 'Running' -or $_.StartMode -eq 'Auto' } |\n"
-        "    ForEach-Object {\n"
-        "      [PSCustomObject]@{\n"
-        "        name         = $_.Name\n"
-        "        display_name = $_.DisplayName\n"
-        "        status       = $_.State\n"
-        "        start_type   = if ($_.StartMode -eq 'Auto') { 'Automatic' }"
-        " else { $_.StartMode }\n"
-        "      }\n"
-        "    }\n"
+        "    Select-Object @{N='name';         E={$_.Name}},\n"
+        "                  @{N='display_name'; E={$_.DisplayName}},\n"
+        "                  @{N='status';       E={$_.State}},\n"
+        "                  @{N='start_type';   E={$_.StartMode}}\n"
         "  @([PSCustomObject]@{ DC = $dcFqdn; Status = 'OK'; Services = @($services) })"
         " | ConvertTo-Json -Depth 5\n"
         "} catch {\n"
-        "  @([PSCustomObject]@{ DC = $dcFqdn; Status = 'Unreachable'; Services = @() })"
+        "  $errMsg = $_.Exception.Message\n"
+        "  $statusValue = if ($errMsg -match '(?i)access.denied|0x80070005|0x80338104')"
+        " { 'PermissionDenied' } else { 'Unreachable' }\n"
+        "  @([PSCustomObject]@{ DC = $dcFqdn; Status = $statusValue; Services = @() })"
         " | ConvertTo-Json -Depth 5\n"
         "}"
     ),
@@ -777,27 +784,29 @@ _SCRIPTS: dict[str, str] = {
     ),
     # ------------------------------------------------------------------
     # dc_network_config — NIC configuration for the local DC.
-    # Runs on each DC via collect_dc_inventory(). Local WMI, no -ComputerName,
-    # no double-hop. Accessible with Remote Management Users (N-POLP-12).
+    # Runs on each DC via collect_dc_inventory(). Get-CimInstance local,
+    # no -ComputerName — script already executes on the DC via Invoke-Command.
+    # Accessible with Remote Management Users (N-POLP-12).
+    # Certified on WS2012R2 with POLP account (field test PUPP).
     # ------------------------------------------------------------------
     "dc_network_config": (
         "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
         "try {\n"
-        "  $adapters = Get-WmiObject -Class Win32_NetworkAdapterConfiguration |\n"
+        "  $adapters = Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration"
+        " -ErrorAction Stop |\n"
         "    Where-Object { $_.IPEnabled } |\n"
-        "    ForEach-Object {\n"
-        "      [PSCustomObject]@{\n"
-        "        Description    = $_.Description\n"
-        "        IPAddresses    = ($_.IPAddress -join ', ')\n"
-        "        DNSServers     = ($_.DNSServerSearchOrder -join ', ')\n"
-        "        DefaultGateway = ($_.DefaultIPGateway -join ', ')\n"
-        "        DHCPEnabled    = $_.DHCPEnabled\n"
-        "      }\n"
-        "    }\n"
+        "    Select-Object Description,\n"
+        "                  @{N='IPAddresses';    E={ $_.IPAddress -join ', ' }},\n"
+        "                  @{N='DNSServers';     E={ $_.DNSServerSearchOrder -join ', ' }},\n"
+        "                  @{N='DefaultGateway'; E={ $_.DefaultIPGateway -join ', ' }},\n"
+        "                  DHCPEnabled\n"
         "  [PSCustomObject]@{ DC=$dcFqdn; Adapters=@($adapters); Status='OK' }"
         " | ConvertTo-Json -Depth 5\n"
         "} catch {\n"
-        "  [PSCustomObject]@{ DC=$dcFqdn; Adapters=@(); Status='Unreachable' }"
+        "  $errMsg = $_.Exception.Message\n"
+        "  $statusValue = if ($errMsg -match '(?i)access.denied|0x80070005|0x80338104')"
+        " { 'PermissionDenied' } else { 'Unreachable' }\n"
+        "  [PSCustomObject]@{ DC=$dcFqdn; Adapters=@(); Status=$statusValue }"
         " | ConvertTo-Json -Depth 5\n"
         "}"
     ),

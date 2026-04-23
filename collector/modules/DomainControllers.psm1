@@ -218,12 +218,21 @@ function Get-SysvolData {
                 }
 
                 if ($dfsrGlobal) {
-                    # DFSR-GlobalSettings exists but no replicated folders on this DC yet
+                    $flags = $dfsrGlobal.Properties["msDFSR-Flags"]
+                    $flagInt = if ($flags -and $flags.Count -gt 0) { [int]$flags[0] } else { $null }
+                    $DfsrMigrationStateMap = @{ 0 = "Start"; 16 = "Prepared"; 32 = "Redirected"; 48 = "Eliminated" }
+                    $stateStr = if ($null -ne $flagInt -and $DfsrMigrationStateMap.ContainsKey($flagInt)) {
+                        $DfsrMigrationStateMap[$flagInt]
+                    } elseif ($null -ne $flagInt) {
+                        "Unknown ($flagInt)"
+                    } else {
+                        "Not Configured"
+                    }
                     $successCount++
                     [PSCustomObject]@{
                         DC        = $dcName
                         Mechanism = "DFSR"
-                        State     = "Not Configured"
+                        State     = $stateStr
                         Status    = "OK"
                     }
                 } else {
