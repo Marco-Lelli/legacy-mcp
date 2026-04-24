@@ -92,6 +92,8 @@ Windows manages credentials automatically — no passwords stored anywhere.
 - PowerShell 5.1+
 - RSAT-AD-PowerShell (`Add-WindowsFeature RSAT-AD-PowerShell`) — required for Live Mode
 - RSAT-DNS-Server (`Add-WindowsFeature RSAT-DNS-Server`) — required for Live Mode
+
+  See [Minimum Permissions](minimum-permissions.md) for the full delegation matrix and setup scripts.
 - Domain-joined, with a service account (gMSA recommended)
 - WinRM HTTPS enabled on target Domain Controllers (port 5986)
 - NSSM (bundled in `installer/tools/`)
