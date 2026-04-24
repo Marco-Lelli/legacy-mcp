@@ -258,13 +258,13 @@ _SCRIPTS: dict[str, str] = {
     ),
     # ------------------------------------------------------------------
     # dns — adds ReplicationScope, IsReverseLookupZone, IsAutoCreated, DC.
-    # Uses first available DC as target for Get-DnsServerZone; requires
-    # the DnsServer PS module (RSAT). Wrapped in try/catch.
+    # Runs locally on LORENZO via run_ps_local() — single hop to PDC.
+    # Mirrors DNS.psm1 Get-DNSZonesData (Principle 2).
+    # Requires DnsServer PS module (RSAT). Wrapped in try/catch.
     # ------------------------------------------------------------------
     "dns": (
-        "$dc = (Get-ADDomainController -Filter * |"
-        " Select-Object -First 1 -ExpandProperty HostName)\n"
         "try {\n"
+        "  $dc = (Get-ADDomainController -Discover -Service PrimaryDC).HostName\n"
         "  Get-DnsServerZone -ComputerName $dc | ForEach-Object {\n"
         "    [PSCustomObject]@{\n"
         "      ZoneName            = $_.ZoneName\n"
@@ -531,11 +531,14 @@ _SCRIPTS: dict[str, str] = {
     ),
     # ------------------------------------------------------------------
     # dns_forwarders — forwarder IPs and UseRootHint per DC.
+    # Runs locally on LORENZO via run_ps_local() — iterates all DCs,
+    # single hop per DC. Mirrors DNS.psm1 Get-DNSForwardersData (Principle 2).
     # Requires DnsServer PS module (RSAT). Degrades per DC.
     # ------------------------------------------------------------------
     "dns_forwarders": (
         "try {\n"
-        "  $dcs = (Get-ADDomainController -Filter *).HostName\n"
+        "  $dcs = Get-ADDomainController -Filter *"
+        " | Select-Object -ExpandProperty HostName\n"
         "  $results = foreach ($dc in $dcs) {\n"
         "    try {\n"
         "      $fwd = Get-DnsServerForwarder -ComputerName $dc\n"
@@ -885,6 +888,10 @@ _DC_INVENTORY_SECTIONS: frozenset[str] = frozenset({
     "dc_network_config",
 })
 
+# Sections executed locally on LORENZO via run_ps_local() — single-hop to DCs.
+# These use -ComputerName in their scripts and must not run inside Invoke-Command.
+_LOCAL_SECTIONS: frozenset[str] = frozenset({"dns", "dns_forwarders"})
+
 # Empty data fields for each DC inventory section used in unreachable fallback.
 _DC_INVENTORY_EMPTY_FIELDS: dict[str, dict] = {
     "dc_windows_features": {"Features": []},
@@ -955,6 +962,34 @@ class LiveConnector:
         """Run a PowerShell script on the forest entry-point DC via subprocess."""
         return self._run_ps_on(self.forest.dc, script)
 
+    def run_ps_local(self, script: str) -> Any:
+        """Run a PowerShell script directly on LORENZO without Invoke-Command.
+
+        Used for sections that need single-hop -ComputerName access to DCs
+        (dns, dns_forwarders). Kerberos from the calling process is used
+        implicitly (Principle 3). Raises RuntimeError on non-zero exit code.
+        Returns [] on empty output (Principle 10).
+        """
+        encoded = b64encode(script.encode("utf_16_le")).decode("ascii")
+        try:
+            result = subprocess.run(
+                ["powershell.exe", "-NonInteractive", "-EncodedCommand", encoded],
+                capture_output=True,
+                timeout=self.forest.timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"PowerShell local timeout "
+                f"(timeout={self.forest.timeout_seconds}s): {exc}"
+            ) from exc
+        if result.returncode != 0:
+            stderr = result.stderr.decode(errors="replace").strip()
+            raise RuntimeError(f"PowerShell local error: {stderr}")
+        raw = result.stdout.decode(errors="replace").strip()
+        if not raw or raw == "null":
+            return []
+        return json.loads(raw)
+
     def enumerate_dcs(self) -> list[str]:
         """Return FQDNs of all DCs in the forest, queried from the entry-point DC.
 
@@ -1010,6 +1045,8 @@ class LiveConnector:
         """Execute the appropriate PS script for a given AD section."""
         if section in _DC_INVENTORY_SECTIONS:
             rows = self.collect_dc_inventory(section)
+        elif section in _LOCAL_SECTIONS:
+            rows = self.run_ps_local(_build_script(section))
         else:
             script = _build_script(section)
             rows = self.run_ps(script)
@@ -1048,6 +1085,8 @@ class LiveConnector:
         try:
             if section in _DC_INVENTORY_SECTIONS:
                 rows = self.collect_dc_inventory(section)
+            elif section in _LOCAL_SECTIONS:
+                rows = self.run_ps_local(_SCRIPTS[section])
             else:
                 rows = self.run_ps(_SCRIPTS[section])
         except (RuntimeError, ValueError):
