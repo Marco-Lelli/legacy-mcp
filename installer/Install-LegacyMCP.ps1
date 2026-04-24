@@ -255,6 +255,70 @@ if ($DeployProfile -eq 'B') {
     }
 }
 
+# RSAT modules (Profile B -- required for Live Mode: ActiveDirectory and DnsServer PS modules)
+if ($DeployProfile -eq 'B') {
+    $isWindowsServer = $false
+    try {
+        $isWindowsServer = (Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).ProductType -ne 1
+    } catch {
+        Write-Warn "Could not detect OS type -- assuming Windows Server for RSAT check."
+        $isWindowsServer = $true
+    }
+
+    function Test-AndInstall-RsatFeature {
+        param(
+            [string]$FeatureName,
+            [string]$CapabilityPattern,
+            [string]$CapabilityFull,
+            [string]$DisplayName
+        )
+        if ($script:isWindowsServer) {
+            $feature = Get-WindowsFeature $FeatureName -ErrorAction SilentlyContinue
+            if ($feature -and $feature.InstallState -eq 'Installed') {
+                Write-OK "$DisplayName already installed."
+                return
+            }
+            Write-Info "Installing $DisplayName ..."
+            try {
+                Add-WindowsFeature $FeatureName -ErrorAction Stop | Out-Null
+                Write-OK "$DisplayName installed successfully."
+            } catch {
+                Write-Fail "$DisplayName installation failed: $_"
+                Write-Fail "Install manually:  Add-WindowsFeature $FeatureName"
+                $script:preflightFail = $true
+            }
+        } else {
+            $cap = Get-WindowsCapability -Online -Name $CapabilityPattern -ErrorAction SilentlyContinue |
+                   Select-Object -First 1
+            if ($cap -and $cap.State -eq 'Installed') {
+                Write-OK "$DisplayName already installed."
+                return
+            }
+            Write-Info "Installing $DisplayName ..."
+            try {
+                Add-WindowsCapability -Online -Name $CapabilityFull -ErrorAction Stop | Out-Null
+                Write-OK "$DisplayName installed successfully."
+            } catch {
+                Write-Fail "$DisplayName installation failed: $_"
+                Write-Fail "Install manually:  Add-WindowsCapability -Online -Name `"$CapabilityFull`""
+                $script:preflightFail = $true
+            }
+        }
+    }
+
+    Test-AndInstall-RsatFeature `
+        -FeatureName       'RSAT-AD-PowerShell' `
+        -CapabilityPattern 'Rsat.ActiveDirectory*' `
+        -CapabilityFull    'Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0' `
+        -DisplayName       'RSAT-AD-PowerShell'
+
+    Test-AndInstall-RsatFeature `
+        -FeatureName       'RSAT-DNS-Server' `
+        -CapabilityPattern 'Rsat.Dns*' `
+        -CapabilityFull    'Rsat.Dns.Tools~~~~0.0.1.0' `
+        -DisplayName       'RSAT-DNS-Server'
+}
+
 if ($preflightFail) {
     Write-Host ''
     Write-Host 'Installation aborted -- resolve the [FAIL] items above and re-run.' -ForegroundColor Red
