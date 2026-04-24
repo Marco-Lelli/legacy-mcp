@@ -90,6 +90,8 @@ Windows manages credentials automatically — no passwords stored anywhere.
 - Windows Server 2016 or later recommended (2012 R2 supported)
 - Python 3.10+
 - PowerShell 5.1+
+- RSAT-AD-PowerShell (`Add-WindowsFeature RSAT-AD-PowerShell`) — required for Live Mode
+- RSAT-DNS-Server (`Add-WindowsFeature RSAT-DNS-Server`) — required for Live Mode
 - Domain-joined, with a service account (gMSA recommended)
 - WinRM HTTPS enabled on target Domain Controllers (port 5986)
 - NSSM (bundled in `installer/tools/`)
