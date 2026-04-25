@@ -1,7 +1,7 @@
 ================================================================================
   Collect-ADData.ps1
   LegacyMCP Offline Collector - Active Directory Data Export
-  Version 1.5 - March 2026
+  Version 1.6.2 - April 2026
   Marco Lelli, Impresoft 4ward
 ================================================================================
 
@@ -448,6 +448,32 @@ NOTES
 
 VERSION HISTORY
 ---------------
+
+  v1.6.2 - April 2026
+    - Fix msDFSR-Flags mapping in DomainControllers.psm1: map integer values
+      (0/16/32/48) to human-readable strings (Start/Prepared/Redirected/
+      Eliminated). Previously the collector emitted "Not Configured" even when
+      the attribute was present and had a valid value.
+
+  v1.6.1 - April 2026
+    - DC Inventory reporting: found/collected/failed counts added to
+      Get-DCFeaturesData, Get-DCServicesData, Get-DCInstalledSoftwareData
+      in DomainControllers.psm1.
+    - Webster gap closure: NTP advanced W32Time registry keys, EventLog
+      configuration per DC, AD file locations (NTDS, SYSVOL, log paths),
+      schema fingerprints, Foreign Security Principals, DC network
+      configuration (IP addresses, DNS servers), TombstoneLifetime with
+      fallback to AD default (180 days) when attribute not set.
+
+  v1.6 - April 2026
+    - DC Inventory: three new collector sections per Domain Controller --
+      dc_windows_features (installed Windows Server roles), dc_services
+      (running and auto-start services), dc_installed_software (installed
+      software from registry). Implemented in DomainControllers.psm1.
+    - SIDHistory field added to Users section; filterable via
+      has_sid_history in get_users.
+    - Backward compatible: LegacyMCP servers older than v1.6 handle missing
+      sections gracefully.
 
   v1.5 - March 2026
     - BREAKING CHANGE: default output filename is now <forest>_ad-data.json

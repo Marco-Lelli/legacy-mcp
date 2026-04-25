@@ -703,7 +703,7 @@ try {
         version            = "1.0"
         forest             = $forestName
         collected_at       = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        collector_version  = "1.6.1"
+        collector_version  = "1.6.2"
         collected_by       = "$env:USERDOMAIN\$env:USERNAME"
         collection_summary = [ordered]@{
             sections_ok    = $script:sectionsOK
