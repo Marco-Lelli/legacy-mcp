@@ -30,6 +30,19 @@ LegacyMCP is designed with security as a core principle:
 - Authentication uses Bearer API key over HTTPS (Profile B)
 - NTLM is explicitly unsupported — Kerberos only for Live Mode
 - API keys are stored using Windows DPAPI
+- Live Mode is designed to run with a minimum-privilege delegated account
+
+## Least Privilege (POLP)
+
+LegacyMCP Live Mode is designed to run with a minimum-privilege service
+account. The full delegation matrix — required AD permissions, known
+limitations, and automation scripts (`Set-LegacyMCPPermissions.ps1` /
+`Remove-LegacyMCPPermissions.ps1`) — is documented in
+[docs/minimum-permissions.md](docs/minimum-permissions.md).
+
+The matrix has been certified in the field: 21/22 PASS, with T18 failing
+by design on Windows Server 2012 R2 (a known OS limitation, not a
+delegation gap).
 
 ## Known Advisories
 

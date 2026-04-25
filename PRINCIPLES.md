@@ -107,3 +107,8 @@ the corresponding documentation. Code and docs move together.
 No session involving Live Mode or Profile B changes is closed without 
 testing on the reference environment (LegacyMCP live against DC) to confirm
 end-to-end behavior in a real AD context.
+
+Corollary: any new section or modification that queries a Domain Controller
+must be evaluated against the POLP matrix in docs/minimum-permissions.md.
+If the operation requires permissions beyond the certified baseline, the
+matrix must be updated and re-certified before closing.

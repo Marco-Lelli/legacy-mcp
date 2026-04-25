@@ -24,6 +24,12 @@ no persistent network access required.
 - **Domain Admin** rights on the target domain, or **Enterprise Admin**
   for a full forest collection
 
+> **Least privilege option:** the collector can be run with a delegated
+> account following the POLP model — minimum required permissions are
+> documented in [minimum-permissions.md](minimum-permissions.md).
+> Certified in the field: 21/22 PASS (T18 fail by design on
+> Windows Server 2012 R2).
+
 ---
 
 ## Installation
