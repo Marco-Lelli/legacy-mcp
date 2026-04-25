@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-04-25 "Least Privilege"
+
+### Added
+
+- `Set-LegacyMCPPermissions.ps1`: idempotent POLP delegation script --
+  configures 7 delegations required for Live Mode on the target domain
+  (task #42)
+- `Remove-LegacyMCPPermissions.ps1`: idempotent POLP revocation script --
+  mirrors Set-LegacyMCPPermissions.ps1 (task #43)
+- `docs/minimum-permissions.md`: public POLP matrix -- rationale for each
+  delegation, known limitations, and field-certification results (task #51)
+- RSAT-AD-PowerShell and RSAT-DNS-Server added as mandatory Live Mode
+  prerequisites with blocking pre-flight check in `Install-LegacyMCP.ps1`
+  (task #76)
+
+### Changed
+
+- Live Mode migrated from pywinrm/winkerberos to subprocess PowerShell
+  (`Invoke-Command`) -- removes native WinRM dependency, simplifies
+  Kerberos authentication (task #70)
+- DPAPI-NG decryption migrated from `dpapi-ng` Python library to subprocess
+  PowerShell (`ConvertFrom-DpapiNGSecret`) (task #65)
+- Live Mode alignment round 2: 5 field-certified fixes across dc_services,
+  dc_network_config, sysvol, dns, dns_forwarders -- snapshot now covers
+  32/32 sections (task #73)
+- Collector bumped to v1.6.2: fix msDFSR-Flags mapping in
+  `DomainControllers.psm1` (0/16/32/48 -> Start/Prepared/Redirected/
+  Eliminated)
+
+### Security
+
+- CVE-2025-6514: `oauth.py` Host header injection eliminated -- `base_url`
+  now derived from server config, not request input; `mcp-remote` pinned
+  to version 0.1.38
+- POLP matrix field-certified: 7 delegations, 21/22 PASS (T18 fail by
+  design on Windows Server 2012 R2)
+
+### Breaking Changes
+
+- API key storage format changed from REG_BINARY (DPAPI machine-scope) to
+  REG_SZ Base64 (DPAPI-NG). Fresh install required -- existing Profile B
+  deployments must re-run `Setup-LegacyMCPClient.ps1`.
+
+### Tests
+
+- 398 tests passing
+
 ## [0.1.8] - 2026-04-15 "All-you-can DC"
 
 ### Added
