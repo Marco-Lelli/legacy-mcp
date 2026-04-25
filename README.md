@@ -71,7 +71,7 @@ flowchart LR
 LegacyMCP understands that real-world assessments are rarely simple:
 
 - Single domain — limited access, no Enterprise Admin required
-- Full forest — global view with Enterprise Admin
+- Full forest — global view across all domains in the forest
 - Multiple forests — separate environments, independent analysis
 - Migration scenarios — source/destination mapping, SIDHistory tracking,
   naming conflict detection
@@ -176,7 +176,9 @@ LegacyMCP involves three distinct machines with different requirements:
 - Windows 10 / Windows Server 2012 R2 or later
 - PowerShell 5.1+
 - ActiveDirectory module (RSAT)
-- Domain Admin or Enterprise Admin rights on the target AD environment
+- Minimum AD permissions as documented in [docs/minimum-permissions.md](docs/minimum-permissions.md).
+  Dedicated scripts in `installer/` are available to apply, test, and remove them.
+  Domain Admin is not required.
 
 **MCP server machine** — runs the LegacyMCP Python server:
 - Profile A: the consultant's own machine (same as collector machine above)
