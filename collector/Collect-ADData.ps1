@@ -96,6 +96,8 @@ $modulePath = Join-Path $PSScriptRoot "modules\Schema.psm1"
 Import-Module $modulePath -Force
 $modulePath = Join-Path $PSScriptRoot "modules\FSP.psm1"
 Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\Computers.psm1"
+Import-Module $modulePath -Force
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
