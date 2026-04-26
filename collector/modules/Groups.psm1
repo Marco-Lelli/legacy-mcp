@@ -10,14 +10,21 @@ function Get-GroupsData {
     [CmdletBinding()]
     param([hashtable]$CommonParams = @{})
 
-    Get-ADGroup -Filter * -Properties Members, adminCount @CommonParams | ForEach-Object {
+    # Get-ADGroupMember handles range retrieval for large groups (>1500 members).
+    # $_.Members.Count truncates at the LDAP page boundary -- not used here.
+    # -1 signals a retrieval failure, not an empty group.
+    Get-ADGroup -Filter * -Properties adminCount @CommonParams | ForEach-Object {
+        $count = try {
+            (Get-ADGroupMember -Identity $_.DistinguishedName @CommonParams |
+                Measure-Object).Count
+        } catch { -1 }
         [PSCustomObject]@{
             Name              = $_.Name
             SamAccountName    = $_.SamAccountName
             DistinguishedName = $_.DistinguishedName
             GroupCategory     = $_.GroupCategory.ToString()
             GroupScope        = $_.GroupScope.ToString()
-            MemberCount       = $_.Members.Count
+            MemberCount       = $count
             AdminCount        = $_.adminCount
         }
     }
