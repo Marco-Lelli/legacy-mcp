@@ -6,16 +6,28 @@ function Get-SchemaExtensionsData {
 
     $schemaDN = (Get-ADRootDSE @CommonParams).schemaNamingContext
 
-    # Return schema objects that have a non-null adminDescription (often custom extensions)
-    Get-ADObject -SearchBase $schemaDN -Filter { adminDescription -like "*" } `
-        -Properties lDAPDisplayName, objectClass, adminDescription, isSingleValued @CommonParams |
-        Select-Object -First 200 |
+    # Custom extensions are identified by OID prefix: exclude Microsoft-reserved
+    # subtrees (1.2.840.113556 Windows/Exchange, 2.16.840.1.101.2 US DoD,
+    # 1.3.6.1.4.1.311 Microsoft vendor arc). governsID applies to classSchema;
+    # attributeID applies to attributeSchema.
+    Get-ADObject -SearchBase $schemaDN -Filter * `
+        -Properties lDAPDisplayName, objectClass, adminDescription,
+                    governsID, attributeID @CommonParams |
+        Where-Object {
+            $oid = if ($_.governsID) { $_.governsID } else { $_.attributeID }
+            $oid -and
+            -not $oid.StartsWith("1.2.840.113556") -and
+            -not $oid.StartsWith("2.16.840.1.101.2") -and
+            -not $oid.StartsWith("1.3.6.1.4.1.311")
+        } |
+        Select-Object -First 500 |
         ForEach-Object {
             [PSCustomObject]@{
                 lDAPDisplayName  = $_.lDAPDisplayName
-                ObjectClass      = $_.ObjectClass
+                ObjectClass      = $_.objectClass
                 AdminDescription = $_.adminDescription
-                IsSingleValued   = $_.isSingleValued
+                GovernsID        = $_.governsID
+                AttributeID      = $_.attributeID
             }
         }
 }
