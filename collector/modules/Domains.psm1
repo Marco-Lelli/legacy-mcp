@@ -49,4 +49,16 @@ function Get-DefaultPasswordPolicyData {
     }
 }
 
-Export-ModuleMember -Function Get-DomainData, Get-DefaultPasswordPolicyData
+function Get-FSMODomainData {
+    [CmdletBinding()]
+    param([hashtable]$CommonParams = @{})
+
+    $domain = Get-ADDomain @CommonParams
+    [ordered]@{
+        PDCEmulator          = $domain.PDCEmulator
+        RIDMaster            = $domain.RIDMaster
+        InfrastructureMaster = $domain.InfrastructureMaster
+    }
+}
+
+Export-ModuleMember -Function Get-DomainData, Get-DefaultPasswordPolicyData, Get-FSMODomainData

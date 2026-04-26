@@ -55,4 +55,15 @@ function Get-OptionalFeaturesData {
     }
 }
 
-Export-ModuleMember -Function Get-ForestData, Get-OptionalFeaturesData
+function Get-FSMOForestData {
+    [CmdletBinding()]
+    param([hashtable]$CommonParams = @{})
+
+    $forest = Get-ADForest @CommonParams
+    [ordered]@{
+        SchemaMaster       = $forest.SchemaMaster
+        DomainNamingMaster = $forest.DomainNamingMaster
+    }
+}
+
+Export-ModuleMember -Function Get-ForestData, Get-OptionalFeaturesData, Get-FSMOForestData
