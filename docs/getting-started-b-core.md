@@ -88,7 +88,7 @@ Windows manages credentials automatically — no passwords stored anywhere.
 
 **Server machine (member server — never a Domain Controller):**
 - Windows Server 2016 or later recommended (2012 R2 supported)
-- Python 3.10+
+- Python 3.10+ — must be installed **for all users** (not per-user). During installation, select 'Install for all users' in the Python installer. This is required because the LegacyMCP Windows Service runs under a dedicated service account, not the installing user.
 - PowerShell 5.1+
 - RSAT-AD-PowerShell (`Add-WindowsFeature RSAT-AD-PowerShell`) — required for Live Mode
 - RSAT-DNS-Server (`Add-WindowsFeature RSAT-DNS-Server`) — required for Live Mode

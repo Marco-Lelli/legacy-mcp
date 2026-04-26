@@ -21,7 +21,7 @@ for a shared server inside the client network.
 
 ## Common prerequisites
 
-- **Python 3.10+** — required on the machine running the MCP server (both profiles)
+- **Python 3.10+** — required on the machine running the MCP server. For Profile B, must be installed **for all users** (not per-user).
 - **PowerShell 5.1+** — required to run the collector on any domain-joined Windows machine with RSAT; not needed on the analysis machine itself
 - **Claude Desktop with Pro plan** — required to use MCP tools ([claude.ai](https://claude.ai))
 - **Node.js 18+** — Profile B-core only; required on the consultant machine to run mcp-remote
