@@ -94,6 +94,8 @@ $modulePath = Join-Path $PSScriptRoot "modules\PKI.psm1"
 Import-Module $modulePath -Force
 $modulePath = Join-Path $PSScriptRoot "modules\Schema.psm1"
 Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\FSP.psm1"
+Import-Module $modulePath -Force
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -234,24 +236,7 @@ if ($null -ne $data["optional_features"]) {
 
 # --- Schema Extensions ---
 $data["schema"] = Invoke-Section "Schema Extensions" {
-    $schemaDN = (Get-ADRootDSE @commonParams).schemaNamingContext
-    # Microsoft base schema OIDs start with 1.2.840.113556 (Windows) or
-    # 2.16.840.1.101.2 (US DoD). Exchange uses 1.2.840.113556 as well.
-    # Custom extensions typically use private OIDs outside these prefixes.
-    # We identify custom objects by checking that their governsID / attributeID
-    # does NOT fall within the Microsoft-reserved OID subtree.
-    Get-ADObject -SearchBase $schemaDN -Filter * `
-        -Properties lDAPDisplayName, objectClass, adminDescription,
-                    governsID, attributeID @commonParams |
-        Where-Object {
-            $oid = if ($_.governsID) { $_.governsID } else { $_.attributeID }
-            $oid -and
-            -not $oid.StartsWith("1.2.840.113556") -and
-            -not $oid.StartsWith("2.16.840.1.101.2") -and
-            -not $oid.StartsWith("1.3.6.1.4.1.311")
-        } |
-        Select-Object lDAPDisplayName, objectClass, adminDescription, governsID, attributeID |
-        Select-Object -First 500
+    Get-SchemaExtensionsData -CommonParams $commonParams
 }
 if ($null -ne $data["schema"]) {
     Write-CollectorLog -Level INFO -Section "Schema Extensions" `
@@ -293,15 +278,9 @@ if ($null -ne $data["dcs"]) {
 
 # --- FSMO Roles ---
 $data["fsmo_roles"] = Invoke-Section "FSMO Roles" {
-    $forest = Get-ADForest @commonParams
-    $domain = Get-ADDomain @commonParams
-    [ordered]@{
-        SchemaMaster           = $forest.SchemaMaster
-        DomainNamingMaster     = $forest.DomainNamingMaster
-        PDCEmulator            = $domain.PDCEmulator
-        RIDMaster              = $domain.RIDMaster
-        InfrastructureMaster   = $domain.InfrastructureMaster
-    }
+    $fsmoForest = Get-FSMOForestData -CommonParams $commonParams
+    $fsmoDomain = Get-FSMODomainData -CommonParams $commonParams
+    $fsmoForest + $fsmoDomain
 }
 if ($null -ne $data["fsmo_roles"]) {
     Write-CollectorLog -Level INFO -Section "FSMO Roles" -Message "collected"
@@ -420,25 +399,7 @@ if ($null -ne $data["privileged_accounts"]) {
 
 # --- Groups ---
 $data["groups"] = Invoke-Section "Groups" {
-    Get-ADGroup -Filter * -Properties adminCount @commonParams |
-        ForEach-Object {
-            # Get-ADGroupMember handles range retrieval (large groups > MaxPageSize).
-            # $_.Members.Count truncates at the LDAP page boundary for large groups
-            # like Domain Computers, returning 0 when membership exceeds ~1500.
-            $count = try {
-                (Get-ADGroupMember -Identity $_.DistinguishedName @commonParams |
-                    Measure-Object).Count
-            } catch { -1 }
-            [PSCustomObject]@{
-                Name              = $_.Name
-                SamAccountName    = $_.SamAccountName
-                DistinguishedName = $_.DistinguishedName
-                GroupCategory     = $_.GroupCategory.ToString()
-                GroupScope        = $_.GroupScope.ToString()
-                MemberCount       = $count
-                AdminCount        = $_.adminCount
-            }
-        }
+    Get-GroupsData -CommonParams $commonParams
 }
 if ($null -ne $data["groups"]) {
     Write-CollectorLog -Level INFO -Section "Groups" `
@@ -446,41 +407,8 @@ if ($null -ne $data["groups"]) {
 }
 
 # --- Group Members (flat table -- one row per member per group) ---
-# Iterates all AD groups. For each group, emits one row per direct member
-# with identity and object class. Nested group membership is NOT expanded
-# here -- use privileged_groups for recursive expansion of sensitive groups.
-# Groups with no members produce no rows (not an error).
-# MemberEnabled is null for members that are not user or computer objects.
 $data["group_members"] = Invoke-Section "Group Members" {
-    Get-ADGroup -Filter * @commonParams | ForEach-Object {
-        $groupName = $_.Name
-        $groupDN   = $_.DistinguishedName
-        try {
-            Get-ADGroupMember -Identity $groupDN @commonParams | ForEach-Object {
-                $member = $_
-                $enabled = $null
-                if ($member.objectClass -eq "user") {
-                    try {
-                        $enabled = (Get-ADUser -Identity $member.distinguishedName `
-                            -Properties Enabled @commonParams).Enabled
-                    } catch { }
-                } elseif ($member.objectClass -eq "computer") {
-                    try {
-                        $enabled = (Get-ADComputer -Identity $member.distinguishedName `
-                            -Properties Enabled @commonParams).Enabled
-                    } catch { }
-                }
-                [PSCustomObject]@{
-                    GroupName                = $groupName
-                    MemberSamAccountName     = $member.SamAccountName
-                    MemberDisplayName        = $member.name
-                    MemberObjectClass        = $member.objectClass
-                    MemberDistinguishedName  = $member.distinguishedName
-                    MemberEnabled            = $enabled
-                }
-            }
-        } catch { }
-    }
+    Get-GroupMembersData -CommonParams $commonParams
 }
 if ($null -ne $data["group_members"]) {
     Write-CollectorLog -Level INFO -Section "Group Members" `
@@ -515,27 +443,8 @@ if ($null -ne $data["gpos"]) {
 }
 
 # --- GPO Links ---
-# Collects GPO links from the domain root and every OU.
-# The previous implementation queried only the domain root, which missed
-# all OU-level links -- the majority in most environments.
-# Get-GPInheritance.GpoLinks returns DIRECT links on each target only
-# (not inherited), so the same GPO linked to multiple OUs appears as
-# multiple rows, each with its own Target field.
 $data["gpo_links"] = Invoke-Section "GPO Links" {
-    try {
-        $domainDN = (Get-ADDomain @commonParams).DistinguishedName
-        $ouDNs    = Get-ADOrganizationalUnit -Filter * @commonParams |
-                        Select-Object -ExpandProperty DistinguishedName
-        $targets  = @($domainDN) + @($ouDNs)
-        $targets | ForEach-Object {
-            $target = $_
-            try {
-                Get-GPInheritance -Target $target @commonParams |
-                    Select-Object -ExpandProperty GpoLinks |
-                    Select-Object DisplayName, GpoId, Enabled, Enforced, Target, Order
-            } catch { }
-        }
-    } catch { @() }
+    Get-GPOLinksData -CommonParams $commonParams
 }
 if ($null -ne $data["gpo_links"]) {
     Write-CollectorLog -Level INFO -Section "GPO Links" `
@@ -544,9 +453,7 @@ if ($null -ne $data["gpo_links"]) {
 
 # --- Blocked Inheritance ---
 $data["blocked_inheritance"] = Invoke-Section "Blocked Inheritance" {
-    Get-ADOrganizationalUnit -Filter * -Properties gPOptions @commonParams |
-        Where-Object { ($_.gPOptions -band 1) -eq 1 } |
-        Select-Object Name, DistinguishedName
+    Get-BlockedInheritanceData -CommonParams $commonParams
 }
 if ($null -ne $data["blocked_inheritance"]) {
     Write-CollectorLog -Level INFO -Section "Blocked Inheritance" `
@@ -564,33 +471,7 @@ if ($null -ne $data["trusts"]) {
 
 # --- Foreign Security Principals ---
 $data["fsp"] = Invoke-Section "Foreign Security Principals" {
-    $domainDN = (Get-ADDomain @commonParams).DistinguishedName
-    $fspDN    = "CN=ForeignSecurityPrincipals,$domainDN"
-    try {
-        Get-ADObject -SearchBase $fspDN -Filter * `
-            -Properties objectSid, description @commonParams |
-            Where-Object { $_.ObjectClass -eq "foreignSecurityPrincipal" } |
-            ForEach-Object {
-                $sidStr   = $_.objectSid.Value
-                $resolved = $null
-                try {
-                    $sid      = New-Object System.Security.Principal.SecurityIdentifier($sidStr)
-                    $resolved = $sid.Translate([System.Security.Principal.NTAccount]).Value
-                } catch {
-                    $resolved = $null
-                }
-                [PSCustomObject]@{
-                    Name              = $_.Name
-                    DistinguishedName = $_.DistinguishedName
-                    SID               = $sidStr
-                    ResolvedName      = $resolved
-                    IsOrphaned        = ($null -eq $resolved)
-                    Description       = $_.description
-                }
-            }
-    } catch {
-        @()
-    }
+    Get-FSPData -CommonParams $commonParams
 }
 if ($null -ne $data["fsp"]) {
     Write-CollectorLog -Level INFO -Section "Foreign Security Principals" `
@@ -626,31 +507,7 @@ if ($null -ne $data["dns_forwarders"]) {
 
 # --- Computers ---
 $data["computers"] = Invoke-Section "Computers" {
-    Get-ADComputer -Filter * -Properties OperatingSystem, OperatingSystemVersion,
-        Enabled, LastLogonDate, PasswordLastSet, Description,
-        ServicePrincipalNames, isCriticalSystemObject,
-        TrustedForDelegation, TrustedToAuthForDelegation,
-        "msDS-AllowedToDelegateTo" @commonParams |
-        Select-Object -First 10000 |
-        ForEach-Object {
-            $isCNO = $_.ServicePrincipalNames -like "*MSClusterVirtualServer*"
-            $isVCO = (-not $isCNO) -and $_.isCriticalSystemObject
-            [PSCustomObject]@{
-                Name                       = $_.Name
-                DistinguishedName          = $_.DistinguishedName
-                OperatingSystem            = $_.OperatingSystem
-                OperatingSystemVersion     = $_.OperatingSystemVersion
-                Enabled                    = $_.Enabled
-                LastLogonDate              = $_.LastLogonDate
-                PasswordLastSet            = $_.PasswordLastSet
-                Description                = $_.Description
-                IsCNO                      = [bool]$isCNO
-                IsVCO                      = [bool]$isVCO
-                TrustedForDelegation       = $_.TrustedForDelegation
-                TrustedToAuthForDelegation = $_.TrustedToAuthForDelegation
-                AllowedToDelegateTo        = $_.("msDS-AllowedToDelegateTo")
-            }
-        }
+    Get-ComputersData -CommonParams $commonParams
 }
 if ($null -ne $data["computers"]) {
     $computersArr   = @($data["computers"])
