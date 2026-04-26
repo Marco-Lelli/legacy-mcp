@@ -279,6 +279,13 @@ function Invoke-Get {
 function Invoke-Set {
     param([string]$Key, [string]$Value)
 
+    $currentPrincipal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+        Write-Host '  [FAIL] Config-LegacyMCP.ps1 -Set requires Administrator privileges. Re-run as Administrator.' -ForegroundColor Red
+        exit 1
+    }
+
     $vals = Get-RegistryValues
     $currentProfile = if ($vals.ContainsKey('Profile')) { $vals['Profile'] } else { 'A' }
 
@@ -415,6 +422,13 @@ function Invoke-Set {
 # MODE: -Validate
 # ---------------------------------------------------------------------------
 function Invoke-Validate {
+    $currentPrincipal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+        Write-Host '  [FAIL] Config-LegacyMCP.ps1 -Validate requires Administrator privileges. Re-run as Administrator.' -ForegroundColor Red
+        exit 1
+    }
+
     Write-Host ''
     Write-Host 'LegacyMCP -- Configuration Validation' -ForegroundColor White
     Write-Host ''
