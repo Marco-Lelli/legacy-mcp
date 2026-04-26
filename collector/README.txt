@@ -1,7 +1,7 @@
 ================================================================================
   Collect-ADData.ps1
   LegacyMCP Offline Collector - Active Directory Data Export
-  Version 1.6.2 - April 2026
+  Version 1.6.3 - April 2026
   Marco Lelli, Impresoft 4ward
 ================================================================================
 
@@ -448,6 +448,25 @@ NOTES
 
 VERSION HISTORY
 ---------------
+
+  v1.6.3 - April 2026
+    - Refactored all inline sections: moved 8 remaining inline data collection
+      blocks from Collect-ADData.ps1 into their respective .psm1 modules.
+      No logic changes -- all behavior is identical to the certified inline
+      implementations. Changes per module:
+      Schema.psm1: Get-SchemaExtensionsData updated with OID-based filtering,
+        correct field set (governsID, attributeID), limit raised to 500.
+      Groups.psm1: Get-GroupsData updated with Get-ADGroupMember | Measure-Object
+        for correct count on large groups (>1500 members). Get-GroupMembersData
+        added for the group_members flat table.
+      GPO.psm1: Get-GPOLinksData updated to iterate all OUs (not just domain root).
+      Computers.psm1: Get-ComputersData updated with TrustedForDelegation,
+        TrustedToAuthForDelegation, AllowedToDelegateTo (msDS-AllowedToDelegateTo).
+      OUs.psm1: Get-BlockedInheritanceData added for blocked_inheritance section.
+      Forest.psm1: Get-FSMOForestData added (SchemaMaster, DomainNamingMaster).
+      Domains.psm1: Get-FSMODomainData added (PDCEmulator, RIDMaster,
+        InfrastructureMaster) -- merged with forest roles into fsmo_roles.
+      FSP.psm1: new module with Get-FSPData for Foreign Security Principals.
 
   v1.6.2 - April 2026
     - Fix msDFSR-Flags mapping in DomainControllers.psm1: map integer values
