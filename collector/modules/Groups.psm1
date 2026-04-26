@@ -52,4 +52,43 @@ function Get-PrivilegedGroupsData {
     }
 }
 
-Export-ModuleMember -Function Get-GroupsData, Get-PrivilegedGroupsData
+function Get-GroupMembersData {
+    [CmdletBinding()]
+    param([hashtable]$CommonParams = @{})
+
+    # One row per direct member per group. Enabled is resolved for user and
+    # computer objects only -- null for groups, contacts, and other types.
+    # Groups with no members produce no rows. Nested membership is not expanded
+    # here; use Get-PrivilegedGroupsData for recursive expansion of sensitive groups.
+    Get-ADGroup -Filter * @CommonParams | ForEach-Object {
+        $groupName = $_.Name
+        $groupDN   = $_.DistinguishedName
+        try {
+            Get-ADGroupMember -Identity $groupDN @CommonParams | ForEach-Object {
+                $member  = $_
+                $enabled = $null
+                if ($member.objectClass -eq "user") {
+                    try {
+                        $enabled = (Get-ADUser -Identity $member.distinguishedName `
+                            -Properties Enabled @CommonParams).Enabled
+                    } catch { }
+                } elseif ($member.objectClass -eq "computer") {
+                    try {
+                        $enabled = (Get-ADComputer -Identity $member.distinguishedName `
+                            -Properties Enabled @CommonParams).Enabled
+                    } catch { }
+                }
+                [PSCustomObject]@{
+                    GroupName               = $groupName
+                    MemberSamAccountName    = $member.SamAccountName
+                    MemberDisplayName       = $member.name
+                    MemberObjectClass       = $member.objectClass
+                    MemberDistinguishedName = $member.distinguishedName
+                    MemberEnabled           = $enabled
+                }
+            }
+        } catch { }
+    }
+}
+
+Export-ModuleMember -Function Get-GroupsData, Get-PrivilegedGroupsData, Get-GroupMembersData
