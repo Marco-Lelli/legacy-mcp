@@ -16,23 +16,28 @@ function Get-ComputersData {
 
     Get-ADComputer -Filter * -Properties OperatingSystem, OperatingSystemVersion,
         Enabled, LastLogonDate, PasswordLastSet, Description,
-        ServicePrincipalNames, isCriticalSystemObject @CommonParams |
+        ServicePrincipalNames, isCriticalSystemObject,
+        TrustedForDelegation, TrustedToAuthForDelegation,
+        "msDS-AllowedToDelegateTo" @CommonParams |
         Select-Object -First $Limit |
         ForEach-Object {
             $isCNO = $_.ServicePrincipalNames -like "*MSClusterVirtualServer*"
             $isVCO = (-not $isCNO) -and $_.isCriticalSystemObject
 
             [PSCustomObject]@{
-                Name                   = $_.Name
-                DistinguishedName      = $_.DistinguishedName
-                OperatingSystem        = $_.OperatingSystem
-                OperatingSystemVersion = $_.OperatingSystemVersion
-                Enabled                = $_.Enabled
-                LastLogonDate          = $_.LastLogonDate
-                PasswordLastSet        = $_.PasswordLastSet
-                Description            = $_.Description
-                IsCNO                  = [bool]$isCNO
-                IsVCO                  = [bool]$isVCO
+                Name                       = $_.Name
+                DistinguishedName          = $_.DistinguishedName
+                OperatingSystem            = $_.OperatingSystem
+                OperatingSystemVersion     = $_.OperatingSystemVersion
+                Enabled                    = $_.Enabled
+                LastLogonDate              = $_.LastLogonDate
+                PasswordLastSet            = $_.PasswordLastSet
+                Description                = $_.Description
+                IsCNO                      = [bool]$isCNO
+                IsVCO                      = [bool]$isVCO
+                TrustedForDelegation       = $_.TrustedForDelegation
+                TrustedToAuthForDelegation = $_.TrustedToAuthForDelegation
+                AllowedToDelegateTo        = $_.("msDS-AllowedToDelegateTo")
             }
         }
 }

@@ -15,4 +15,18 @@ function Get-OUsData {
         }
 }
 
-Export-ModuleMember -Function Get-OUsData
+function Get-BlockedInheritanceData {
+    [CmdletBinding()]
+    param([hashtable]$CommonParams = @{})
+
+    Get-ADOrganizationalUnit -Filter * -Properties gPOptions @CommonParams |
+        Where-Object { ($_.gPOptions -band 1) -eq 1 } |
+        ForEach-Object {
+            [PSCustomObject]@{
+                Name              = $_.Name
+                DistinguishedName = $_.DistinguishedName
+            }
+        }
+}
+
+Export-ModuleMember -Function Get-OUsData, Get-BlockedInheritanceData
