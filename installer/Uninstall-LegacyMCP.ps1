@@ -21,15 +21,17 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------------------
 # Resolve paths from registry (best effort -- may already be gone)
 # ---------------------------------------------------------------------------
-$RegRoot    = 'HKLM:\SOFTWARE\LegacyMCP'
-$ConfigPath = $null
-$LogPath    = $null
+$RegRoot     = 'HKLM:\SOFTWARE\LegacyMCP'
+$ConfigPath  = $null
+$LogPath     = $null
+$InstallPath = $null
 
 if (Test-Path $RegRoot) {
     $props = Get-ItemProperty -Path $RegRoot -ErrorAction SilentlyContinue
     if ($props) {
-        $ConfigPath = $props.ConfigPath
-        $LogPath    = $props.LogPath
+        $ConfigPath  = $props.ConfigPath
+        $LogPath     = $props.LogPath
+        $InstallPath = $props.InstallPath
     }
 }
 
@@ -132,6 +134,24 @@ if ($LogPath) {
     Write-Host "    Logs          : $LogPath" -ForegroundColor Yellow
 } else {
     Write-Host '    Logs          : (path unknown -- check install directory)' -ForegroundColor Yellow
+}
+
+# Determine snapshot path from config.yaml, falling back to <InstallPath>\snapshots
+$SnapshotPathDisplay = $null
+if ($ConfigPath -and (Test-Path $ConfigPath)) {
+    $yamlContent = Get-Content $ConfigPath -Raw -Encoding UTF8
+    if ($yamlContent -match '(?m)^\s+snapshot_path\s*:\s*(.+)') {
+        $SnapshotPathDisplay = $Matches[1].Trim()
+    }
+}
+if (-not $SnapshotPathDisplay -and $InstallPath) {
+    $SnapshotPathDisplay = Join-Path $InstallPath 'snapshots'
+}
+
+if ($SnapshotPathDisplay) {
+    Write-Host "    Snapshots     : $SnapshotPathDisplay (preserved)" -ForegroundColor Yellow
+} else {
+    Write-Host '    Snapshots     : (path unknown -- check install directory)' -ForegroundColor Yellow
 }
 
 Write-Host ''

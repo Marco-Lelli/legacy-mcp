@@ -28,7 +28,8 @@ param(
     [string]$CertKeyFile = '',
     [string]$CertThumbprint = '',
     [ValidateSet('Install', 'ReplaceCert')]
-    [string]$Action = 'Install'
+    [string]$Action = 'Install',
+    [string]$SnapshotPath = ''
 )
 
 Set-StrictMode -Version Latest
@@ -43,7 +44,8 @@ $NssmExe     = Join-Path $ScriptDir 'tools\nssm.exe'
 
 # Default paths derived from install root
 $ConfigPath  = Join-Path $InstallPath 'config\config.yaml'
-$LogPath     = Join-Path $InstallPath 'logs'
+$LogPath             = Join-Path $InstallPath 'logs'
+$SnapshotPathEffective = if ($SnapshotPath) { $SnapshotPath } else { Join-Path $InstallPath 'snapshots' }
 $VenvPython  = Join-Path $InstallPath '.venv\Scripts\python.exe'
 
 # ---------------------------------------------------------------------------
@@ -81,6 +83,50 @@ function Update-YamlSslFields {
         $content = $content -replace '(?m)(^\s*ssl_certfile\s*:.*)', "`$1`n$keyLine"
     }
     [System.IO.File]::WriteAllText($YamlPath, $content, [System.Text.Encoding]::UTF8)
+}
+
+# ---------------------------------------------------------------------------
+# Helper: write snapshot_path into config.yaml server: block
+# ---------------------------------------------------------------------------
+function Update-YamlSnapshotPath {
+    param(
+        [string]$YamlPath,
+        [string]$SnapshotPathValue
+    )
+    $allLines = Get-Content $YamlPath -Encoding UTF8
+    $inServerBlock = $false
+    $snapshotIdx   = -1
+    $serverIdx     = -1
+    for ($i = 0; $i -lt $allLines.Count; $i++) {
+        $line = $allLines[$i]
+        if ($line.TrimEnd() -eq 'server:') {
+            $inServerBlock = $true
+            $serverIdx = $i
+        } elseif ($inServerBlock -and $line.Length -gt 0 -and $line[0] -ne ' ' -and $line[0] -ne '#' -and $line[0] -ne "`t") {
+            $inServerBlock = $false
+        }
+        if ($inServerBlock -and $line.TrimStart().StartsWith('snapshot_path')) {
+            $snapshotIdx = $i
+        }
+    }
+    $newLine = "  snapshot_path: $SnapshotPathValue"
+    $result  = [System.Collections.Generic.List[string]]::new()
+    if ($snapshotIdx -ge 0) {
+        for ($i = 0; $i -lt $allLines.Count; $i++) {
+            if ($i -eq $snapshotIdx) { $result.Add($newLine) } else { $result.Add($allLines[$i]) }
+        }
+    } elseif ($serverIdx -ge 0) {
+        for ($i = 0; $i -lt $allLines.Count; $i++) {
+            $result.Add($allLines[$i])
+            if ($i -eq $serverIdx) { $result.Add($newLine) }
+        }
+    } else {
+        foreach ($l in $allLines) { $result.Add($l) }
+        $result.Add('server:')
+        $result.Add($newLine)
+    }
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllLines($YamlPath, $result, $utf8NoBom)
 }
 
 # ---------------------------------------------------------------------------
@@ -373,6 +419,14 @@ if (-not (Test-Path $LogPath)) {
     Write-OK "Log directory already exists: $LogPath"
 }
 
+# Create snapshot directory
+if (-not (Test-Path $SnapshotPathEffective)) {
+    New-Item -ItemType Directory -Path $SnapshotPathEffective -Force | Out-Null
+    Write-OK "Snapshot directory created: $SnapshotPathEffective"
+} else {
+    Write-OK "Snapshot directory already exists: $SnapshotPathEffective"
+}
+
 # ---------------------------------------------------------------------------
 # Phase 3 -- Registry
 # ---------------------------------------------------------------------------
@@ -557,6 +611,33 @@ print('OK')
         Write-OK 'ssl_certfile and ssl_keyfile written to config.yaml.'
     } else {
         Write-Warn "config.yaml not found at $ConfigPath -- set ssl_certfile and ssl_keyfile manually."
+    }
+
+    # Write snapshot_path into config.yaml
+    if (Test-Path $ConfigPath) {
+        try {
+            Update-YamlSnapshotPath -YamlPath $ConfigPath -SnapshotPathValue $SnapshotPathEffective
+            Write-OK "snapshot_path written to config.yaml: $SnapshotPathEffective"
+        } catch {
+            Write-Fail "Cannot update snapshot_path in config.yaml: $_"
+            exit 1
+        }
+    } else {
+        Write-Warn "config.yaml not found -- set snapshot_path manually under server: in config.yaml."
+    }
+
+    # Grant service account write access on snapshot directory (required for create_snapshot)
+    Write-Info "Granting write access to '$ServiceAccount' on snapshot directory..."
+    try {
+        $icaclsOut = & icacls $SnapshotPathEffective /grant "${ServiceAccount}:(M)" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "Cannot grant write access on '$SnapshotPathEffective' for '$ServiceAccount': $icaclsOut"
+            exit 1
+        }
+        Write-OK "Write access granted to '$ServiceAccount' on: $SnapshotPathEffective"
+    } catch {
+        Write-Fail "Error setting permissions on snapshot directory '$SnapshotPathEffective': $_"
+        exit 1
     }
 }
 

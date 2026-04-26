@@ -154,6 +154,62 @@ function Test-ConfigYamlHasCredentialLeak {
     return ($Content -match '(?im)^\s*(password|secret)\s*:')
 }
 
+function Get-ConfigYamlSnapshotPath {
+    param([string]$Content)
+    if (-not $Content) { return $null }
+    $inServerBlock = $false
+    foreach ($line in ($Content -split '\r?\n')) {
+        if ($line.TrimEnd() -eq 'server:') {
+            $inServerBlock = $true
+        } elseif ($inServerBlock -and $line.Length -gt 0 -and $line[0] -ne ' ' -and $line[0] -ne '#' -and $line[0] -ne "`t") {
+            $inServerBlock = $false
+        }
+        if ($inServerBlock -and $line.TrimStart().StartsWith('snapshot_path')) {
+            $colonIdx = $line.IndexOf(':')
+            if ($colonIdx -ge 0) { return $line.Substring($colonIdx + 1).Trim() }
+        }
+    }
+    return $null
+}
+
+function Set-SnapshotPathInYaml {
+    param([string]$YamlPath, [string]$Value)
+    $allLines = Get-Content $YamlPath -Encoding UTF8
+    $inServerBlock = $false
+    $snapshotIdx   = -1
+    $serverIdx     = -1
+    for ($i = 0; $i -lt $allLines.Count; $i++) {
+        $line = $allLines[$i]
+        if ($line.TrimEnd() -eq 'server:') {
+            $inServerBlock = $true
+            $serverIdx = $i
+        } elseif ($inServerBlock -and $line.Length -gt 0 -and $line[0] -ne ' ' -and $line[0] -ne '#' -and $line[0] -ne "`t") {
+            $inServerBlock = $false
+        }
+        if ($inServerBlock -and $line.TrimStart().StartsWith('snapshot_path')) {
+            $snapshotIdx = $i
+        }
+    }
+    $newLine = "  snapshot_path: $Value"
+    $result  = [System.Collections.Generic.List[string]]::new()
+    if ($snapshotIdx -ge 0) {
+        for ($i = 0; $i -lt $allLines.Count; $i++) {
+            if ($i -eq $snapshotIdx) { $result.Add($newLine) } else { $result.Add($allLines[$i]) }
+        }
+    } elseif ($serverIdx -ge 0) {
+        for ($i = 0; $i -lt $allLines.Count; $i++) {
+            $result.Add($allLines[$i])
+            if ($i -eq $serverIdx) { $result.Add($newLine) }
+        }
+    } else {
+        foreach ($l in $allLines) { $result.Add($l) }
+        $result.Add('server:')
+        $result.Add($newLine)
+    }
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllLines($YamlPath, $result, $utf8NoBom)
+}
+
 # ---------------------------------------------------------------------------
 # MODE: -Get
 # ---------------------------------------------------------------------------
@@ -186,6 +242,21 @@ function Invoke-Get {
             }
         }
         Write-Host $line
+    }
+
+    # Show snapshot_path from config.yaml (not stored in registry)
+    if ($vals.ContainsKey('ConfigPath')) {
+        $cfgContent = Get-ConfigYamlContent -ConfigPath $vals['ConfigPath']
+        $snapPath   = Get-ConfigYamlSnapshotPath -Content $cfgContent
+        if ($snapPath) {
+            $snapLine = "  {0,-22} {1}" -f 'snapshot_path:', $snapPath
+            if (Test-Path $snapPath) {
+                $snapLine += '  [DIR OK]'
+            } else {
+                $snapLine += '  [DIR NOT FOUND]'
+            }
+            Write-Host $snapLine
+        }
     }
 
     if ($svc.Count -gt 0) {
@@ -284,8 +355,57 @@ function Invoke-Set {
             Write-OK "LogPath set to '$Value' (directory will be created by the server if absent)."
         }
 
+        'SnapshotPath' {
+            if (-not [System.IO.Path]::IsPathRooted($Value)) {
+                Write-Fail "SnapshotPath must be an absolute path: $Value"
+                exit 1
+            }
+            $cfgPath = if ($vals.ContainsKey('ConfigPath')) { $vals['ConfigPath'] } else { $null }
+            if (-not $cfgPath -or -not (Test-Path $cfgPath)) {
+                Write-Fail 'config.yaml not found. Set ConfigPath first or re-run Install-LegacyMCP.ps1.'
+                exit 1
+            }
+            try {
+                if (-not (Test-Path $Value)) {
+                    New-Item -ItemType Directory -Path $Value -Force | Out-Null
+                    Write-OK "Snapshot directory created: $Value"
+                }
+            } catch {
+                Write-Fail "Cannot create snapshot directory '$Value': $_"
+                exit 1
+            }
+            # Grant write access to the service account if the LegacyMCP service exists
+            $wmiSvc = $null
+            try {
+                $wmiSvc = Get-CimInstance Win32_Service -Filter "Name='LegacyMCP'" -ErrorAction SilentlyContinue
+                if (-not $wmiSvc) { $wmiSvc = Get-WmiObject Win32_Service -Filter "Name='LegacyMCP'" -ErrorAction SilentlyContinue }
+            } catch {}
+            if ($wmiSvc -and $wmiSvc.StartName) {
+                $svcAcct   = $wmiSvc.StartName
+                try {
+                    $icaclsOut = & icacls $Value /grant "${svcAcct}:(M)" 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-OK "Write access granted to '$svcAcct' on: $Value"
+                    } else {
+                        Write-Fail "Cannot grant write access on '$Value' for '$svcAcct': $icaclsOut"
+                        exit 1
+                    }
+                } catch {
+                    Write-Fail "Error setting permissions on '$Value': $_"
+                    exit 1
+                }
+            }
+            try {
+                Set-SnapshotPathInYaml -YamlPath $cfgPath -Value $Value
+                Write-OK "snapshot_path updated in config.yaml: $Value"
+            } catch {
+                Write-Fail "Cannot update config.yaml: $_"
+                exit 1
+            }
+        }
+
         default {
-            Write-Fail "Unknown key '$Key'. Settable keys: Transport, Profile, Port, ConfigPath, InstallPath, LogPath."
+            Write-Fail "Unknown key '$Key'. Settable keys: Transport, Profile, Port, ConfigPath, InstallPath, LogPath, SnapshotPath."
             exit 1
         }
     }
@@ -462,6 +582,28 @@ function Invoke-Validate {
                 $hasError = $true
             } elseif ($null -ne $yamlPort) {
                 Write-OK "Port is consistent between registry ($port) and config.yaml ($yamlPort)."
+            }
+        }
+
+        # snapshot_path check
+        if ($yamlContent) {
+            $snapshotDir = Get-ConfigYamlSnapshotPath -Content $yamlContent
+            if (-not $snapshotDir) {
+                Write-Warn "snapshot_path not configured in config.yaml -- server will use default C:\LegacyMCP-Data\snapshots\"
+            } elseif (-not (Test-Path $snapshotDir)) {
+                Write-Fail "snapshot_path directory not found: $snapshotDir"
+                $hasError = $true
+            } else {
+                $testFile  = Join-Path $snapshotDir '.legacymcp_write_test'
+                try {
+                    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+                    [System.IO.File]::WriteAllText($testFile, 'test', $utf8NoBom)
+                    Remove-Item $testFile -Force -ErrorAction SilentlyContinue
+                    Write-OK "snapshot_path is writable: $snapshotDir"
+                } catch {
+                    Write-Fail "snapshot_path is not writable: $snapshotDir"
+                    $hasError = $true
+                }
             }
         }
 
