@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -43,6 +44,9 @@ class Workspace:
     mode: WorkspaceMode
     forests: list[ForestConfig]
     _connectors: dict[str, Any] = field(default_factory=dict, init=False, repr=False)
+    _lock: threading.RLock = field(
+        default_factory=threading.RLock, init=False, repr=False, compare=False
+    )
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "Workspace":

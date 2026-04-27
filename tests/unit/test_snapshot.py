@@ -1,8 +1,9 @@
-"""Unit tests for the create_snapshot, list_snapshots, and load_snapshot MCP tools."""
+"""Unit tests for create_snapshot, get_snapshot_status, list_snapshots, load_snapshot."""
 
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from legacy_mcp.workspace.workspace import (
     WorkspaceMode,
 )
 from legacy_mcp.tools import snapshot as snapshot_module
+from legacy_mcp.tools.snapshot_jobs import get_job
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -30,6 +32,17 @@ class _MockMCP:
             setattr(self, fn.__name__, fn)
             return fn
         return decorator
+
+
+def _wait_for_job(job_id: str, timeout: float = 10.0) -> dict:
+    """Poll the job store until the job reaches a terminal state."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        job = get_job(job_id)
+        if job and job["status"] in ("completed", "failed"):
+            return job
+        time.sleep(0.1)
+    return get_job(job_id)
 
 
 @pytest.fixture(scope="module")
@@ -57,53 +70,59 @@ def tools(workspace: Workspace) -> _MockMCP:
 
 class TestCreateSnapshotSuccess:
 
-    def test_status_success(self, tools: _MockMCP, tmp_path: Path) -> None:
+    def test_job_id_returned(self, tools: _MockMCP, tmp_path: Path) -> None:
         result = tools.create_snapshot(
             "contoso.local", output_path=str(tmp_path / "snap.json")
         )
-        assert result["status"] == "success"
+        assert "job_id" in result
+
+    def test_status_completed(self, tools: _MockMCP, tmp_path: Path) -> None:
+        result = tools.create_snapshot(
+            "contoso.local", output_path=str(tmp_path / "snap.json")
+        )
+        job = _wait_for_job(result["job_id"])
+        assert job["status"] == "completed"
 
     def test_path_matches_requested(self, tools: _MockMCP, tmp_path: Path) -> None:
         out = str(tmp_path / "snap.json")
         result = tools.create_snapshot("contoso.local", output_path=out)
-        assert result["path"] == out
+        job = _wait_for_job(result["job_id"])
+        assert job["file_path"] == out
 
     def test_file_created_on_disk(self, tools: _MockMCP, tmp_path: Path) -> None:
         out = tmp_path / "snap.json"
-        tools.create_snapshot("contoso.local", output_path=str(out))
+        result = tools.create_snapshot("contoso.local", output_path=str(out))
+        _wait_for_job(result["job_id"])
         assert out.exists()
 
     def test_sections_collected_positive(self, tools: _MockMCP, tmp_path: Path) -> None:
         result = tools.create_snapshot(
             "contoso.local", output_path=str(tmp_path / "snap.json")
         )
-        assert result["sections_collected"] > 0
+        job = _wait_for_job(result["job_id"])
+        assert job["sections_collected"] > 0
 
     def test_sections_failed_is_empty(self, tools: _MockMCP, tmp_path: Path) -> None:
         result = tools.create_snapshot(
             "contoso.local", output_path=str(tmp_path / "snap.json")
         )
-        assert result["sections_failed"] == []
+        job = _wait_for_job(result["job_id"])
+        assert job["sections_failed"] == []
 
-    def test_encryption_field_none(self, tools: _MockMCP, tmp_path: Path) -> None:
+    def test_forest_name_in_job(self, tools: _MockMCP, tmp_path: Path) -> None:
         result = tools.create_snapshot(
             "contoso.local", output_path=str(tmp_path / "snap.json")
         )
-        assert result["encryption"] == "none"
+        job = _wait_for_job(result["job_id"])
+        assert job["forest_name"] == "contoso.local"
 
-    def test_forest_field_correct(self, tools: _MockMCP, tmp_path: Path) -> None:
+    def test_started_at_present(self, tools: _MockMCP, tmp_path: Path) -> None:
         result = tools.create_snapshot(
             "contoso.local", output_path=str(tmp_path / "snap.json")
         )
-        assert result["forest"] == "contoso.local"
-
-    def test_timestamp_present(self, tools: _MockMCP, tmp_path: Path) -> None:
-        result = tools.create_snapshot(
-            "contoso.local", output_path=str(tmp_path / "snap.json")
-        )
-        assert result["timestamp"]
-        # Basic ISO-8601 sanity check.
-        assert "T" in result["timestamp"]
+        job = _wait_for_job(result["job_id"])
+        assert job["started_at"]
+        assert "T" in job["started_at"]
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +143,8 @@ class TestSnapshotOutputFormat:
         ws._init_connectors()
         snapshot_module.register(mcp, ws)
         out = tmp_path_factory.mktemp("snap") / "contoso.json"
-        mcp.create_snapshot("contoso.local", output_path=str(out))
+        result = mcp.create_snapshot("contoso.local", output_path=str(out))
+        _wait_for_job(result["job_id"])
         return json.loads(out.read_text(encoding="utf-8"))
 
     def test_metadata_block_present(self, snapshot_data: dict) -> None:
@@ -171,7 +191,7 @@ class TestSnapshotOutputFormat:
 
 
 # ---------------------------------------------------------------------------
-# Error cases
+# Error cases (synchronous -- no job spawned)
 # ---------------------------------------------------------------------------
 
 class TestSnapshotErrors:
@@ -185,13 +205,13 @@ class TestSnapshotErrors:
         assert result["status"] == "error"
         assert "Enterprise" in result["error"]
 
-    def test_keyvault_sections_collected_zero(self, tools: _MockMCP, tmp_path: Path) -> None:
+    def test_keyvault_no_job_spawned(self, tools: _MockMCP, tmp_path: Path) -> None:
         result = tools.create_snapshot(
             "contoso.local",
             encryption="keyvault",
             output_path=str(tmp_path / "kv.json"),
         )
-        assert result["sections_collected"] == 0
+        assert "job_id" not in result
 
     def test_unknown_encryption_returns_error(self, tools: _MockMCP, tmp_path: Path) -> None:
         result = tools.create_snapshot(
@@ -224,8 +244,6 @@ class TestSnapshotPartialFailure:
 
     def test_sections_failed_reported(self, tmp_path: Path) -> None:
         """If a section raises, it ends up in sections_failed and the rest succeed."""
-        from legacy_mcp.modes.offline import OfflineConnector
-
         forest = ForestConfig(
             name="contoso.local",
             relation=ForestRelation.STANDALONE,
@@ -234,7 +252,6 @@ class TestSnapshotPartialFailure:
         ws = Workspace(mode=WorkspaceMode.OFFLINE, forests=[forest])
         ws._init_connectors()
 
-        # Patch the connector so "users" always raises.
         original_query = ws.connector("contoso.local").query
 
         def broken_query(section: str, **kw):
@@ -250,14 +267,13 @@ class TestSnapshotPartialFailure:
             "contoso.local", output_path=str(tmp_path / "partial.json")
         )
 
-        assert result["status"] == "success"
-        assert "users" in result["sections_failed"]
-        assert result["sections_collected"] > 0
+        job = _wait_for_job(result["job_id"])
+        assert job["status"] == "completed"
+        assert "users" in job["sections_failed"]
+        assert job["sections_collected"] > 0
 
     def test_partial_file_still_written(self, tmp_path: Path) -> None:
         """Snapshot file is written even when some sections fail."""
-        from legacy_mcp.modes.offline import OfflineConnector
-
         forest = ForestConfig(
             name="contoso.local",
             relation=ForestRelation.STANDALONE,
@@ -278,7 +294,8 @@ class TestSnapshotPartialFailure:
         mcp = _MockMCP()
         snapshot_module.register(mcp, ws)
         out = tmp_path / "partial.json"
-        mcp.create_snapshot("contoso.local", output_path=str(out))
+        result = mcp.create_snapshot("contoso.local", output_path=str(out))
+        _wait_for_job(result["job_id"])
 
         assert out.exists()
         data = json.loads(out.read_text(encoding="utf-8"))
@@ -288,13 +305,73 @@ class TestSnapshotPartialFailure:
 
 
 # ---------------------------------------------------------------------------
+# get_snapshot_status
+# ---------------------------------------------------------------------------
+
+class TestGetSnapshotStatus:
+
+    def test_not_found(self, tools: _MockMCP) -> None:
+        result = tools.get_snapshot_status("nonexistent-job-id-xyz")
+        assert result["status"] == "not_found"
+        assert result["job_id"] == "nonexistent-job-id-xyz"
+
+    def test_completed_status(self, tools: _MockMCP, tmp_path: Path) -> None:
+        result = tools.create_snapshot(
+            "contoso.local", output_path=str(tmp_path / "snap.json")
+        )
+        job_id = result["job_id"]
+        _wait_for_job(job_id)
+        status = tools.get_snapshot_status(job_id)
+        assert status["status"] == "completed"
+        assert status["file_path"] is not None
+
+    def test_completed_file_path_matches(self, tools: _MockMCP, tmp_path: Path) -> None:
+        out = str(tmp_path / "snap.json")
+        result = tools.create_snapshot("contoso.local", output_path=out)
+        _wait_for_job(result["job_id"])
+        status = tools.get_snapshot_status(result["job_id"])
+        assert status["file_path"] == out
+
+    def test_failed_status_via_job_store(self, tools: _MockMCP) -> None:
+        """Inject a failed job directly and verify get_snapshot_status reports it."""
+        from legacy_mcp.tools import snapshot_jobs as sj
+        sj.create_job("test-fail-xyz", "fake.local", 10)
+        sj.fail_job("test-fail-xyz", "simulated error")
+        status = tools.get_snapshot_status("test-fail-xyz")
+        assert status["status"] == "failed"
+        assert status["error"] == "simulated error"
+
+    def test_job_id_format(self, tools: _MockMCP, tmp_path: Path) -> None:
+        result = tools.create_snapshot(
+            "contoso.local", output_path=str(tmp_path / "snap.json")
+        )
+        job_id = result["job_id"]
+        # Format: {safe_name}_{YYYYMMDD}_{HHMMSS}_{4hex}
+        # safe_name = "contoso-local", then two underscore-separated datetime parts,
+        # then 4 hex chars -- split from the right to get the hex suffix.
+        hex_suffix = job_id.rsplit("_", 1)[-1]
+        assert len(hex_suffix) == 4
+        assert all(c in "0123456789abcdef" for c in hex_suffix)
+
+    def test_total_steps_matches_known_sections(self, tools: _MockMCP, tmp_path: Path) -> None:
+        from legacy_mcp.storage.loader import KNOWN_SECTIONS
+        result = tools.create_snapshot(
+            "contoso.local", output_path=str(tmp_path / "snap.json")
+        )
+        _wait_for_job(result["job_id"])
+        status = tools.get_snapshot_status(result["job_id"])
+        assert status["total_steps"] == len(KNOWN_SECTIONS)
+
+
+# ---------------------------------------------------------------------------
 # list_snapshots
 # ---------------------------------------------------------------------------
 
 def _make_snapshot(tools: _MockMCP, directory: Path, filename: str) -> Path:
     """Helper: write a real snapshot into *directory* and return its path."""
     out = directory / filename
-    tools.create_snapshot("contoso.local", output_path=str(out))
+    result = tools.create_snapshot("contoso.local", output_path=str(out))
+    _wait_for_job(result["job_id"])
     return out
 
 
@@ -366,7 +443,6 @@ class TestListSnapshots:
         self, tools: _MockMCP, tmp_path: Path
     ) -> None:
         """A .json.dpapi file must appear with encryption='dpapi'."""
-        # Create a fake .json.dpapi file (just bytes, not real DPAPI output).
         fake = tmp_path / "contoso_20250323_120000.json.dpapi"
         fake.write_bytes(b"encrypted-blob")
         result = tools.list_snapshots(path=str(tmp_path))
@@ -413,7 +489,8 @@ class TestLoadSnapshot:
         ws = _fresh_workspace()
         t = _fresh_tools(ws)
         out = tmp_path / "contoso_snap.json"
-        t.create_snapshot("contoso.local", output_path=str(out))
+        result = t.create_snapshot("contoso.local", output_path=str(out))
+        _wait_for_job(result["job_id"])
         return out
 
     def test_status_success(self, snap_file: Path, tmp_path: Path) -> None:
@@ -517,8 +594,10 @@ class TestSnapshotPathConfig:
         snapshot_module.register(mcp, workspace, snapshot_path=str(snap_dir))
 
         result = mcp.create_snapshot("contoso.local")
-        assert result["status"] == "success"
-        assert str(snap_dir) in result["path"]
+        assert "job_id" in result
+        job = _wait_for_job(result["job_id"])
+        assert job["status"] == "completed"
+        assert str(snap_dir) in job["file_path"]
         assert snap_dir.exists()
 
     def test_create_snapshot_file_created_in_configured_path(self, workspace: Workspace, tmp_path: Path) -> None:
@@ -528,7 +607,8 @@ class TestSnapshotPathConfig:
         snapshot_module.register(mcp, workspace, snapshot_path=str(snap_dir))
 
         result = mcp.create_snapshot("contoso.local")
-        assert Path(result["path"]).parent == snap_dir
+        job = _wait_for_job(result["job_id"])
+        assert Path(job["file_path"]).parent == snap_dir
 
     def test_list_snapshots_default_uses_configured_path(self, workspace: Workspace, tmp_path: Path) -> None:
         """list_snapshots() without arguments scans the configured snapshot_path."""
@@ -543,13 +623,15 @@ class TestSnapshotPathConfig:
     def test_output_path_overrides_configured_path(self, workspace: Workspace, tmp_path: Path) -> None:
         """Explicit output_path takes precedence over the configured snapshot_path."""
         snap_dir = tmp_path / "configured_snaps"
-        explicit = tmp_path / "explicit" / "snap.json"
+        explicit = str(tmp_path / "explicit" / "snap.json")
         mcp = _MockMCP()
         snapshot_module.register(mcp, workspace, snapshot_path=str(snap_dir))
 
-        result = mcp.create_snapshot("contoso.local", output_path=str(explicit))
-        assert result["status"] == "success"
-        assert result["path"] == str(explicit)
+        result = mcp.create_snapshot("contoso.local", output_path=explicit)
+        assert "job_id" in result
+        job = _wait_for_job(result["job_id"])
+        assert job["status"] == "completed"
+        assert job["file_path"] == explicit
         assert not snap_dir.exists()  # configured dir never created
 
     def test_default_snapshot_path_used_when_not_configured(self, workspace: Workspace, tmp_path: Path) -> None:

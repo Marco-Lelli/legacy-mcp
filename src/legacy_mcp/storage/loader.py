@@ -100,7 +100,7 @@ class JsonLoader:
         with self.path.open(encoding="utf-8-sig") as fh:
             data = json.load(fh)
 
-        db = sqlite3.connect(":memory:")
+        db = sqlite3.connect(":memory:", check_same_thread=False)
         db.row_factory = sqlite3.Row
 
         for section in KNOWN_SECTIONS:
