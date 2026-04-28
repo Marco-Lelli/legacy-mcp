@@ -519,3 +519,80 @@ class TestGetPrimaryGroupId:
 
     def test_absent_defaults_to_513(self) -> None:
         assert _get_primary_group_id({}) == 513
+
+
+# ---------------------------------------------------------------------------
+# get_users -- cannot_change_password filter
+# ---------------------------------------------------------------------------
+
+class TestGetUsersCannotChangePassword:
+
+    def test_cannot_change_password_true_count(self, tools: _MockMCP) -> None:
+        # Only svc.backup has CannotChangePassword=True in the fixture.
+        result = tools.get_users(cannot_change_password=True)
+        assert result["total"] == 1
+
+    def test_cannot_change_password_true_name(self, tools: _MockMCP) -> None:
+        result = tools.get_users(cannot_change_password=True)
+        assert result["items"][0]["SamAccountName"] == "svc.backup"
+
+    def test_cannot_change_password_false_returns_all(self, tools: _MockMCP) -> None:
+        result = tools.get_users(cannot_change_password=False)
+        assert result["total"] == 15
+
+    def test_cannot_change_password_missing_field_not_flagged(self, tmp_path) -> None:
+        # A user record without the CannotChangePassword field must not be
+        # returned when cannot_change_password=True — default is False.
+        minimal = tmp_path / "minimal.json"
+        minimal.write_text(
+            '{"users": [{"SamAccountName": "no.field", "Enabled": "True"}]}',
+            encoding="utf-8",
+        )
+        from legacy_mcp.workspace.workspace import ForestConfig, ForestRelation, WorkspaceMode
+        forest = ForestConfig(
+            name="minimal.local",
+            relation=ForestRelation.STANDALONE,
+            file=str(minimal),
+        )
+        ws = Workspace(mode=WorkspaceMode.OFFLINE, forests=[forest])
+        ws._init_connectors()
+        minimal_mcp = _MockMCP()
+        users_module.register(minimal_mcp, ws)
+        result = minimal_mcp.get_users(cannot_change_password=True)
+        assert result["total"] == 0
+
+
+# ---------------------------------------------------------------------------
+# get_user_summary -- cannot_change_password key
+# ---------------------------------------------------------------------------
+
+class TestGetUserSummaryCannotChangePassword:
+
+    def test_summary_has_cannot_change_password_key(self, tools: _MockMCP) -> None:
+        result = tools.get_user_summary()
+        assert "cannot_change_password" in result
+
+    def test_cannot_change_password_count(self, tools: _MockMCP) -> None:
+        # Only svc.backup has CannotChangePassword=True in the fixture.
+        result = tools.get_user_summary()
+        assert result["cannot_change_password"]["count"] == 1
+
+    def test_cannot_change_password_pct(self, tools: _MockMCP) -> None:
+        result = tools.get_user_summary()
+        assert result["cannot_change_password"]["pct_of_total"] == round(1 / 15 * 100, 2)
+
+    def test_cannot_change_password_pct_zero_when_empty(self, tmp_path) -> None:
+        empty_json = tmp_path / "empty.json"
+        empty_json.write_text('{"users": []}', encoding="utf-8")
+        from legacy_mcp.workspace.workspace import ForestConfig, ForestRelation, WorkspaceMode
+        forest = ForestConfig(
+            name="empty2.local",
+            relation=ForestRelation.STANDALONE,
+            file=str(empty_json),
+        )
+        ws = Workspace(mode=WorkspaceMode.OFFLINE, forests=[forest])
+        ws._init_connectors()
+        empty_mcp = _MockMCP()
+        users_module.register(empty_mcp, ws)
+        result = empty_mcp.get_user_summary()
+        assert result["cannot_change_password"]["pct_of_total"] == 0.0

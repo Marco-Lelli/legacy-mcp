@@ -453,7 +453,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "m.ferrari",
@@ -475,7 +476,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "l.bianchi",
@@ -496,7 +498,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "g.conti",
@@ -517,7 +520,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "s.martini",
@@ -538,7 +542,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "r.greco",
@@ -559,7 +564,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "f.esposito",
@@ -580,7 +586,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "svc.backup",
@@ -601,7 +608,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": true
     },
     {
       "SamAccountName": "svc.monitor",
@@ -622,7 +630,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "svc.deploy",
@@ -643,7 +652,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "adm.rossi",
@@ -664,7 +674,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "adm.ferrari",
@@ -685,7 +696,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "Administrator",
@@ -706,7 +718,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "Guest",
@@ -727,7 +740,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 513
+      "PrimaryGroupID": 513,
+      "CannotChangePassword": false
     },
     {
       "SamAccountName": "krbtgt",
@@ -748,7 +762,8 @@
       "PasswordNotRequired": false,
       "HomeDrive": null,
       "HomeDirectory": null,
-      "PrimaryGroupID": 516
+      "PrimaryGroupID": 516,
+      "CannotChangePassword": false
     }
   ],
   "privileged_accounts": [

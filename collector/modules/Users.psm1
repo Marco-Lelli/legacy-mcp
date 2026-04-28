@@ -10,7 +10,8 @@ function Get-UsersData {
     Get-ADUser -Filter * -Properties Enabled, PasswordNeverExpires, LockedOut,
         LastLogonDate, PasswordLastSet, Description, mail, adminCount, SIDHistory,
         TrustedForDelegation, TrustedToAuthForDelegation, "msDS-AllowedToDelegateTo",
-        userAccountControl, homeDirectory, homeDrive, primaryGroupID @CommonParams |
+        userAccountControl, homeDirectory, homeDrive, primaryGroupID,
+        CannotChangePassword @CommonParams |
         Select-Object -First $Limit |
         ForEach-Object {
             [PSCustomObject]@{
@@ -34,6 +35,11 @@ function Get-UsersData {
                 HomeDrive                    = $_.homeDrive
                 HomeDirectory                = $_.homeDirectory
                 PrimaryGroupID               = $_.primaryGroupID
+                CannotChangePassword         = if ($_.CannotChangePassword -ne $null) {
+                    [bool]$_.CannotChangePassword
+                } else {
+                    $false
+                }
             }
         }
 }

@@ -63,6 +63,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             if not u.get("LastLogonDate") and u.get("Enabled") == "True"
         )
         pgid_count = sum(1 for u in users if _get_primary_group_id(u) != 513)
+        ccp_count = sum(1 for u in users if u.get("CannotChangePassword") == "True")
 
         return {
             "total":                  total,
@@ -87,6 +88,10 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             "primary_group_not_domain_users": {
                 "count":        pgid_count,
                 "pct_of_total": round(pgid_count / total * 100, 2) if total > 0 else 0.0,
+            },
+            "cannot_change_password": {
+                "count":        ccp_count,
+                "pct_of_total": round(ccp_count / total * 100, 2) if total > 0 else 0.0,
             },
         }
 
@@ -116,6 +121,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         has_sid_history: bool | None = None,
         no_last_logon: bool = False,
         primary_group_not_domain_users: bool = False,
+        cannot_change_password: bool = False,
         forest_name: str | None = None,
         offset: int = 0,
         limit: int = 200,
@@ -159,6 +165,10 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             If True, return only accounts whose primary group is not Domain Users
             (PrimaryGroupID != 513). May indicate misconfigurations or privileged
             account remnants.
+        cannot_change_password:
+            If True, return only accounts where the user cannot change their own
+            password. May indicate restricted service accounts or compliance
+            policy enforcement.
         forest_name:
             Target forest. Defaults to the first forest in the workspace.
 
@@ -230,6 +240,9 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
 
         if primary_group_not_domain_users:
             users = [u for u in users if _get_primary_group_id(u) != 513]
+
+        if cannot_change_password:
+            users = [u for u in users if u.get("CannotChangePassword") == "True"]
 
         total = len(users)
         page = users[offset : offset + limit]
