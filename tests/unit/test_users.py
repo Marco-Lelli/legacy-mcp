@@ -9,6 +9,7 @@ import pytest
 
 from legacy_mcp.workspace.workspace import ForestConfig, ForestRelation, Workspace, WorkspaceMode
 from legacy_mcp.tools import users as users_module
+from legacy_mcp.tools.users import _get_primary_group_id
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -497,3 +498,24 @@ class TestGetUsersPrimaryGroupNotDomainUsers:
         # krbtgt is disabled -- pgid filter + enabled=True yields 0.
         result = tools.get_users(primary_group_not_domain_users=True, enabled=True)
         assert result["total"] == 0
+
+
+# ---------------------------------------------------------------------------
+# _get_primary_group_id -- normalization helper (Live Mode compat)
+# ---------------------------------------------------------------------------
+
+class TestGetPrimaryGroupId:
+
+    def test_list_513_not_flagged(self) -> None:
+        # Live Mode may return PrimaryGroupID as a single-element list.
+        assert _get_primary_group_id({"PrimaryGroupID": [513]}) == 513
+
+    def test_list_512_flagged(self) -> None:
+        assert _get_primary_group_id({"PrimaryGroupID": [512]}) == 512
+
+    def test_string_514_flagged(self) -> None:
+        # Offline Mode serializes integers to strings via the SQLite loader.
+        assert _get_primary_group_id({"PrimaryGroupID": "514"}) == 514
+
+    def test_absent_defaults_to_513(self) -> None:
+        assert _get_primary_group_id({}) == 513

@@ -13,6 +13,22 @@ if TYPE_CHECKING:
 _STALE_DAYS = 90
 
 
+def _get_primary_group_id(u: dict) -> int:
+    """Normalize PrimaryGroupID to int regardless of source shape.
+
+    Live Mode may return PrimaryGroupID as a single-element Object[] (list)
+    rather than a scalar. Offline Mode serializes it to a string via the
+    SQLite loader. Both forms are handled here so filter logic stays uniform.
+    """
+    val = u.get("PrimaryGroupID", 513)
+    if isinstance(val, list):
+        val = val[0] if val else 513
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return 513
+
+
 def register(mcp: "FastMCP", workspace: "Workspace") -> None:
 
     @mcp.tool()
@@ -46,7 +62,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             1 for u in users
             if not u.get("LastLogonDate") and u.get("Enabled") == "True"
         )
-        pgid_count = sum(1 for u in users if u.get("PrimaryGroupID", "513") != "513")
+        pgid_count = sum(1 for u in users if _get_primary_group_id(u) != 513)
 
         return {
             "total":                  total,
@@ -213,7 +229,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             users = [u for u in users if not u.get("LastLogonDate")]
 
         if primary_group_not_domain_users:
-            users = [u for u in users if u.get("PrimaryGroupID", "513") != "513"]
+            users = [u for u in users if _get_primary_group_id(u) != 513]
 
         total = len(users)
         page = users[offset : offset + limit]
