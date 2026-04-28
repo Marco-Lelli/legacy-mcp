@@ -23,6 +23,8 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         conn = workspace.connector(forest_name)
         users = conn.query("users")
         now = datetime.now(tz=timezone.utc)
+        total = len(users)
+        enabled_count = sum(1 for u in users if u.get("Enabled") == "True")
 
         stale = 0
         for u in users:
@@ -39,9 +41,16 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             if is_stale:
                 stale += 1
 
+        no_logon_count = sum(1 for u in users if not u.get("LastLogonDate"))
+        no_logon_active = sum(
+            1 for u in users
+            if not u.get("LastLogonDate") and u.get("Enabled") == "True"
+        )
+        pgid_count = sum(1 for u in users if u.get("PrimaryGroupID", "513") != "513")
+
         return {
-            "total":                  len(users),
-            "enabled":                sum(1 for u in users if u.get("Enabled") == "True"),
+            "total":                  total,
+            "enabled":                enabled_count,
             "disabled":               sum(1 for u in users if u.get("Enabled") == "False"),
             "password_never_expires": sum(1 for u in users if u.get("PasswordNeverExpires") == "True"),
             "password_not_required":  sum(1 for u in users if u.get("PasswordNotRequired") == "True"),
@@ -53,6 +62,16 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
                 or u.get("AllowedToDelegateTo")
             ),
             "stale_90d":              stale,
+            "no_last_logon": {
+                "count":         no_logon_count,
+                "pct_of_total":  round(no_logon_count / total * 100, 2) if total > 0 else 0.0,
+                "active_count":  no_logon_active,
+                "pct_of_active": round(no_logon_active / enabled_count * 100, 2) if enabled_count > 0 else 0.0,
+            },
+            "primary_group_not_domain_users": {
+                "count":        pgid_count,
+                "pct_of_total": round(pgid_count / total * 100, 2) if total > 0 else 0.0,
+            },
         }
 
     @mcp.tool()
@@ -79,6 +98,8 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         password_never_expires: bool | None = None,
         locked_out: bool | None = None,
         has_sid_history: bool | None = None,
+        no_last_logon: bool = False,
+        primary_group_not_domain_users: bool = False,
         forest_name: str | None = None,
         offset: int = 0,
         limit: int = 200,
@@ -114,6 +135,14 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         has_sid_history:
             True = only accounts with a non-empty SIDHistory (migrated accounts,
             M&A scenarios). False = only accounts without SIDHistory. None = all.
+        no_last_logon:
+            If True, return only accounts that have never logged on
+            (LastLogonDate is absent or null). Useful for identifying accounts
+            created but never used.
+        primary_group_not_domain_users:
+            If True, return only accounts whose primary group is not Domain Users
+            (PrimaryGroupID != 513). May indicate misconfigurations or privileged
+            account remnants.
         forest_name:
             Target forest. Defaults to the first forest in the workspace.
 
@@ -179,6 +208,12 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             users = [u for u in users if u.get("SIDHistory")]
         elif has_sid_history is False:
             users = [u for u in users if not u.get("SIDHistory")]
+
+        if no_last_logon:
+            users = [u for u in users if not u.get("LastLogonDate")]
+
+        if primary_group_not_domain_users:
+            users = [u for u in users if u.get("PrimaryGroupID", "513") != "513"]
 
         total = len(users)
         page = users[offset : offset + limit]

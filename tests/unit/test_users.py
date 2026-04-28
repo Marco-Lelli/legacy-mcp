@@ -389,3 +389,111 @@ class TestGetUserByName:
         result = tools.get_user_by_name("r.greco")
         assert result is not None
         assert result["Enabled"] == "False"
+
+
+# ---------------------------------------------------------------------------
+# get_user_summary
+# ---------------------------------------------------------------------------
+
+class TestGetUserSummary:
+
+    def test_returns_new_keys(self, tools: _MockMCP) -> None:
+        result = tools.get_user_summary()
+        assert "no_last_logon" in result
+        assert "primary_group_not_domain_users" in result
+
+    def test_no_last_logon_count(self, tools: _MockMCP) -> None:
+        # Guest and krbtgt have LastLogonDate: null in the fixture.
+        result = tools.get_user_summary()
+        assert result["no_last_logon"]["count"] == 2
+
+    def test_no_last_logon_active_count(self, tools: _MockMCP) -> None:
+        # Both Guest and krbtgt are disabled -- active_count must be 0.
+        result = tools.get_user_summary()
+        assert result["no_last_logon"]["active_count"] == 0
+
+    def test_no_last_logon_pct_of_total(self, tools: _MockMCP) -> None:
+        result = tools.get_user_summary()
+        assert result["no_last_logon"]["pct_of_total"] == round(2 / 15 * 100, 2)
+
+    def test_no_last_logon_pct_of_active_is_zero(self, tools: _MockMCP) -> None:
+        result = tools.get_user_summary()
+        assert result["no_last_logon"]["pct_of_active"] == 0.0
+
+    def test_primary_group_not_domain_users_count(self, tools: _MockMCP) -> None:
+        # krbtgt has PrimaryGroupID=516; all others have 513.
+        result = tools.get_user_summary()
+        assert result["primary_group_not_domain_users"]["count"] == 1
+
+    def test_primary_group_not_domain_users_pct(self, tools: _MockMCP) -> None:
+        result = tools.get_user_summary()
+        assert result["primary_group_not_domain_users"]["pct_of_total"] == round(1 / 15 * 100, 2)
+
+    def test_pct_zero_when_no_users(self, tmp_path) -> None:
+        empty_json = tmp_path / "empty.json"
+        empty_json.write_text('{"users": []}', encoding="utf-8")
+        from legacy_mcp.workspace.workspace import ForestConfig, ForestRelation, WorkspaceMode
+        forest = ForestConfig(
+            name="empty.local",
+            relation=ForestRelation.STANDALONE,
+            file=str(empty_json),
+        )
+        ws = Workspace(mode=WorkspaceMode.OFFLINE, forests=[forest])
+        ws._init_connectors()
+        empty_mcp = _MockMCP()
+        users_module.register(empty_mcp, ws)
+        result = empty_mcp.get_user_summary()
+        assert result["no_last_logon"]["pct_of_total"] == 0.0
+        assert result["no_last_logon"]["pct_of_active"] == 0.0
+        assert result["primary_group_not_domain_users"]["pct_of_total"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# get_users -- no_last_logon filter
+# ---------------------------------------------------------------------------
+
+class TestGetUsersNoLastLogon:
+
+    def test_no_last_logon_true_count(self, tools: _MockMCP) -> None:
+        # Guest and krbtgt have no LastLogonDate in the fixture.
+        result = tools.get_users(no_last_logon=True)
+        assert result["total"] == 2
+
+    def test_no_last_logon_true_names(self, tools: _MockMCP) -> None:
+        result = tools.get_users(no_last_logon=True)
+        names = {u["SamAccountName"] for u in result["items"]}
+        assert names == {"Guest", "krbtgt"}
+
+    def test_no_last_logon_combined_with_enabled_returns_empty(self, tools: _MockMCP) -> None:
+        # Both no-logon accounts are disabled -- combined filter yields 0.
+        result = tools.get_users(no_last_logon=True, enabled=True)
+        assert result["total"] == 0
+
+    def test_no_last_logon_false_returns_all(self, tools: _MockMCP) -> None:
+        result = tools.get_users(no_last_logon=False)
+        assert result["total"] == 15
+
+
+# ---------------------------------------------------------------------------
+# get_users -- primary_group_not_domain_users filter
+# ---------------------------------------------------------------------------
+
+class TestGetUsersPrimaryGroupNotDomainUsers:
+
+    def test_pgid_not_domain_users_count(self, tools: _MockMCP) -> None:
+        # Only krbtgt has PrimaryGroupID=516.
+        result = tools.get_users(primary_group_not_domain_users=True)
+        assert result["total"] == 1
+
+    def test_pgid_not_domain_users_name(self, tools: _MockMCP) -> None:
+        result = tools.get_users(primary_group_not_domain_users=True)
+        assert result["items"][0]["SamAccountName"] == "krbtgt"
+
+    def test_pgid_false_returns_all(self, tools: _MockMCP) -> None:
+        result = tools.get_users(primary_group_not_domain_users=False)
+        assert result["total"] == 15
+
+    def test_pgid_combined_with_enabled_returns_empty(self, tools: _MockMCP) -> None:
+        # krbtgt is disabled -- pgid filter + enabled=True yields 0.
+        result = tools.get_users(primary_group_not_domain_users=True, enabled=True)
+        assert result["total"] == 0
