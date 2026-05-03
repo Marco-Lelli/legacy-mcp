@@ -29,6 +29,7 @@ legacy-mcp/
 │   ├── mcp-remote-live.bat   # Claude Desktop entry point (generated, gitignored)
 │   ├── .legacymcp-key        # DPAPI-encrypted API key (generated, gitignored)
 │   └── certs/                # server TLS certificate (gitignored)
+├── installer/              # PowerShell installer and permission scripts
 ├── src/legacy_mcp/         # MCP server — Python
 │   ├── server.py           # FastMCP entrypoint
 │   ├── config.py           # YAML config loader and validation
@@ -52,12 +53,17 @@ legacy-mcp/
 │   │   ├── trusts.py
 │   │   ├── fgpp.py
 │   │   ├── dns.py
-│   │   └── pki.py
+│   │   ├── pki.py
+│   │   ├── snapshot.py
+│   │   ├── snapshot_jobs.py
+│   │   └── fsp.py
 │   ├── eventlog/           # Windows EventLog writer
 │   └── service/            # Windows Service wrapper
+├── status/                 # session state and project tracking (ST-*.md)
 └── tests/
     ├── fixtures/           # contoso-sample.json (synthetic AD for tests)
-    └── unit/
+    ├── unit/
+    └── integration/
 
 ---
 
@@ -66,7 +72,9 @@ legacy-mcp/
 ### Live Mode
 
 Connects directly to Domain Controllers via WinRM over HTTPS (port 5986).
-Requires a service account with Domain Admin rights and Kerberos authentication.
+Requires a service account with specific delegated permissions (not Domain Admin)
+and Kerberos authentication. See docs/minimum-permissions.md for the certified
+minimum-privilege baseline.
 Data is queried in real time — no collector script, no JSON export.
 
 Infrastructure prerequisites:
@@ -195,6 +203,13 @@ Snapshots produced in Profile B can be reused in Profile A and Profile C.
 A snapshot is a JSON in the same format as the offline collector output —
 loadable in any offline workspace regardless of the profile that produced it.
 
+### Async snapshot execution
+
+`create_snapshot` runs asynchronously and returns a `job_id` immediately.
+Use `get_snapshot_status(job_id)` to poll progress and retrieve the output
+path when the job completes. Job state is held in memory only and is lost
+on server restart.
+
 ---
 
 ## Security by Design
@@ -289,20 +304,6 @@ loadable in any offline workspace regardless of the profile that produced it.
 
 ---
 
-## Known Issues
-
-### get_group_members — systematic bug
-`get_group_members` returns `{"result":[]}` on all real environments tested.
-The only reliable source for privileged group membership is `get_privileged_groups`.
-Root cause under investigation.
-
-### get_gpo_links — partial results
-`get_gpo_links` returns a single flat JSON object for only the first GPO link.
-Full coverage requires cross-referencing `LinkedGPOs` from OUs via
-`get_blocked_inheritance_ous`.
-
----
-
 ## Git Rules
 
 - Always run `git status` and show the full list of staged files before
@@ -319,7 +320,7 @@ Full coverage requires cross-referencing `LinkedGPOs` from OUs via
 At the beginning of every new Claude Code session:
 1. Read `PRINCIPLES.md` in the repository root — these are the non-negotiable
    design principles that govern every implementation decision.
-2. Read `STATUS.md` in the repository root.
+2. Read `status/ST-status.md` from the repository.
 3. Use it as the primary baseline for project status, recent decisions,
    open tasks, constraints, and next steps.
 4. Do not assume prior chat memory is available.
