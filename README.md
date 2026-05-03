@@ -210,6 +210,7 @@ Already know which profile you need?
 - [Architecture](docs/architecture.md)
 - [TLS certificate setup](docs/tls-certificate-setup.md)
 - [Design principles](PRINCIPLES.md)
+- [MCP Tools Reference](docs/tools-reference.md)
 
 ---
 
