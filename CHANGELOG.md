@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-05-03 "Snap-and-Forget"
+
+### New features
+
+- `create_snapshot` is now asynchronous: returns a `job_id` immediately and
+  runs the export in a background thread. No more waiting.
+- New tool `get_snapshot_status(job_id)` — poll progress in real time with
+  a step counter (e.g. "schema 3/34"), retrieve the output path on completion.
+- New tool `get_fsp` — query Foreign Security Principals with optional
+  `orphaned_only` filter.
+- `get_user_summary` extended with three new counters: `no_last_logon`,
+  `primary_group_not_domain_users`, `cannot_change_password`.
+- `get_users` extended with three new filters matching the new summary counters.
+- Snapshot path is now configurable via installer (`-SnapshotPath`) and
+  manageable post-install via `Config-LegacyMCP.ps1 -Set SnapshotPath`.
+
+### Collector
+
+- Collector v1.6.3: all AD sections now delegated to dedicated PSM1 modules.
+  Previously inline sections: schema, fsmo_roles, groups, group_members,
+  gpo_links, blocked_inheritance, fsp, computers.
+- Group member count bug fixed: `Members.Count` was silently truncated at
+  1500 (LDAP page limit). Now uses `Get-ADGroupMember | Measure-Object`.
+- `CannotChangePassword` field added to user collection.
+
+### Security
+
+- OAuth2 Host header injection fix (CVE-2025-6514 related): `authorization_endpoint`
+  now derived from server config, not from the HTTP request `Host` header.
+- `mcp-remote` pinned to `0.1.38` in `mcp-remote-live.ps1`.
+- CI workflow: `permissions: contents: read` added.
+
+### Documentation
+
+- `CLAUDE.md` updated: POLP baseline, async snapshot behavior, repo structure,
+  resolved known issues removed.
+- New `docs/tools-reference.md`: all 38 MCP tools documented with parameters,
+  return shape, and example prompts.
+
+### Bug fixes
+
+- `PrimaryGroupID` deserialization bug in Live Mode: PowerShell returns it as
+  `Object[]` — normalized to integer via `_get_primary_group_id()` helper.
+
 ## [0.2.0] - 2026-04-25 "Least Privilege"
 
 ### Added
