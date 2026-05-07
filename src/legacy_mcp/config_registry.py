@@ -10,6 +10,7 @@ Priority applied by the caller: CLI > registry > default.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
@@ -93,11 +94,12 @@ def read_registry_config() -> dict:
                 if encrypted_b64:
                     ps_cmd = (
                         "Import-Module SecretManagement.DpapiNG -ErrorAction Stop; "
-                        f"$blob = '{encrypted_b64}'; "
+                        "$blob = $env:LEGACYMCP_BLOB; "
                         "$secure = ConvertFrom-DpapiNGSecret -InputObject $blob; "
                         "[Runtime.InteropServices.Marshal]::PtrToStringAuto("
                         "[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))"
                     )
+                    os.environ['LEGACYMCP_BLOB'] = encrypted_b64
                     try:
                         proc = subprocess.run(
                             [_PS_EXE, "-NoProfile", "-NonInteractive",
@@ -135,6 +137,8 @@ def read_registry_config() -> dict:
                             f"{type(exc).__name__}: {exc}",
                             file=sys.stderr,
                         )
+                    finally:
+                        os.environ.pop('LEGACYMCP_BLOB', None)
             except OSError:
                 pass  # key absent -- Profile A or not yet configured
 
