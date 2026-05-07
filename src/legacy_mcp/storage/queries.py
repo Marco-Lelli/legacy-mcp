@@ -94,7 +94,7 @@ def _deserialize_json_columns(rows: list[dict]) -> list[dict]:
     for row in rows:
         deserialized = {}
         for key, value in row.items():
-            if isinstance(value, str) and value.startswith(("{", "[")):
+            if isinstance(value, str) and len(value) > 1 and value[0] in ("{", "[") and value[1] != " ":
                 try:
                     deserialized[key] = json.loads(value)
                 except json.JSONDecodeError:

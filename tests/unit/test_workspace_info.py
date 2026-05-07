@@ -309,7 +309,7 @@ class TestConnectorImplicitForestName:
         self, multi_forest_workspace: Workspace
     ) -> None:
         """Multi-forest workspace: connector(None) must raise ValueError."""
-        with pytest.raises(ValueError, match="forest_name obbligatorio"):
+        with pytest.raises(ValueError, match="forest_name is required"):
             multi_forest_workspace.connector()
 
     def test_multi_forest_no_name_error_lists_forests(

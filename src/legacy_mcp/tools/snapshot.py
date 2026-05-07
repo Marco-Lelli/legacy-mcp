@@ -101,7 +101,7 @@ def _run_snapshot_job(
 
         if encryption == "none":
             eventlog.warn(
-                f"Plaintext snapshot written to {dest} "
+                f"Plaintext snapshot written to {dest.name} "
                 "-- classify as Confidential/Restricted"
             )
 
