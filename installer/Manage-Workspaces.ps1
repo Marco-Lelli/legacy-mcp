@@ -183,7 +183,11 @@ function Get-Forests {
         }
     }
 
-    return ConvertFrom-ForestsText -Text $raw
+    $forests = ConvertFrom-ForestsText -Text $raw
+    if ($forests.Count -eq 0 -and $raw.Trim().Length -gt 0) {
+        Write-Warning "config.yaml parsed but no forests found -- check indentation (expected 4-space for forest entries, 6-space for properties)"
+    }
+    return $forests
 }
 
 # ---------------------------------------------------------------------------
