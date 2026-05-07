@@ -709,7 +709,7 @@ if ($DeployProfile -eq 'B') {
         try {
             $svcSecure   = Read-Host "Password for $ServiceAccount" -AsSecureString
             $svcPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-                [Runtime.InteropServices.Marshal]::SecureStringToBSTR($svcSecure))
+                [Runtime.InteropServices.Marshal]::SecureStringToBSTR($svcSecure)) # SecureString must be unwrapped to pass plaintext to NSSM -- the string lives in managed heap until GC and cannot be zeroed explicitly in PS 5.1. Known PS 5.1 + NSSM limitation, not fixable without replacing the setup mechanism.
             & $NssmExe set LegacyMCP ObjectName $ServiceAccount $svcPassword
         } catch {
             Write-Fail "Failed to set service account credentials: $_"
