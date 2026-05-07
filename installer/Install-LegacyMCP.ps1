@@ -536,19 +536,32 @@ if ($DeployProfile -eq 'B') {
         Write-Info 'Certificate exported to PFX. Converting to PEM...'
 
         $venvPy = Join-Path $InstallPath '.venv\Scripts\python.exe'
-        $convertPy = @"
+        $env:LEGACYMCP_PFX_PATH    = $tmpPfxPath
+        $env:LEGACYMCP_PFX_PASS    = $tmpPfxPass
+        $env:LEGACYMCP_CERT_FILE   = $resolvedCertFile
+        $env:LEGACYMCP_KEY_FILE    = $resolvedKeyFile
+        $convertPy = @'
+import os
 from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption
-with open(r'$tmpPfxPath', 'rb') as f: data = f.read()
-key, cert, chain = pkcs12.load_key_and_certificates(data, b'$tmpPfxPass')
-with open(r'$resolvedCertFile', 'wb') as f:
+pfx_path  = os.environ['LEGACYMCP_PFX_PATH']
+pfx_pass  = os.environ['LEGACYMCP_PFX_PASS'].encode()
+cert_file = os.environ['LEGACYMCP_CERT_FILE']
+key_file  = os.environ['LEGACYMCP_KEY_FILE']
+with open(pfx_path, 'rb') as f: data = f.read()
+key, cert, chain = pkcs12.load_key_and_certificates(data, pfx_pass)
+with open(cert_file, 'wb') as f:
     f.write(cert.public_bytes(Encoding.PEM))
     for c in (chain or []):
         f.write(c.public_bytes(Encoding.PEM))
-with open(r'$resolvedKeyFile', 'wb') as f:
+with open(key_file, 'wb') as f:
     f.write(key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()))
-"@
+'@
         & $venvPy -c $convertPy
         Remove-Item $tmpPfxPath -Force -ErrorAction SilentlyContinue
+        Remove-Item Env:LEGACYMCP_PFX_PATH  -ErrorAction SilentlyContinue
+        Remove-Item Env:LEGACYMCP_PFX_PASS  -ErrorAction SilentlyContinue
+        Remove-Item Env:LEGACYMCP_CERT_FILE -ErrorAction SilentlyContinue
+        Remove-Item Env:LEGACYMCP_KEY_FILE  -ErrorAction SilentlyContinue
         if ($LASTEXITCODE -ne 0) {
             Write-Fail 'PFX to PEM conversion failed.'
             exit 1
@@ -562,12 +575,16 @@ with open(r'$resolvedKeyFile', 'wb') as f:
         Write-Info 'No certificate provided -- generating self-signed certificate...'
 
         $venvPy = Join-Path $InstallPath '.venv\Scripts\python.exe'
-        $genPy = @"
+        $env:LEGACYMCP_CERT_FILE = $resolvedCertFile
+        $env:LEGACYMCP_KEY_FILE  = $resolvedKeyFile
+        $genPy = @'
+import os, datetime, socket
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-import datetime, socket
+cert_file = os.environ['LEGACYMCP_CERT_FILE']
+key_file  = os.environ['LEGACYMCP_KEY_FILE']
 hostname = socket.getfqdn()
 key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, hostname)])
@@ -586,17 +603,19 @@ cert = (
     ]), critical=False)
     .sign(key, hashes.SHA256())
 )
-with open(r'$resolvedCertFile', 'wb') as f:
+with open(cert_file, 'wb') as f:
     f.write(cert.public_bytes(serialization.Encoding.PEM))
-with open(r'$resolvedKeyFile', 'wb') as f:
+with open(key_file, 'wb') as f:
     f.write(key.private_bytes(
         serialization.Encoding.PEM,
         serialization.PrivateFormat.TraditionalOpenSSL,
         serialization.NoEncryption()
     ))
 print('OK')
-"@
+'@
         & $venvPy -c $genPy | Out-Null
+        Remove-Item Env:LEGACYMCP_CERT_FILE -ErrorAction SilentlyContinue
+        Remove-Item Env:LEGACYMCP_KEY_FILE  -ErrorAction SilentlyContinue
         if ($LASTEXITCODE -ne 0) {
             Write-Fail 'Failed to generate self-signed certificate.'
             exit 1
