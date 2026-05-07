@@ -1004,7 +1004,8 @@ class LiveConnector:
             if isinstance(result, list):
                 return result
             return [self.forest.dc]  # type: ignore[list-item]
-        except Exception:
+        except Exception as e:
+            eventlog.warn(f"DC enumeration failed, falling back to configured DC: {e}")
             return [self.forest.dc]  # type: ignore[list-item]
 
     def collect_dc_inventory(self, section: str) -> list[dict[str, Any]]:
@@ -1032,7 +1033,8 @@ class LiveConnector:
                     results.extend(rows)
                 elif rows:
                     results.append(rows)
-            except Exception:
+            except Exception as e:
+                eventlog.warn_dc_unreachable(dc_fqdn, str(e))
                 fallback: dict[str, Any] = {
                     "DC": dc_fqdn,
                     "Status": "Unreachable",

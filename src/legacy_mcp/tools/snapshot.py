@@ -48,7 +48,8 @@ def _run_snapshot_job(
                     payload[section] = rows[0]
                 else:
                     payload[section] = rows
-            except Exception:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
+                eventlog.warn(f"Section {section} failed: {e}")
                 sections_failed.append(section)
 
         sections_collected = len(payload)
