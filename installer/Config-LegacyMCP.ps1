@@ -633,7 +633,7 @@ function Invoke-Validate {
 
                 # SeServiceLogonRight check -- non-system accounts must have this
                 # right to start a Windows service after reboot.
-                $secpolCfg = Join-Path $env:TEMP 'legacymcp_secpol_val.cfg'
+                $secpolCfg = [System.IO.Path]::GetTempFileName()
                 try {
                     $ntAcct = New-Object System.Security.Principal.NTAccount($runningAs)
                     $sid    = $ntAcct.Translate([System.Security.Principal.SecurityIdentifier]).Value
