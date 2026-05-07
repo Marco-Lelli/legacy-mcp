@@ -1,4 +1,4 @@
-# FSP.psm1 — Foreign Security Principals data collection helpers
+# FSP.psm1 -- Foreign Security Principals data collection helpers
 
 function Get-FSPData {
     [CmdletBinding()]
@@ -30,6 +30,7 @@ function Get-FSPData {
                 }
             }
     } catch {
+        Write-Warning "Get-FSPData failed: $_"
         @()
     }
 }

@@ -1,4 +1,4 @@
-# Schema.psm1 — AD Schema extensions data collection helpers
+# Schema.psm1 -- AD Schema extensions data collection helpers
 
 function Get-SchemaExtensionsData {
     [CmdletBinding()]
@@ -10,7 +10,7 @@ function Get-SchemaExtensionsData {
     # subtrees (1.2.840.113556 Windows/Exchange, 2.16.840.1.101.2 US DoD,
     # 1.3.6.1.4.1.311 Microsoft vendor arc). governsID applies to classSchema;
     # attributeID applies to attributeSchema.
-    Get-ADObject -SearchBase $schemaDN -Filter * `
+    $allExtensions = @(Get-ADObject -SearchBase $schemaDN -Filter * `
         -Properties lDAPDisplayName, objectClass, adminDescription,
                     governsID, attributeID @CommonParams |
         Where-Object {
@@ -19,17 +19,19 @@ function Get-SchemaExtensionsData {
             -not $oid.StartsWith("1.2.840.113556") -and
             -not $oid.StartsWith("2.16.840.1.101.2") -and
             -not $oid.StartsWith("1.3.6.1.4.1.311")
-        } |
-        Select-Object -First 500 |
-        ForEach-Object {
-            [PSCustomObject]@{
-                lDAPDisplayName  = $_.lDAPDisplayName
-                ObjectClass      = $_.objectClass
-                AdminDescription = $_.adminDescription
-                GovernsID        = $_.governsID
-                AttributeID      = $_.attributeID
-            }
+        })
+    if ($allExtensions.Count -gt 500) {
+        Write-Warning "Schema extensions truncated to 500 -- environment has $($allExtensions.Count) custom extensions"
+    }
+    $allExtensions | Select-Object -First 500 | ForEach-Object {
+        [PSCustomObject]@{
+            lDAPDisplayName  = $_.lDAPDisplayName
+            ObjectClass      = $_.objectClass
+            AdminDescription = $_.adminDescription
+            GovernsID        = $_.governsID
+            AttributeID      = $_.attributeID
         }
+    }
 }
 
 function Get-SchemaProductPresenceData {

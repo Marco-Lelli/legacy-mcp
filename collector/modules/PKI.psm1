@@ -1,4 +1,4 @@
-# PKI.psm1 — PKI / CA Discovery data collection helpers
+# PKI.psm1 -- PKI / CA Discovery data collection helpers
 # Covers: CN=Enrollment Services,CN=Public Key Services,CN=Services,CN=Configuration
 
 function Get-PKIData {
@@ -9,7 +9,7 @@ function Get-PKIData {
     $enrollmentDN = "CN=Enrollment Services,CN=Public Key Services,CN=Services,$configDN"
 
     try {
-        Get-ADObject -SearchBase $enrollmentDN -Filter * @CommonParams |
+        Get-ADObject -SearchBase $enrollmentDN -Filter "objectClass -eq 'pKIEnrollmentService'" @CommonParams |
             ForEach-Object {
                 [PSCustomObject]@{
                     Name              = $_.Name

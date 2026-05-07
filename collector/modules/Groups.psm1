@@ -1,4 +1,4 @@
-# Groups.psm1 — AD Group data collection helpers
+# Groups.psm1 -- AD Group data collection helpers
 
 $PrivilegedGroupNames = @(
     "Domain Admins", "Enterprise Admins", "Schema Admins",
@@ -87,7 +87,9 @@ function Get-GroupMembersData {
                     MemberEnabled           = $enabled
                 }
             }
-        } catch { }
+        } catch {
+            Write-Warning "Get-GroupMembersData: failed to enumerate members of group '$groupName': $_"
+        }
     }
 }
 

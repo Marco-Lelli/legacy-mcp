@@ -1,4 +1,4 @@
-# DNS.psm1 — DNS configuration data collection helpers
+# DNS.psm1 -- DNS configuration data collection helpers
 # Requires: DnsServer PowerShell module (RSAT)
 
 function Get-DNSZonesData {
@@ -6,23 +6,26 @@ function Get-DNSZonesData {
     param([hashtable]$CommonParams = @{})
 
     $dcs = (Get-ADDomainController -Filter * @CommonParams).HostName
-    $dc = $dcs | Select-Object -First 1
-
-    try {
-        Get-DnsServerZone -ComputerName $dc | ForEach-Object {
-            [PSCustomObject]@{
-                ZoneName           = $_.ZoneName
-                ZoneType           = $_.ZoneType.ToString()
-                IsDsIntegrated     = $_.IsDsIntegrated
-                ReplicationScope   = $_.ReplicationScope
-                IsReverseLookupZone = $_.IsReverseLookupZone
-                IsAutoCreated      = $_.IsAutoCreated
-                DC                 = $dc
+    $collected = $false
+    foreach ($dc in $dcs) {
+        try {
+            Get-DnsServerZone -ComputerName $dc | ForEach-Object {
+                [PSCustomObject]@{
+                    ZoneName            = $_.ZoneName
+                    ZoneType            = $_.ZoneType.ToString()
+                    IsDsIntegrated      = $_.IsDsIntegrated
+                    ReplicationScope    = $_.ReplicationScope
+                    IsReverseLookupZone = $_.IsReverseLookupZone
+                    IsAutoCreated       = $_.IsAutoCreated
+                    DC                  = $dc
+                }
             }
-        }
-    } catch {
-        Write-Warning "DNS cmdlets not available on $dc. Install RSAT DNS tools."
-        @()
+            $collected = $true
+            break
+        } catch { }
+    }
+    if (-not $collected) {
+        Write-Warning "Get-DNSZonesData: no DC with DNS Server role available -- DNS zones not collected."
     }
 }
 
