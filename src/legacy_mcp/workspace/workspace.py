@@ -97,8 +97,8 @@ class Workspace:
             if len(self.forests) > 1:
                 names = ", ".join(f.name for f in self.forests)
                 raise ValueError(
-                    f"forest_name obbligatorio quando sono configurati piu' forest. "
-                    f"Forest disponibili: {names}"
+                    f"forest_name is required when multiple forests are configured. "
+                    f"Available forests: {names}"
                 )
             forest_name = self.forests[0].name
         if forest_name not in self._connectors:

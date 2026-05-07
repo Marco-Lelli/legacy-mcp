@@ -204,7 +204,7 @@ $script:LogPath = [System.IO.Path]::ChangeExtension($OutputPath, ".log")
 $sep = "=" * 80
 @(
     $sep,
-    "LegacyMCP Collector v1.5 -- raccolta avviata",
+    "LegacyMCP Collector v1.6.3 -- collection started",
     "Forest : $forestNameEarly",
     "DC     : $dcNameEarly",
     "Output : $OutputPath",
@@ -611,8 +611,8 @@ $totalSections = $script:sectionsOK + $script:sectionsWarn + $script:sectionsErr
 @(
     "",
     $sep,
-    "Raccolta completata -- $forestName",
-    "Sezioni OK : $($script:sectionsOK)/$totalSections",
+    "Collection completed -- $forestName",
+    "Sections OK : $($script:sectionsOK)/$totalSections",
     "Warnings   : $($script:sectionsWarn)",
     "Errors     : $($script:sectionsError)",
     "End        : $(Get-Date $endTime -Format 'yyyy-MM-dd HH:mm:ss')  (duration: $durationStr)",

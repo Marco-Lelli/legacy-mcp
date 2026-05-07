@@ -91,7 +91,7 @@ def build_oauth_app(api_key: str, fallback: ASGIApp, base_url: str) -> Starlette
         )
 
     async def authorize_endpoint(request: Request) -> RedirectResponse:
-        """Auto-approve: genera un code PKCE e fa redirect immediato, senza UI."""
+        """Auto-approve: generate a PKCE code and redirect immediately, no UI."""
         params = dict(request.query_params)
         redirect_uri = params.get("redirect_uri", "")
         state = params.get("state", "")
