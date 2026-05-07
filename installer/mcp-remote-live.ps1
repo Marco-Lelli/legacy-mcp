@@ -20,9 +20,14 @@ if (-not (Test-Path $keyFile)) {
 $secure = Get-Content $keyFile | ConvertTo-SecureString
 $apiKey = [System.Net.NetworkCredential]::new("", $secure).Password
 
+if ([string]::IsNullOrWhiteSpace($apiKey)) {
+    Write-Error "LegacyMCP: API key is empty after decryption -- check .legacymcp-key file."
+    exit 1
+}
+
 if ($CaCertPath -eq "") {
     $CaCertPath = Join-Path $PSScriptRoot "certs\server.crt"
 }
 $env:NODE_EXTRA_CA_CERTS = $CaCertPath
 
-& npx --yes mcp-remote@0.1.38 $ServerUrl --header "Authorization:Bearer $apiKey"
+& npx --yes mcp-remote@0.1.38 $ServerUrl --header "Authorization: Bearer $apiKey"
