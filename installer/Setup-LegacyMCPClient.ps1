@@ -30,17 +30,17 @@
     (typically certs\server.crt on the server machine, copied to this PC).
 
 .PARAMETER ServerUrl
-    Full HTTPS URL of the MCP endpoint, e.g. https://LORENZO.house.local:8000/mcp
+    Full HTTPS URL of the MCP endpoint, e.g. https://legacymcp-server.example.com:8000/mcp
 
 .PARAMETER ClaudeConfigPath
     Path to claude_desktop_config.json.
     Default: %APPDATA%\Claude\claude_desktop_config.json
 
 .EXAMPLE
-    .\Setup-LegacyMCPClient.ps1 -ApiKey "..." -CaCertPath "C:\certs\server.crt" -ServerUrl "https://LORENZO.house.local:8000/mcp"
+    .\Setup-LegacyMCPClient.ps1 -ApiKey "..." -CaCertPath "C:\certs\server.crt" -ServerUrl "https://legacymcp-server.example.com:8000/mcp"
 
 .EXAMPLE
-    .\Setup-LegacyMCPClient.ps1 -CaCertPath "C:\certs\server.crt" -ServerUrl "https://LORENZO.house.local:8000/mcp"
+    .\Setup-LegacyMCPClient.ps1 -CaCertPath "C:\certs\server.crt" -ServerUrl "https://legacymcp-server.example.com:8000/mcp"
     # prompts for API key interactively
 #>
 
