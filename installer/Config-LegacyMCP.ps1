@@ -385,7 +385,6 @@ function Invoke-Set {
             $wmiSvc = $null
             try {
                 $wmiSvc = Get-CimInstance Win32_Service -Filter "Name='LegacyMCP'" -ErrorAction SilentlyContinue
-                if (-not $wmiSvc) { $wmiSvc = Get-WmiObject Win32_Service -Filter "Name='LegacyMCP'" -ErrorAction SilentlyContinue }
             } catch {}
             if ($wmiSvc -and $wmiSvc.StartName) {
                 $svcAcct   = $wmiSvc.StartName
@@ -624,7 +623,6 @@ function Invoke-Validate {
         # Service account -- query SCM directly (not registry)
         $wmiSvc = $null
         try { $wmiSvc = Get-CimInstance Win32_Service -Filter "Name='LegacyMCP'" } catch {}
-        if (-not $wmiSvc) { $wmiSvc = Get-WmiObject Win32_Service -Filter "Name='LegacyMCP'" }
         if ($wmiSvc) {
             $runningAs   = $wmiSvc.StartName
             $systemAccts = @('LocalSystem', 'NT AUTHORITY\SYSTEM', 'LocalService', 'NetworkService')
