@@ -300,7 +300,7 @@ Write-Host "--- FAMILY 3: Remote DC access ---" -ForegroundColor White
 
 if (Should-Run "T16") {
     try {
-        $result = Invoke-Command -ComputerName $DCHostName -ScriptBlock { $env:COMPUTERNAME } -ErrorAction Stop
+        $result = Invoke-Command -ComputerName $DCHostName -Authentication Kerberos -ScriptBlock { $env:COMPUTERNAME } -ErrorAction Stop
         Write-Result "T16" "WinRM connectivity (Invoke-Command)" "PASS" "Connected to $result"
     } catch {
         Write-Result "T16" "WinRM connectivity (Invoke-Command)" "FAIL" $_.Exception.Message
@@ -309,7 +309,7 @@ if (Should-Run "T16") {
 
 if (Should-Run "T17") {
     try {
-        $features = Invoke-Command -ComputerName $DCHostName -ScriptBlock {
+        $features = Invoke-Command -ComputerName $DCHostName -Authentication Kerberos -ScriptBlock {
             Import-Module ServerManager -ErrorAction SilentlyContinue
             Get-WindowsFeature | Where-Object { $_.InstallState -eq 'Installed' -and $_.FeatureType -eq 'Role' }
         } -ErrorAction Stop
@@ -344,7 +344,7 @@ if (Should-Run "T18") {
 
 if (Should-Run "T19") {
     try {
-        $sw = Invoke-Command -ComputerName $DCHostName -ScriptBlock {
+        $sw = Invoke-Command -ComputerName $DCHostName -Authentication Kerberos -ScriptBlock {
             Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' `
                 -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName }
         } -ErrorAction Stop
@@ -407,7 +407,7 @@ if (Should-Run "T21") {
             } else {
                 # Step 2b: confirm NtFrs via registry Invoke-Command
                 # (Remote Management Users already granted)
-                $ntfrs = Invoke-Command -ComputerName $DCHostName -ScriptBlock {
+                $ntfrs = Invoke-Command -ComputerName $DCHostName -Authentication Kerberos -ScriptBlock {
                     $svc = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\NtFrs" `
                         -ErrorAction SilentlyContinue
                     [PSCustomObject]@{
@@ -432,7 +432,7 @@ if (Should-Run "T21") {
 
 if (Should-Run "T22") {
     try {
-        $ntpServer = Invoke-Command -ComputerName $DCHostName -ScriptBlock {
+        $ntpServer = Invoke-Command -ComputerName $DCHostName -Authentication Kerberos -ScriptBlock {
             (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters" `
                 -ErrorAction SilentlyContinue).NtpServer
         } -ErrorAction Stop
