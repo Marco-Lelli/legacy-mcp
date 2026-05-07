@@ -1,6 +1,6 @@
 """Unit tests for get_domain_controllers, get_eventlog_config,
 get_ntp_config, get_fsmo_roles, get_dc_features, get_dc_services,
-and get_dc_software MCP tools."""
+get_dc_software, get_dc_file_locations, and get_dc_network_config MCP tools."""
 
 from __future__ import annotations
 
@@ -215,6 +215,23 @@ class TestGetDcFeatures:
         assert result["total"] == 1
         assert result["items"][0]["DC"] == "dc01.contoso.local"
 
+    def test_dc_name_case_insensitive(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_features(dc_name="DC01.CONTOSO.LOCAL")
+        assert result["total"] == 1
+        assert result["items"][0]["DC"] == "dc01.contoso.local"
+
+    def test_dc_name_pagination_offset_beyond(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_features(dc_name="dc01.contoso.local", offset=1, limit=50)
+        assert result["total"] == 1
+        assert result["items"] == []
+        assert result["has_more"] is False
+
+    def test_dc_name_pagination_offset_zero(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_features(dc_name="dc01.contoso.local", offset=0, limit=1)
+        assert result["total"] == 1
+        assert len(result["items"]) == 1
+        assert result["has_more"] is False
+
     def test_unreachable_handled(self, dc_inventory_tools: _MockMCP) -> None:
         result = dc_inventory_tools.get_dc_features(dc_name="dc02.contoso.local")
         assert result["total"] == 1
@@ -258,6 +275,23 @@ class TestGetDcServices:
         result = dc_inventory_tools.get_dc_services(dc_name="dc01.contoso.local")
         assert result["total"] == 1
         assert result["items"][0]["DC"] == "dc01.contoso.local"
+
+    def test_dc_name_case_insensitive(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_services(dc_name="DC01.CONTOSO.LOCAL")
+        assert result["total"] == 1
+        assert result["items"][0]["DC"] == "dc01.contoso.local"
+
+    def test_dc_name_pagination_offset_beyond(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_services(dc_name="dc01.contoso.local", offset=1, limit=50)
+        assert result["total"] == 1
+        assert result["items"] == []
+        assert result["has_more"] is False
+
+    def test_dc_name_pagination_offset_zero(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_services(dc_name="dc01.contoso.local", offset=0, limit=1)
+        assert result["total"] == 1
+        assert len(result["items"]) == 1
+        assert result["has_more"] is False
 
     def test_unreachable_handled(self, dc_inventory_tools: _MockMCP) -> None:
         result = dc_inventory_tools.get_dc_services(dc_name="dc02.contoso.local")
@@ -303,6 +337,23 @@ class TestGetDcSoftware:
         assert result["total"] == 1
         assert result["items"][0]["DC"] == "dc01.contoso.local"
 
+    def test_dc_name_case_insensitive(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_software(dc_name="DC01.CONTOSO.LOCAL")
+        assert result["total"] == 1
+        assert result["items"][0]["DC"] == "dc01.contoso.local"
+
+    def test_dc_name_pagination_offset_beyond(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_software(dc_name="dc01.contoso.local", offset=1, limit=50)
+        assert result["total"] == 1
+        assert result["items"] == []
+        assert result["has_more"] is False
+
+    def test_dc_name_pagination_offset_zero(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_software(dc_name="dc01.contoso.local", offset=0, limit=1)
+        assert result["total"] == 1
+        assert len(result["items"]) == 1
+        assert result["has_more"] is False
+
     def test_unreachable_handled(self, dc_inventory_tools: _MockMCP) -> None:
         result = dc_inventory_tools.get_dc_software(dc_name="dc02.contoso.local")
         assert result["total"] == 1
@@ -312,3 +363,113 @@ class TestGetDcSoftware:
     def test_no_note_when_data_present(self, dc_inventory_tools: _MockMCP) -> None:
         result = dc_inventory_tools.get_dc_software()
         assert "_note" not in result
+
+
+# ---------------------------------------------------------------------------
+# get_dc_file_locations
+# ---------------------------------------------------------------------------
+
+class TestGetDcFileLocations:
+
+    def test_returns_dict_contract(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_file_locations()
+        assert {"items", "total", "offset", "limit", "has_more"} <= set(result.keys())
+
+    def test_total_matches_fixture(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_file_locations()
+        assert result["total"] == 2
+
+    def test_items_have_expected_keys(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_file_locations()
+        for item in result["items"]:
+            assert "DC" in item
+            assert "Status" in item
+
+    def test_dc_name_filter(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_file_locations(dc_name="dc01.contoso.local")
+        assert result["total"] == 1
+        assert result["items"][0]["DC"] == "dc01.contoso.local"
+        assert result["items"][0]["NTDSPath"] == "C:\\Windows\\NTDS"
+
+    def test_dc_name_case_insensitive(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_file_locations(dc_name="DC01.CONTOSO.LOCAL")
+        assert result["total"] == 1
+        assert result["items"][0]["DC"] == "dc01.contoso.local"
+
+    def test_dc_name_pagination_offset_beyond(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_file_locations(dc_name="dc01.contoso.local", offset=1, limit=50)
+        assert result["total"] == 1
+        assert result["items"] == []
+        assert result["has_more"] is False
+
+    def test_dc_name_pagination_offset_zero(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_file_locations(dc_name="dc01.contoso.local", offset=0, limit=1)
+        assert result["total"] == 1
+        assert len(result["items"]) == 1
+        assert result["has_more"] is False
+
+    def test_unreachable_handled(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_file_locations(dc_name="dc02.contoso.local")
+        assert result["total"] == 1
+        assert result["items"][0]["Status"] == "Unreachable"
+
+    def test_contoso_fixture_has_data(self, tools: _MockMCP) -> None:
+        result = tools.get_dc_file_locations()
+        assert result["total"] == 1
+        assert result["items"][0]["DC"] == "dc01.contoso.local"
+
+
+# ---------------------------------------------------------------------------
+# get_dc_network_config
+# ---------------------------------------------------------------------------
+
+class TestGetDcNetworkConfig:
+
+    def test_returns_dict_contract(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_network_config()
+        assert {"items", "total", "offset", "limit", "has_more"} <= set(result.keys())
+
+    def test_total_matches_fixture(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_network_config()
+        assert result["total"] == 2
+
+    def test_items_have_expected_keys(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_network_config()
+        for item in result["items"]:
+            assert "DC" in item
+            assert "Status" in item
+            assert "Adapters" in item
+
+    def test_dc_name_filter(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_network_config(dc_name="dc01.contoso.local")
+        assert result["total"] == 1
+        assert result["items"][0]["DC"] == "dc01.contoso.local"
+        assert isinstance(result["items"][0]["Adapters"], list)
+
+    def test_dc_name_case_insensitive(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_network_config(dc_name="DC01.CONTOSO.LOCAL")
+        assert result["total"] == 1
+        assert result["items"][0]["DC"] == "dc01.contoso.local"
+
+    def test_dc_name_pagination_offset_beyond(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_network_config(dc_name="dc01.contoso.local", offset=1, limit=50)
+        assert result["total"] == 1
+        assert result["items"] == []
+        assert result["has_more"] is False
+
+    def test_dc_name_pagination_offset_zero(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_network_config(dc_name="dc01.contoso.local", offset=0, limit=1)
+        assert result["total"] == 1
+        assert len(result["items"]) == 1
+        assert result["has_more"] is False
+
+    def test_unreachable_handled(self, dc_inventory_tools: _MockMCP) -> None:
+        result = dc_inventory_tools.get_dc_network_config(dc_name="dc02.contoso.local")
+        assert result["total"] == 1
+        assert result["items"][0]["Status"] == "Unreachable"
+        assert result["items"][0]["Adapters"] == []
+
+    def test_contoso_fixture_has_data(self, tools: _MockMCP) -> None:
+        result = tools.get_dc_network_config()
+        assert result["total"] == 1
+        assert result["items"][0]["DC"] == "dc01.contoso.local"

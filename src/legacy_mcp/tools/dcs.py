@@ -84,12 +84,22 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         Default limit is 50 (one entry per DC with nested role list).
         """
         conn = workspace.connector(forest_name)
+        if dc_name:
+            all_items = conn.query("dc_windows_features")
+            items = [i for i in all_items if i.get("DC", "").lower() == dc_name.lower()]
+            total = len(items)
+            sliced = items[offset: offset + limit]
+            has_more = (offset + limit) < total
+            result: dict[str, Any] = {
+                "items": sliced, "total": total,
+                "offset": offset, "limit": limit, "has_more": has_more,
+            }
+            if len(all_items) == 0:
+                result["_note"] = "data not available \u2014 collector < v1.6"
+            return result
         result = conn.query_page("dc_windows_features", offset=offset, limit=limit)
         if result["total"] == 0:
             result["_note"] = "data not available \u2014 collector < v1.6"
-        if dc_name:
-            result["items"] = [i for i in result["items"] if i.get("DC") == dc_name]
-            result["total"] = len(result["items"])
         return result
 
     @mcp.tool()
@@ -108,12 +118,22 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         Default limit is 50.
         """
         conn = workspace.connector(forest_name)
+        if dc_name:
+            all_items = conn.query("dc_services")
+            items = [i for i in all_items if i.get("DC", "").lower() == dc_name.lower()]
+            total = len(items)
+            sliced = items[offset: offset + limit]
+            has_more = (offset + limit) < total
+            result = {
+                "items": sliced, "total": total,
+                "offset": offset, "limit": limit, "has_more": has_more,
+            }
+            if len(all_items) == 0:
+                result["_note"] = "data not available \u2014 collector < v1.6"
+            return result
         result = conn.query_page("dc_services", offset=offset, limit=limit)
         if result["total"] == 0:
             result["_note"] = "data not available \u2014 collector < v1.6"
-        if dc_name:
-            result["items"] = [i for i in result["items"] if i.get("DC") == dc_name]
-            result["total"] = len(result["items"])
         return result
 
     @mcp.tool()
@@ -133,12 +153,22 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         Default limit is 50.
         """
         conn = workspace.connector(forest_name)
+        if dc_name:
+            all_items = conn.query("dc_installed_software")
+            items = [i for i in all_items if i.get("DC", "").lower() == dc_name.lower()]
+            total = len(items)
+            sliced = items[offset: offset + limit]
+            has_more = (offset + limit) < total
+            result = {
+                "items": sliced, "total": total,
+                "offset": offset, "limit": limit, "has_more": has_more,
+            }
+            if len(all_items) == 0:
+                result["_note"] = "data not available \u2014 collector < v1.6"
+            return result
         result = conn.query_page("dc_installed_software", offset=offset, limit=limit)
         if result["total"] == 0:
             result["_note"] = "data not available \u2014 collector < v1.6"
-        if dc_name:
-            result["items"] = [i for i in result["items"] if i.get("DC") == dc_name]
-            result["total"] = len(result["items"])
         return result
 
     @mcp.tool()
@@ -157,11 +187,17 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         Returns a paginated result: {items, total, offset, limit, has_more}.
         """
         conn = workspace.connector(forest_name)
-        result = conn.query_page("dc_file_locations", offset=offset, limit=limit)
         if dc_name:
-            result["items"] = [i for i in result["items"] if i.get("DC") == dc_name]
-            result["total"] = len(result["items"])
-        return result
+            all_items = conn.query("dc_file_locations")
+            items = [i for i in all_items if i.get("DC", "").lower() == dc_name.lower()]
+            total = len(items)
+            sliced = items[offset: offset + limit]
+            has_more = (offset + limit) < total
+            return {
+                "items": sliced, "total": total,
+                "offset": offset, "limit": limit, "has_more": has_more,
+            }
+        return conn.query_page("dc_file_locations", offset=offset, limit=limit)
 
     @mcp.tool()
     def get_dc_network_config(
@@ -179,8 +215,14 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         Returns a paginated result: {items, total, offset, limit, has_more}.
         """
         conn = workspace.connector(forest_name)
-        result = conn.query_page("dc_network_config", offset=offset, limit=limit)
         if dc_name:
-            result["items"] = [i for i in result["items"] if i.get("DC") == dc_name]
-            result["total"] = len(result["items"])
-        return result
+            all_items = conn.query("dc_network_config")
+            items = [i for i in all_items if i.get("DC", "").lower() == dc_name.lower()]
+            total = len(items)
+            sliced = items[offset: offset + limit]
+            has_more = (offset + limit) < total
+            return {
+                "items": sliced, "total": total,
+                "offset": offset, "limit": limit, "has_more": has_more,
+            }
+        return conn.query_page("dc_network_config", offset=offset, limit=limit)

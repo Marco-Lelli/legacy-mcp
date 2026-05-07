@@ -49,5 +49,41 @@
       "Status": "Unreachable",
       "Software": []
     }
+  ],
+  "dc_file_locations": [
+    {
+      "DC": "dc01.contoso.local",
+      "Status": "OK",
+      "NTDSPath": "C:\\Windows\\NTDS",
+      "NTDSLogPath": "C:\\Windows\\NTDS",
+      "SYSVOLPath": "C:\\Windows\\SYSVOL"
+    },
+    {
+      "DC": "dc02.contoso.local",
+      "Status": "Unreachable",
+      "NTDSPath": null,
+      "NTDSLogPath": null,
+      "SYSVOLPath": null
+    }
+  ],
+  "dc_network_config": [
+    {
+      "DC": "dc01.contoso.local",
+      "Status": "OK",
+      "Adapters": [
+        {
+          "InterfaceAlias": "Ethernet",
+          "IPAddresses": ["10.0.0.1"],
+          "DNSServers": ["127.0.0.1", "10.0.0.2"],
+          "DefaultGateway": "10.0.0.254",
+          "DHCPEnabled": false
+        }
+      ]
+    },
+    {
+      "DC": "dc02.contoso.local",
+      "Status": "Unreachable",
+      "Adapters": []
+    }
   ]
 }
