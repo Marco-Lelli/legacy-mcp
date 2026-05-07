@@ -29,6 +29,13 @@ def _get_primary_group_id(u: dict) -> int:
         return 513
 
 
+def _is_true(val: Any) -> bool:
+    """Normalize boolean fields from both Offline (string) and Live (native bool) mode."""
+    if isinstance(val, bool):
+        return val
+    return str(val) == "True"
+
+
 def register(mcp: "FastMCP", workspace: "Workspace") -> None:
 
     @mcp.tool()
@@ -40,7 +47,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         users = conn.query("users")
         now = datetime.now(tz=timezone.utc)
         total = len(users)
-        enabled_count = sum(1 for u in users if u.get("Enabled") == "True")
+        enabled_count = sum(1 for u in users if _is_true(u.get("Enabled")))
 
         stale = 0
         for u in users:
@@ -60,22 +67,22 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         no_logon_count = sum(1 for u in users if not u.get("LastLogonDate"))
         no_logon_active = sum(
             1 for u in users
-            if not u.get("LastLogonDate") and u.get("Enabled") == "True"
+            if not u.get("LastLogonDate") and _is_true(u.get("Enabled"))
         )
         pgid_count = sum(1 for u in users if _get_primary_group_id(u) != 513)
-        ccp_count = sum(1 for u in users if u.get("CannotChangePassword") == "True")
+        ccp_count = sum(1 for u in users if _is_true(u.get("CannotChangePassword")))
 
         return {
             "total":                  total,
             "enabled":                enabled_count,
-            "disabled":               sum(1 for u in users if u.get("Enabled") == "False"),
-            "password_never_expires": sum(1 for u in users if u.get("PasswordNeverExpires") == "True"),
+            "disabled":               sum(1 for u in users if not _is_true(u.get("Enabled"))),
+            "password_never_expires": sum(1 for u in users if _is_true(u.get("PasswordNeverExpires"))),
             "password_not_required":  sum(1 for u in users if u.get("PasswordNotRequired") == "True"),
-            "locked_out":             sum(1 for u in users if u.get("LockedOut") == "True"),
+            "locked_out":             sum(1 for u in users if _is_true(u.get("LockedOut"))),
             "delegation_configured":  sum(
                 1 for u in users
-                if u.get("TrustedForDelegation") == "True"
-                or u.get("TrustedToAuthForDelegation") == "True"
+                if _is_true(u.get("TrustedForDelegation"))
+                or _is_true(u.get("TrustedToAuthForDelegation"))
                 or u.get("AllowedToDelegateTo")
             ),
             "stale_90d":              stale,
@@ -186,8 +193,10 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         conn = workspace.connector(forest_name)
         users = conn.query("users")
 
-        if enabled is not None:
-            users = [u for u in users if u.get("Enabled") == str(enabled)]
+        if enabled is True:
+            users = [u for u in users if _is_true(u.get("Enabled"))]
+        elif enabled is False:
+            users = [u for u in users if not _is_true(u.get("Enabled"))]
 
         if admin_count is True:
             users = [u for u in users if u.get("AdminCount") == "1"]
@@ -215,20 +224,20 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         if delegation_only:
             users = [
                 u for u in users
-                if u.get("TrustedForDelegation") == "True"
-                or u.get("TrustedToAuthForDelegation") == "True"
+                if _is_true(u.get("TrustedForDelegation"))
+                or _is_true(u.get("TrustedToAuthForDelegation"))
                 or u.get("AllowedToDelegateTo")
             ]
 
         if password_never_expires is True:
-            users = [u for u in users if u.get("PasswordNeverExpires") == "True"]
+            users = [u for u in users if _is_true(u.get("PasswordNeverExpires"))]
         elif password_never_expires is False:
-            users = [u for u in users if u.get("PasswordNeverExpires") != "True"]
+            users = [u for u in users if not _is_true(u.get("PasswordNeverExpires"))]
 
         if locked_out is True:
-            users = [u for u in users if u.get("LockedOut") == "True"]
+            users = [u for u in users if _is_true(u.get("LockedOut"))]
         elif locked_out is False:
-            users = [u for u in users if u.get("LockedOut") != "True"]
+            users = [u for u in users if not _is_true(u.get("LockedOut"))]
 
         if has_sid_history is True:
             users = [u for u in users if u.get("SIDHistory")]
@@ -242,7 +251,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             users = [u for u in users if _get_primary_group_id(u) != 513]
 
         if cannot_change_password:
-            users = [u for u in users if u.get("CannotChangePassword") == "True"]
+            users = [u for u in users if _is_true(u.get("CannotChangePassword"))]
 
         total = len(users)
         page = users[offset : offset + limit]

@@ -115,7 +115,7 @@ _SCRIPTS: dict[str, str] = {
         "Get-ADUser -Filter * -Properties Enabled,PasswordNeverExpires,LockedOut,"
         "LastLogonDate,PasswordLastSet,Description,mail,adminCount,SIDHistory,"
         "TrustedForDelegation,TrustedToAuthForDelegation,'msDS-AllowedToDelegateTo',"
-        "userAccountControl,homeDirectory,homeDrive,primaryGroupID |\n"
+        "userAccountControl,homeDirectory,homeDrive,primaryGroupID,CannotChangePassword |\n"
         "  Select-Object -First 5000 |\n"
         "  ForEach-Object {\n"
         "    [PSCustomObject]@{\n"
@@ -139,6 +139,7 @@ _SCRIPTS: dict[str, str] = {
         "      HomeDrive                  = $_.homeDrive\n"
         "      HomeDirectory              = $_.homeDirectory\n"
         "      PrimaryGroupID             = $_.primaryGroupID\n"
+        "      CannotChangePassword       = if ($_.CannotChangePassword -ne $null) { [bool]$_.CannotChangePassword } else { $false }\n"
         "    }\n"
         "  } | ConvertTo-Json -Depth 3"
     ),

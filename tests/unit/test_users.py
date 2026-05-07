@@ -9,7 +9,7 @@ import pytest
 
 from legacy_mcp.workspace.workspace import ForestConfig, ForestRelation, Workspace, WorkspaceMode
 from legacy_mcp.tools import users as users_module
-from legacy_mcp.tools.users import _get_primary_group_id
+from legacy_mcp.tools.users import _get_primary_group_id, _is_true
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -522,6 +522,35 @@ class TestGetPrimaryGroupId:
 
 
 # ---------------------------------------------------------------------------
+# _is_true -- boolean normalization helper
+# ---------------------------------------------------------------------------
+
+class TestIsTrue:
+
+    def test_native_true(self) -> None:
+        assert _is_true(True) is True
+
+    def test_native_false(self) -> None:
+        assert _is_true(False) is False
+
+    def test_string_true(self) -> None:
+        assert _is_true("True") is True
+
+    def test_string_false(self) -> None:
+        assert _is_true("False") is False
+
+    def test_none_is_false(self) -> None:
+        assert _is_true(None) is False
+
+    def test_zero_is_false(self) -> None:
+        assert _is_true(0) is False
+
+    def test_one_is_false(self) -> None:
+        # 1 is not the string "True" and not a bool in this context
+        assert _is_true(1) is False
+
+
+# ---------------------------------------------------------------------------
 # get_users -- cannot_change_password filter
 # ---------------------------------------------------------------------------
 
@@ -596,3 +625,87 @@ class TestGetUserSummaryCannotChangePassword:
         users_module.register(empty_mcp, ws)
         result = empty_mcp.get_user_summary()
         assert result["cannot_change_password"]["pct_of_total"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Live Mode -- native Python bool field values (no SQLite serialization)
+# ---------------------------------------------------------------------------
+
+class TestGetUsersLiveModeBoolNormalization:
+    """Verify filters work when boolean fields are native Python bools,
+    as returned by the Live Mode connector (no SQLite string serialization)."""
+
+    _ALICE = {
+        "SamAccountName": "alice", "Enabled": True, "PasswordNeverExpires": False,
+        "LockedOut": False, "TrustedForDelegation": False,
+        "TrustedToAuthForDelegation": False, "CannotChangePassword": False,
+        "AllowedToDelegateTo": None, "LastLogonDate": "2026-03-01T00:00:00Z",
+        "SIDHistory": [], "PrimaryGroupID": 513, "AdminCount": None,
+    }
+    _BOB = {
+        "SamAccountName": "bob", "Enabled": False, "PasswordNeverExpires": True,
+        "LockedOut": True, "TrustedForDelegation": True,
+        "TrustedToAuthForDelegation": False, "CannotChangePassword": True,
+        "AllowedToDelegateTo": None, "LastLogonDate": "2020-01-01T00:00:00Z",
+        "SIDHistory": [], "PrimaryGroupID": 513, "AdminCount": None,
+    }
+
+    @pytest.fixture
+    def live_tools(self) -> _MockMCP:
+        from unittest.mock import MagicMock
+        connector = MagicMock()
+        connector.query.return_value = [self._ALICE, self._BOB]
+        workspace = MagicMock()
+        workspace.connector.return_value = connector
+        mcp = _MockMCP()
+        users_module.register(mcp, workspace)
+        return mcp
+
+    def test_enabled_true_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_users(enabled=True)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "alice"
+
+    def test_enabled_false_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_users(enabled=False)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "bob"
+
+    def test_locked_out_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_users(locked_out=True)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "bob"
+
+    def test_locked_out_false_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_users(locked_out=False)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "alice"
+
+    def test_password_never_expires_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_users(password_never_expires=True)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "bob"
+
+    def test_password_never_expires_false_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_users(password_never_expires=False)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "alice"
+
+    def test_delegation_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_users(delegation_only=True)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "bob"
+
+    def test_cannot_change_password_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_users(cannot_change_password=True)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "bob"
+
+    def test_summary_counts_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_user_summary()
+        assert result["enabled"] == 1
+        assert result["disabled"] == 1
+        assert result["locked_out"] == 1
+        assert result["password_never_expires"] == 1
+        assert result["cannot_change_password"]["count"] == 1
+        assert result["delegation_configured"] == 1
