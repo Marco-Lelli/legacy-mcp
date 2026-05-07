@@ -258,7 +258,7 @@ _SCRIPTS: dict[str, str] = {
     ),
     # ------------------------------------------------------------------
     # dns — adds ReplicationScope, IsReverseLookupZone, IsAutoCreated, DC.
-    # Runs locally on LORENZO via run_ps_local() — single hop to PDC.
+    # Runs locally on the MCP server host via run_ps_local() — single hop to PDC.
     # Mirrors DNS.psm1 Get-DNSZonesData (Principle 2).
     # Requires DnsServer PS module (RSAT). Wrapped in try/catch.
     # ------------------------------------------------------------------
@@ -531,7 +531,7 @@ _SCRIPTS: dict[str, str] = {
     ),
     # ------------------------------------------------------------------
     # dns_forwarders — forwarder IPs and UseRootHint per DC.
-    # Runs locally on LORENZO via run_ps_local() — iterates all DCs,
+    # Runs locally on the MCP server host via run_ps_local() — iterates all DCs,
     # single hop per DC. Mirrors DNS.psm1 Get-DNSForwardersData (Principle 2).
     # Requires DnsServer PS module (RSAT). Degrades per DC.
     # ------------------------------------------------------------------
@@ -705,7 +705,7 @@ _SCRIPTS: dict[str, str] = {
     # Runs on each DC via collect_dc_inventory(). Get-CimInstance local,
     # no -ComputerName — script already executes on the DC via Invoke-Command.
     # -ErrorAction Stop propagates access-denied as a catchable exception.
-    # Certified on WS2012R2 with POLP account (field test PUPP).
+    # Certified on WS2012R2 with POLP account (field test the test DC).
     # ------------------------------------------------------------------
     "dc_services": (
         "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
@@ -790,7 +790,7 @@ _SCRIPTS: dict[str, str] = {
     # Runs on each DC via collect_dc_inventory(). Get-CimInstance local,
     # no -ComputerName — script already executes on the DC via Invoke-Command.
     # Accessible with Remote Management Users (N-POLP-12).
-    # Certified on WS2012R2 with POLP account (field test PUPP).
+    # Certified on WS2012R2 with POLP account (field test the test DC).
     # ------------------------------------------------------------------
     "dc_network_config": (
         "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
@@ -888,7 +888,7 @@ _DC_INVENTORY_SECTIONS: frozenset[str] = frozenset({
     "dc_network_config",
 })
 
-# Sections executed locally on LORENZO via run_ps_local() — single-hop to DCs.
+# Sections executed locally on the MCP server host via run_ps_local() — single-hop to DCs.
 # These use -ComputerName in their scripts and must not run inside Invoke-Command.
 _LOCAL_SECTIONS: frozenset[str] = frozenset({"dns", "dns_forwarders"})
 
@@ -963,7 +963,7 @@ class LiveConnector:
         return self._run_ps_on(self.forest.dc, script)
 
     def run_ps_local(self, script: str) -> Any:
-        """Run a PowerShell script directly on LORENZO without Invoke-Command.
+        """Run a PowerShell script directly on the MCP server host without Invoke-Command.
 
         Used for sections that need single-hop -ComputerName access to DCs
         (dns, dns_forwarders). Kerberos from the calling process is used
