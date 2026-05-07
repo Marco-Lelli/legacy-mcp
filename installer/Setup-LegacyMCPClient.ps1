@@ -174,7 +174,7 @@ Write-OK "mcp-remote-live.ps1 copied to: $ps1Path"
 $batPath    = Join-Path $clientDir 'mcp-remote-live.bat'
 $batContent  = "@echo off`r`n"
 $batContent += "set NODE_EXTRA_CA_CERTS=$CaCertPath`r`n"
-$batContent += "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass"
+$batContent += "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned"
 $batContent += " -File `"$ps1Path`""
 $batContent += " -ServerUrl `"$ServerUrl`""
 $batContent += " -CaCertPath `"$CaCertPath`""

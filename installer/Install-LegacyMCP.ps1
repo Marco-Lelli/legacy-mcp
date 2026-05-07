@@ -667,7 +667,7 @@ Write-Step 'Phase 4 -- EventLog registration'
 
 $RegisterEventLog = Join-Path $InstallPath 'scripts\Register-EventLog.ps1'
 if (Test-Path $RegisterEventLog) {
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $RegisterEventLog
+    & powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File $RegisterEventLog
 } else {
     Write-Warn "Register-EventLog.ps1 not found at: $RegisterEventLog -- skipping."
 }
@@ -893,7 +893,7 @@ Write-Step 'Phase 7 -- Self-check (Config-LegacyMCP.ps1 -Validate)'
 
 $ConfigScript = Join-Path $ScriptDir 'Config-LegacyMCP.ps1'
 if (Test-Path $ConfigScript) {
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ConfigScript -Validate
+    & powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File $ConfigScript -Validate
     if ($LASTEXITCODE -ne 0) {
         Write-Host ''
         Write-Host 'Self-check FAILED. Review the [FAIL] items above before using LegacyMCP.' -ForegroundColor Red
