@@ -106,7 +106,6 @@ The export runs in the background. This tool returns immediately with a `job_id`
 
 - "Take a snapshot of contoso.local."
 - "Export the current AD state to a file I can load offline."
-- "Create a DPAPI-encrypted snapshot of contoso.local to C:\Exports\snap.json.dpapi."
 
 ---
 
@@ -782,7 +781,7 @@ A list of group membership records with nested expansion.
 
 ### get_computer_summary
 
-Return a summary of computer accounts: total count, enabled vs disabled, OS breakdown, stale machines (no logon in 90+ days), CNOs (Cluster Name Objects), VCOs (Virtual Computer Objects), and computers with delegation configured.
+Return a summary of computer accounts: total count, enabled vs disabled, OS breakdown, stale machines (no logon in 90+ days), CNOs (Cluster Name Objects), VCOs (Virtual Computer Objects), and computers with unconstrained delegation configured (TrustedForDelegation).
 
 **Parameters**
 

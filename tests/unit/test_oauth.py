@@ -12,7 +12,13 @@ from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 
-from legacy_mcp.oauth import build_oauth_app
+from legacy_mcp.oauth import (
+    build_oauth_app,
+    _make_derived_token,
+    _verify_derived_token,
+    _pending_codes,
+    _NONCE_STORE,
+)
 
 _API_KEY = "test-static-key-abc"
 _BASE_URL = "https://legacymcp.example.com:8000"
@@ -108,11 +114,16 @@ async def test_discovery_host_header_injection_blocked():
 
 @pytest.mark.anyio
 async def test_token_correct_secret_returns_200():
-    """Feature H: POST /token with matching client_secret returns 200."""
+    """POST /token with a valid derived token from /register returns 200."""
     async with _async_client() as client:
+        reg_resp = await client.post(
+            "/register",
+            json={"redirect_uris": ["http://localhost:12345/callback"]},
+        )
+        derived_token = reg_resp.json()["client_secret"]
         response = await client.post(
             "/token",
-            content=f"grant_type=client_credentials&client_secret={_API_KEY}",
+            content=f"grant_type=client_credentials&client_secret={derived_token}",
             headers={"content-type": "application/x-www-form-urlencoded"},
         )
     assert response.status_code == 200
@@ -120,11 +131,16 @@ async def test_token_correct_secret_returns_200():
 
 @pytest.mark.anyio
 async def test_token_correct_secret_returns_access_token():
-    """Feature H: access_token in response equals the API key."""
+    """access_token in response equals the API key when using a valid derived token."""
     async with _async_client() as client:
+        reg_resp = await client.post(
+            "/register",
+            json={"redirect_uris": ["http://localhost:12345/callback"]},
+        )
+        derived_token = reg_resp.json()["client_secret"]
         response = await client.post(
             "/token",
-            content=f"grant_type=client_credentials&client_secret={_API_KEY}",
+            content=f"grant_type=client_credentials&client_secret={derived_token}",
             headers={"content-type": "application/x-www-form-urlencoded"},
         )
     data = response.json()
@@ -215,15 +231,16 @@ async def test_register_returns_201():
 
 
 @pytest.mark.anyio
-async def test_register_returns_client_secret_equal_to_api_key():
-    """client_secret in registration response equals the static API key."""
+async def test_register_returns_derived_client_secret():
+    """client_secret in registration response is a derived token, not the raw API key."""
     async with _async_client() as client:
         response = await client.post(
             "/register",
             json={"redirect_uris": ["http://localhost:12345/callback"]},
         )
     data = response.json()
-    assert data["client_secret"] == _API_KEY
+    assert data["client_secret"] != _API_KEY
+    assert len(data["client_secret"]) > 0
     assert data["client_id"].startswith("legacymcp-")
     assert "authorization_code" in data["grant_types"]
 
@@ -381,3 +398,68 @@ async def test_discovery_contains_authorization_code_grant():
         response = await client.get("/.well-known/oauth-authorization-server")
     data = response.json()
     assert "authorization_code" in data["grant_types_supported"]
+
+
+# ---------------------------------------------------------------------------
+# Derived token — pure function tests (C-1 / C-2)
+# ---------------------------------------------------------------------------
+
+
+def test_derived_token_roundtrip():
+    """_make_derived_token + _verify_derived_token succeeds with correct api_key."""
+    token = _make_derived_token(_API_KEY)
+    assert _verify_derived_token(token, _API_KEY)
+
+
+def test_derived_token_wrong_key():
+    """Verification fails when a different api_key is supplied."""
+    token = _make_derived_token(_API_KEY)
+    assert not _verify_derived_token(token, "wrong-key")
+
+
+def test_derived_token_expired():
+    """Verification fails when the nonce has been force-expired in _NONCE_STORE."""
+    token = _make_derived_token(_API_KEY)
+    parts = token.split("|")
+    nonce = parts[1]
+    _NONCE_STORE[nonce] = 0.0  # set expiry to Unix epoch — already expired
+    assert not _verify_derived_token(token, _API_KEY)
+
+
+def test_derived_token_single_use():
+    """Second verification of the same token fails — nonce consumed on first use."""
+    token = _make_derived_token(_API_KEY)
+    assert _verify_derived_token(token, _API_KEY)
+    assert not _verify_derived_token(token, _API_KEY)
+
+
+def test_derived_token_tampered():
+    """Verification fails when the payload has been modified."""
+    token = _make_derived_token(_API_KEY)
+    expiry_str, nonce, sig = token.split("|", 2)
+    tampered = f"{int(expiry_str) + 9999}|{nonce}|{sig}"
+    assert not _verify_derived_token(tampered, _API_KEY)
+
+
+@pytest.mark.anyio
+async def test_pending_codes_cap():
+    """After 100 pending codes exist, adding a new one evicts 10 oldest entries."""
+    _pending_codes.clear()
+    for i in range(100):
+        _pending_codes[f"fake-code-{i:03d}"] = "challenge"
+    assert len(_pending_codes) == 100
+
+    async with _async_client() as client:
+        await client.get(
+            "/authorize",
+            params={
+                "redirect_uri": "http://localhost:9999/cb",
+                "state": "s",
+                "code_challenge": "dummychallenge",
+            },
+            follow_redirects=False,
+        )
+
+    # 100 - 10 evicted + 1 new = 91
+    assert len(_pending_codes) == 91
+    _pending_codes.clear()

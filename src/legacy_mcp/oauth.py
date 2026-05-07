@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import secrets
+import time
 import uuid
 
 from starlette.applications import Starlette
@@ -28,6 +30,48 @@ from starlette.types import ASGIApp
 
 # In-memory store: auth_code → code_challenge (PKCE S256)
 _pending_codes: dict[str, str] = {}
+
+_TOKEN_TTL_SECONDS = 3600
+
+# Nonce store for derived tokens: {nonce: expiry_timestamp}
+_NONCE_STORE: dict[str, float] = {}
+
+
+def _make_derived_token(api_key: str) -> str:
+    """Generate a single-use derived token. Never exposes api_key."""
+    nonce = secrets.token_hex(16)
+    expiry = int(time.time()) + _TOKEN_TTL_SECONDS
+    _NONCE_STORE[nonce] = float(expiry)
+    payload = f"{expiry}|{nonce}"
+    sig = hmac.new(api_key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}|{sig}"
+
+
+def _verify_derived_token(token: str, api_key: str) -> bool:
+    """Verify a derived token. Single-use: nonce is deleted after success."""
+    now = time.time()
+    expired = [n for n, exp in _NONCE_STORE.items() if exp < now]
+    for n in expired:
+        del _NONCE_STORE[n]
+
+    try:
+        expiry_str, nonce, sig = token.split("|", 2)
+    except ValueError:
+        return False
+
+    stored_expiry = _NONCE_STORE.get(nonce)
+    if stored_expiry is None or now > stored_expiry:
+        return False
+
+    payload = f"{expiry_str}|{nonce}"
+    expected = hmac.new(
+        api_key.encode(), payload.encode(), hashlib.sha256
+    ).hexdigest()
+    if not secrets.compare_digest(sig, expected):
+        return False
+
+    del _NONCE_STORE[nonce]
+    return True
 
 
 def build_oauth_app(api_key: str, fallback: ASGIApp, base_url: str) -> Starlette:
@@ -56,6 +100,12 @@ def build_oauth_app(api_key: str, fallback: ASGIApp, base_url: str) -> Starlette
         code = secrets.token_urlsafe(32)
         _pending_codes[code] = code_challenge
 
+        # C-1 fix: cap pending codes to prevent unbounded growth
+        if len(_pending_codes) >= 100:
+            oldest = list(_pending_codes.keys())[:10]
+            for k in oldest:
+                del _pending_codes[k]
+
         sep = "&" if "?" in redirect_uri else "?"
         location = f"{redirect_uri}{sep}code={code}&state={state}"
         return RedirectResponse(location, status_code=302)
@@ -69,7 +119,7 @@ def build_oauth_app(api_key: str, fallback: ASGIApp, base_url: str) -> Starlette
         return JSONResponse(
             {
                 "client_id": f"legacymcp-{uuid.uuid4()}",
-                "client_secret": api_key,
+                "client_secret": _make_derived_token(api_key),
                 "redirect_uris": redirect_uris,
                 "grant_types": ["authorization_code", "client_credentials"],
                 "token_endpoint_auth_method": "client_secret_post",
@@ -107,7 +157,7 @@ def build_oauth_app(api_key: str, fallback: ASGIApp, base_url: str) -> Starlette
 
         elif grant_type == "client_credentials":
             client_secret = str(form.get("client_secret", ""))
-            if not secrets.compare_digest(client_secret, api_key):
+            if not _verify_derived_token(client_secret, api_key):
                 return JSONResponse({"error": "invalid_client"}, status_code=401)
             return JSONResponse(
                 {
