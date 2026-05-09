@@ -33,6 +33,7 @@ legacy-mcp/
 ├── src/legacy_mcp/         # MCP server — Python
 │   ├── server.py           # FastMCP entrypoint
 │   ├── config.py           # YAML config loader and validation
+│   ├── config_registry.py  # Windows registry read/write (DPAPI, install config)
 │   ├── auth.py             # ASGI middleware — API key validation (Profile B)
 │   ├── oauth.py            # OAuth 2.0 stub — discovery, PKCE, client_credentials
 │   ├── workspace/          # scope and connector management
@@ -223,7 +224,7 @@ on server restart.
 3. **Sensitive data stays local** — in Offline Mode, AD data never leaves
    the client network. JSON files are classified Confidential/Restricted.
 
-4. **Strong authentication for exposed endpoints** — three deployment profiles
+4. **Strong authentication for exposed endpoints** — four deployment profiles
    with increasing security requirements.
 
 5. **TLS on all non-localhost endpoints** — no plaintext traffic outside

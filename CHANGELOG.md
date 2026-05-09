@@ -78,7 +78,7 @@ All notable changes to this project will be documented in this file.
 
 - `CLAUDE.md` updated: POLP baseline, async snapshot behavior, repo structure,
   resolved known issues removed.
-- New `docs/tools-reference.md`: all 38 MCP tools documented with parameters,
+- New `docs/tools-reference.md`: all 43 MCP tools documented with parameters,
   return shape, and example prompts.
 
 ### Bug fixes
