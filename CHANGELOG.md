@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2026-05-09 "Open Library"
+
+### Security
+- `/register` endpoint no longer exposes the raw API key: replaced with a
+  single-use HMAC-SHA256 derived token (EXPIRY|NONCE|HMAC) with 1-hour TTL
+- `_pending_codes` dictionary now capped at 100 entries to prevent unbounded
+  memory growth under unauthenticated load
+
+### Fixed
+- `dc_name` filter now applied before pagination in all DC inventory tools,
+  fixing broken paging contract when filtering by specific DC
+- Boolean fields (`Enabled`, `PasswordNeverExpires`, `LockedOut`, etc.) now
+  correctly evaluated in Live Mode where PowerShell returns native `bool`
+  instead of serialized strings
+- `CannotChangePassword` field added to Live Mode user collection (P2 alignment
+  with collector and Offline Mode)
+- Cert paths and DPAPI blob passed via environment variables instead of direct
+  PowerShell string interpolation (injection hardening)
+- All `Invoke-Command` calls in `Test-LegacyMCPPermissions.ps1` now explicitly
+  specify `-Authentication Kerberos` (P3)
+- `-ExecutionPolicy Bypass` replaced with `RemoteSigned` in installer scripts
+- Exceptions in `enumerate_dcs`, `collect_dc_inventory`, and snapshot jobs now
+  logged before fallback (P4)
+- Removed real hostnames from source code comments (P13)
+- Italian strings translated to English throughout codebase (P12)
+
+### Collector
+- Bumped to v1.6.4
+- DNS zone collection now iterates all DCs instead of first DC only; warns if
+  no DC has the DNS Server role installed
+- PKI CA filter tightened to `objectClass -eq 'pKIEnrollmentService'`
+- Schema extensions warn when truncated at 500 entries
+- Group member enumeration failures now emit a warning instead of silent skip
+- FSP collection failures now emit a warning instead of silent empty return
+- Fixed non-ASCII characters (em dash, en dash) in module headers and README
+
+### CI/CD
+- Added `publish-pypi` job to `release.yml`: package automatically published
+  to PyPI on every `v*.*.*` tag after successful GitHub Release
+
 ## [0.2.1] - 2026-05-03 "Snap-and-Forget"
 
 ### New features
