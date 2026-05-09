@@ -219,7 +219,7 @@ the type of data it contains.
 
 The LegacyMCP Core layer includes the `ad-core` module, covering the full AD
 inventory as defined by Carl Webster's ADDS_Inventory.ps1 — queryable via natural
-language through 27 MCP tools.
+language through 38 MCP tools.
 
 ### Enterprise modules
 

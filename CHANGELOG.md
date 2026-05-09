@@ -269,7 +269,7 @@ All notable changes to this project will be documented in this file.
 
 ### Tested
 - Profile A: 8 test blocks validated end-to-end on development PC
-- Profile B: 5 test blocks validated end-to-end on LORENZO (house.local, WS2012R2)
+- Profile B: 5 test blocks validated end-to-end on the member server (WS2012R2)
 - 286 pytest tests green
 
 ## [0.1.3] - 2026-03-30 "Collector Speaks"

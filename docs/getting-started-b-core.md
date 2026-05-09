@@ -156,7 +156,7 @@ Get-NetFirewallRule -DisplayName "LegacyMCP MCP Server"
 For a live workspace:
 
 ```powershell
-.\Config-LegacyMCP.ps1 -Action AddWorkspace -ForestName "contoso.local" -Mode live
+.\Manage-Workspaces.ps1 -Add -Name contoso.local -DC dc01.contoso.local
 ```
 
 ### 4. Export the TLS certificate for the client

@@ -188,11 +188,10 @@ See the DATA STORAGE section in `collector/README.txt`.
 5. Update `config/config.yaml` to point to the real JSON:
 
 ```yaml
-mode: offline
+profile: A
 workspace:
   forests:
     - name: contoso.local
-      relation: standalone
       file: C:/LegacyMCP-Data/contoso.local-data-20250318.json
 ```
 

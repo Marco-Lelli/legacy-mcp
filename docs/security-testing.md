@@ -37,7 +37,7 @@ kept outside the public repository.
   running account lacks Domain Admin or remote registry rights; no
   credential exposure in error output
 
-### File JSON
+### JSON Files
 
 - Loading malformed or manipulated files — truncated JSON, unexpected
   encoding, oversized field values, missing required sections
