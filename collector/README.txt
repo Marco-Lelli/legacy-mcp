@@ -1,7 +1,7 @@
 ================================================================================
   Collect-ADData.ps1
   LegacyMCP Offline Collector - Active Directory Data Export
-  Version 1.6.3 - April 2026
+  Version 1.6.4 - May 2026
   Marco Lelli, Impresoft 4ward
 ================================================================================
 
@@ -63,8 +63,8 @@ REQUIREMENTS
     Recommended: PowerShell 5.1 or 7.x
 
   Modules required:
-    ActiveDirectory  — included in RSAT or available on Domain Controllers
-    GroupPolicy      — required for GPO inventory (Get-GPO, Get-GPInheritance)
+    ActiveDirectory  -- included in RSAT or available on Domain Controllers
+    GroupPolicy      -- required for GPO inventory (Get-GPO, Get-GPInheritance)
                        included in RSAT Group Policy Management Tools
 
   RSAT installation (Windows 10 / Windows 11):
@@ -82,7 +82,7 @@ REQUIREMENTS
 REQUIRED RIGHTS
 ---------------
 
-  Minimum — single domain inventory:
+  Minimum -- single domain inventory:
     Domain Admin (or delegated read access to all AD objects in the domain)
 
     Note: without Domain Admin, some sections may return incomplete data.
@@ -90,7 +90,7 @@ REQUIRED RIGHTS
     queries require at minimum remote registry access on each DC, which
     typically requires Domain Admin.
 
-  Recommended — full forest inventory:
+  Recommended -- full forest inventory:
     Enterprise Admin
 
     Enterprise Admin rights are required to enumerate all domains in the forest
@@ -245,7 +245,7 @@ DATA STORAGE
 ------------
 
   Store JSON output files in a dedicated folder OUTSIDE the repository.
-  AD data is sensitive — it must never be committed to GitHub.
+  AD data is sensitive -- it must never be committed to GitHub.
 
   Recommended base path:   C:\LegacyMCP-Data\
 
@@ -268,7 +268,7 @@ DATA STORAGE
     - Never commit JSON files to git (add *.json to .gitignore if needed).
     - Never send JSON files via unencrypted channels (email, Teams chat).
     - Treat JSON files with the same classification as the customer's
-      Active Directory backup — typically Confidential or Restricted.
+      Active Directory backup -- typically Confidential or Restricted.
     - Delete files when no longer needed for the assessment.
 
   The repository already includes C:\LegacyMCP-Data\ in .gitignore.
@@ -289,11 +289,11 @@ OUTPUT FORMAT
 
   Sections that fail entirely (e.g., GPO cmdlets not available) are recorded
   as null with a warning printed to the console. The JSON remains valid and
-  loadable by LegacyMCP — missing sections are handled gracefully.
+  loadable by LegacyMCP -- missing sections are handled gracefully.
 
   Typical file size:
-    Small domain  (< 500 objects):   1–5 MB
-    Medium domain (500–5000 objects): 5–30 MB
+    Small domain  (< 500 objects):   1-5 MB
+    Medium domain (500-5000 objects): 5-30 MB
     Large domain  (> 5000 objects):  30 MB+
 
   Users are capped at 5,000 objects. Computer objects are capped at 10,000.
@@ -365,7 +365,7 @@ MULTI-FOREST CONFIGURATION
   Claude can compare them but LegacyMCP will not generate migration findings.
 
 
-  --- Scenario B: migration — source forest and destination forest ---
+  --- Scenario B: migration -- source forest and destination forest ---
 
   Mark one forest as source and one as destination. LegacyMCP enables
   migration-specific queries: objects present in source but not in destination,
@@ -448,6 +448,14 @@ NOTES
 
 VERSION HISTORY
 ---------------
+
+  v1.6.4 - May 2026
+    - DNS.psm1: iterate all DCs for zone collection instead of first DC only; warn if no DC has DNS role
+    - PKI.psm1: tighten CA filter to objectClass pKIEnrollmentService only
+    - Schema.psm1: warn when schema extensions exceed 500 and are truncated
+    - Groups.psm1: warn on group member enumeration failure instead of silent skip
+    - FSP.psm1: warn on FSP collection failure instead of silent empty return
+    - Fixed em dash characters in module headers (ASCII compliance, P11)
 
   v1.6.3 - April 2026
     - Refactored all inline sections: moved 8 remaining inline data collection
@@ -567,7 +575,7 @@ VERSION HISTORY
 
 
 ================================================================================
-  LegacyMCP — https://github.com/Marco-Lelli/legacy-mcp
-  Impresoft 4ward — https://www.4ward.it/
-  Legacy Things — https://legacythings.it
+  LegacyMCP -- https://github.com/Marco-Lelli/legacy-mcp
+  Impresoft 4ward -- https://www.4ward.it/
+  Legacy Things -- https://legacythings.it
 ================================================================================
