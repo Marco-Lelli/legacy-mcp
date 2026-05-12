@@ -84,10 +84,17 @@ and security events. Safe to run multiple times.
 
 Claude Desktop reads MCP server definitions from a JSON config file.
 
-**Location on Windows:**
+**Location on Windows** — depends on how Claude Desktop was installed:
+
 ```
+# Direct .exe installer from claude.ai:
 %APPDATA%\Claude\claude_desktop_config.json
+
+# Microsoft Store / MSIX / WinGet:
+%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude_desktop_config.json
 ```
+
+> Use the path that matches how Claude Desktop was installed on your machine.
 
 Add the `legacymcp` entry under `mcpServers`. Use the **absolute path**
 to the Python interpreter inside your virtual environment:

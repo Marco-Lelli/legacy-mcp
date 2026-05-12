@@ -818,7 +818,7 @@ if ($DeployProfile -eq 'A') {
     Write-Host ''
     Write-Host '=========================================='
     Write-Host '  Add this block to:'
-    Write-Host '  %APPDATA%\Claude\claude_desktop_config.json'
+    Write-Host '  claude_desktop_config.json (path depends on how Claude Desktop was installed -- see getting-started-a.md)'
     Write-Host '=========================================='
     Write-Host ''
     Write-Host '{'

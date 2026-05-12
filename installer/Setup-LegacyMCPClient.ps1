@@ -80,7 +80,30 @@ function Write-Step { param([string]$Msg); Write-Host "`n==> $Msg" -ForegroundCo
 # Resolve Claude Desktop config path
 # ---------------------------------------------------------------------------
 if (-not $ClaudeConfigPath) {
-    $ClaudeConfigPath = Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'
+    # Claude Desktop MSIX (Store / WinGet / enterprise MSIX) virtualizes %APPDATA%\Claude\
+    # to a sandboxed path under %LOCALAPPDATA%\Packages\. The suffix pzs8sxrjxfjjc is
+    # derived from Anthropic's signing certificate and is stable across versions and users.
+    $msixConfig = Join-Path $env:LOCALAPPDATA `
+        'Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude_desktop_config.json'
+    $exeConfig  = Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'
+
+    if (Test-Path $msixConfig) {
+        $ClaudeConfigPath = $msixConfig
+        Write-Info 'Detected Claude Desktop installed via Microsoft Store / MSIX.'
+    } elseif (Test-Path $exeConfig) {
+        $ClaudeConfigPath = $exeConfig
+        Write-Info 'Detected Claude Desktop installed via direct .exe installer.'
+    } else {
+        # Neither config exists yet. Check if the MSIX package is registered.
+        $msixInstalled = Get-AppxPackage -Name 'Claude' -ErrorAction SilentlyContinue
+        if ($msixInstalled) {
+            $ClaudeConfigPath = $msixConfig
+            Write-Info 'Claude Desktop (MSIX) registered but config not yet created -- will create at MSIX path.'
+        } else {
+            $ClaudeConfigPath = $exeConfig
+            Write-Info 'Claude Desktop config not found -- defaulting to standard path.'
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------
