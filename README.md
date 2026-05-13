@@ -7,10 +7,10 @@
 > Active Directory MCP Server for AI-powered assessment
 
 [![Release](https://img.shields.io/github/v/release/Marco-Lelli/legacy-mcp?label=release)](https://github.com/Marco-Lelli/legacy-mcp/releases)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/Marco-Lelli/legacy-mcp/blob/master/LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows-informational)](https://github.com/Marco-Lelli/legacy-mcp)
-[![Code Signing](https://img.shields.io/badge/code%20signing-SignPath-blue)](docs/code-signing-policy.md)
+[![Code Signing](https://img.shields.io/badge/code%20signing-SignPath-blue)](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/code-signing-policy.md)
 
 LegacyMCP brings the power of AI to Active Directory on-premises environments.
 It exposes AD data as tools that Claude and other LLMs can query directly —
@@ -152,7 +152,7 @@ flowchart TD
 
 10. **Safe degradation** — partial data is always explicit. Unreachable domain controllers are flagged, never silently skipped.
 
-See [DISCLAIMER.md](DISCLAIMER.md) for terms of use.
+See [DISCLAIMER.md](https://github.com/Marco-Lelli/legacy-mcp/blob/master/DISCLAIMER.md) for terms of use.
 
 ---
 
@@ -176,7 +176,7 @@ LegacyMCP involves three distinct machines with different requirements:
 - Windows 10 / Windows Server 2012 R2 or later
 - PowerShell 5.1+
 - ActiveDirectory module (RSAT)
-- Minimum AD permissions as documented in [docs/minimum-permissions.md](docs/minimum-permissions.md).
+- Minimum AD permissions as documented in [docs/minimum-permissions.md](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/minimum-permissions.md).
   Dedicated scripts in `installer/` are available to apply, test, and remove them.
   Domain Admin is not required.
 
@@ -196,21 +196,21 @@ LegacyMCP involves three distinct machines with different requirements:
 
 New to LegacyMCP? Start here:
 
-👉 [Getting Started Guide](docs/getting-started.md)
+👉 [Getting Started Guide](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/getting-started.md)
 
 Already know which profile you need?
-- [Profile A — local offline setup](docs/getting-started-a.md)
-- [Profile B-core — LAN endpoint with HTTPS](docs/getting-started-b-core.md)
+- [Profile A — local offline setup](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/getting-started-a.md)
+- [Profile B-core — LAN endpoint with HTTPS](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/getting-started-b-core.md)
 
 ---
 
 ## Further Reading
 
-- [Deployment profiles](docs/deployment-profiles.md)
-- [Architecture](docs/architecture.md)
-- [TLS certificate setup](docs/tls-certificate-setup.md)
-- [Design principles](PRINCIPLES.md)
-- [MCP Tools Reference](docs/tools-reference.md)
+- [Deployment profiles](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/deployment-profiles.md)
+- [Architecture](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/architecture.md)
+- [TLS certificate setup](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/tls-certificate-setup.md)
+- [Design principles](https://github.com/Marco-Lelli/legacy-mcp/blob/master/PRINCIPLES.md)
+- [MCP Tools Reference](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/tools-reference.md)
 
 ---
 
@@ -228,4 +228,4 @@ a technical blog about the legacy mechanisms that still run the world.
 ## License
 
 MIT — free to use, modify, and distribute.
-See [LICENSE](LICENSE) for details.
+See [LICENSE](https://github.com/Marco-Lelli/legacy-mcp/blob/master/LICENSE) for details.
