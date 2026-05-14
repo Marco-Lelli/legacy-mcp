@@ -150,7 +150,7 @@ Get-NetFirewallRule -DisplayName "LegacyMCP MCP Server"
 ### 3. Configure workspaces
 
 ```powershell
-.\Manage-Workspaces.ps1 -Action Add -ForestName "contoso.local" -FilePath "C:\legacy-mcp\data\contoso.local_ad-data.json"
+.\Manage-Workspaces.ps1 -Add -Name "contoso.local" -File "C:\LegacyMCP-Data\contoso.local.json"
 ```
 
 For a live workspace:
@@ -159,13 +159,22 @@ For a live workspace:
 .\Manage-Workspaces.ps1 -Add -Name contoso.local -DC dc01.contoso.local
 ```
 
-### 4. Export the TLS certificate for the client
+> **Note:** when modifying a workspace JSON, `Manage-Workspaces.ps1`
+> automatically creates a `backups\` folder next to the JSON file
+> containing the previous version. Backup files contain AD data
+> and must be treated with the same sensitivity as the source JSON —
+> store them in a secure location and do not commit them to version control.
+
+### 4. Copy the TLS certificate to the consultant machine
+
+The server certificate is at `<InstallPath>\certs\server.crt`.
+To find the exact path, run:
 
 ```powershell
-.\Config-LegacyMCP.ps1 -Action ExportCert -OutputPath "C:\legacy-mcp\certs\server.crt"
+.\Config-LegacyMCP.ps1 -Get
 ```
 
-Transfer `server.crt` to the consultant machine via a secure channel.
+Copy `server.crt` to the consultant machine via a secure channel.
 
 ---
 

@@ -47,6 +47,7 @@ $ConfigPath  = Join-Path $InstallPath 'config\config.yaml'
 $LogPath             = Join-Path $InstallPath 'logs'
 $SnapshotPathEffective = if ($SnapshotPath) { $SnapshotPath } else { Join-Path $InstallPath 'snapshots' }
 $VenvPython  = Join-Path $InstallPath '.venv\Scripts\python.exe'
+$Port        = 8000
 
 # ---------------------------------------------------------------------------
 # Output helpers
@@ -186,7 +187,7 @@ if ($Action -eq 'ReplaceCert') {
     Write-Host ''
     Write-Info "Setup-LegacyMCPClient.ps1 parameters:"
     Write-Host "  -ApiKey `"$displayKey`"" -ForegroundColor White
-    Write-Host "  -ServerUrl `"https://$serverName`:8000/mcp`"" -ForegroundColor White
+    Write-Host "  -ServerUrl `"https://$serverName`:$Port/mcp`"" -ForegroundColor White
     Write-Host "  -CaCertPath `"<path to $CertFile on consultant PC>`"" -ForegroundColor White
     Write-Host ''
     Write-Host '==========================================' -ForegroundColor White
@@ -200,7 +201,7 @@ if ($Action -eq 'ReplaceCert') {
     Write-Host '      "command": "npx",'
     Write-Host '      "args": ['
     Write-Host '        "mcp-remote",'
-    Write-Host "        `"https://$serverName`:8000/mcp`","
+    Write-Host "        `"https://$serverName`:$Port/mcp`","
     Write-Host '        "--header",'
     Write-Host '        "Authorization:${AUTH_HEADER}"'
     Write-Host '      ],'
@@ -444,7 +445,7 @@ Set-ItemProperty -Path $RegRoot -Name 'ConfigPath'  -Value $ConfigPath  -Type St
 Set-ItemProperty -Path $RegRoot -Name 'LogPath'     -Value $LogPath     -Type String
 Set-ItemProperty -Path $RegRoot -Name 'Profile'     -Value $DeployProfile     -Type String
 Set-ItemProperty -Path $RegRoot -Name 'Transport'   -Value $transport   -Type String
-Set-ItemProperty -Path $RegRoot -Name 'Port'        -Value 8000         -Type DWord
+Set-ItemProperty -Path $RegRoot -Name 'Port'        -Value $Port        -Type DWord
 
 # Version from pyproject.toml (best effort)
 $PyprojectPath = Join-Path $InstallPath 'pyproject.toml'
@@ -669,7 +670,7 @@ $RegisterEventLog = Join-Path $InstallPath 'scripts\Register-EventLog.ps1'
 if (Test-Path $RegisterEventLog) {
     & powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File $RegisterEventLog
 } else {
-    Write-Warn "Register-EventLog.ps1 not found at: $RegisterEventLog -- skipping."
+    Write-Warn "Register-EventLog.ps1 not found at: $RegisterEventLog -- EventLog source will not be registered. Run it manually later as Administrator."
 }
 
 # ---------------------------------------------------------------------------
@@ -797,13 +798,13 @@ if ($DeployProfile -eq 'B') {
                 -DisplayName $fwRuleName `
                 -Direction Inbound `
                 -Protocol TCP `
-                -LocalPort 8000 `
+                -LocalPort $Port `
                 -Action Allow `
                 -Profile Domain,Private | Out-Null
-            Write-OK "Firewall rule created: allow TCP inbound port 8000 (Domain, Private profiles)."
+            Write-OK "Firewall rule created: allow TCP inbound port $Port (Domain, Private profiles)."
         } catch {
             Write-Warn "Could not create firewall rule: $_"
-            Write-Warn "Create it manually: New-NetFirewallRule -DisplayName '$fwRuleName' -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow -Profile Domain,Private"
+            Write-Warn "Create it manually: New-NetFirewallRule -DisplayName '$fwRuleName' -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Domain,Private"
         }
     }
 }
@@ -856,7 +857,7 @@ if ($DeployProfile -eq 'A') {
     Write-Host ''
     Write-Info "Setup-LegacyMCPClient.ps1 parameters:"
     Write-Host "  -ApiKey `"$ApiKey`"" -ForegroundColor White
-    Write-Host "  -ServerUrl `"https://$serverName`:8000/mcp`"" -ForegroundColor White
+    Write-Host "  -ServerUrl `"https://$serverName`:$Port/mcp`"" -ForegroundColor White
     Write-Host "  -CaCertPath `"<path to $certDisplay on consultant PC>`"" -ForegroundColor White
     Write-Host ''
     Write-Host '==========================================' -ForegroundColor White
@@ -870,7 +871,7 @@ if ($DeployProfile -eq 'A') {
     Write-Host '      "command": "npx",'
     Write-Host '      "args": ['
     Write-Host '        "mcp-remote",'
-    Write-Host "        `"https://$serverName`:8000/mcp`","
+    Write-Host "        `"https://$serverName`:$Port/mcp`","
     Write-Host '        "--header",'
     Write-Host '        "Authorization:${AUTH_HEADER}"'
     Write-Host '      ],'
