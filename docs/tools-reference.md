@@ -70,7 +70,7 @@ Reads the `_metadata` block from each JSON snapshot to report forest name, times
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `path` | str | no | `C:\LegacyMCP-Data\snapshots\` | Directory to scan |
+| `path` | str | no | `%ProgramData%\LegacyMCP\snapshots\` | Directory to scan |
 
 **Returns**
 
@@ -96,7 +96,7 @@ The export runs in the background. This tool returns immediately with a `job_id`
 |-----------|------|----------|---------|-------------|
 | `forest_name` | str | yes | -- | Forest to snapshot (use the name from `list_workspaces`) |
 | `encryption` | str | no | `"none"` | `"none"` (plaintext JSON) or `"dpapi"` (Windows DPAPI, Windows only) |
-| `output_path` | str | no | auto-named under `C:\LegacyMCP-Data\snapshots\` | Full path for the output file |
+| `output_path` | str | no | auto-named under `%ProgramData%\LegacyMCP\snapshots\` | Full path for the output file |
 
 **Returns**
 
@@ -152,7 +152,7 @@ After a successful load, the snapshot appears in `list_workspaces()` and can be 
 
 **Example prompts**
 
-- "Load the snapshot at C:\LegacyMCP-Data\snapshots\contoso_20250428.json."
+- "Load the snapshot at %ProgramData%\LegacyMCP\snapshots\contoso_20250428.json."
 - "Load the old snapshot as contoso-old so I can compare it with the live data."
 
 ---

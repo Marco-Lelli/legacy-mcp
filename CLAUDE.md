@@ -127,7 +127,7 @@ workspace:
   forests:
     - name: contoso.local
       module: ad-core
-      file: C:/LegacyMCP-Data/contoso.local_ad-data.json
+      file: C:/Users/<username>/Documents/LegacyMCP-Data/contoso.local_ad-data.json
 ```
 
 ### Profile B-core — Shared LAN

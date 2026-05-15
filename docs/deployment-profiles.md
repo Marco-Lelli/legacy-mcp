@@ -45,7 +45,7 @@ workspace:
   forests:
     - name: contoso.local
       module: ad-core
-      file: C:/LegacyMCP-Data/contoso.local_ad-core_20260328.json
+      file: C:/Users/<username>/Documents/LegacyMCP-Data/contoso.local_ad-core_20260328.json
 ```
 
 No `server:` block needed in stdio mode.
@@ -282,7 +282,7 @@ It is loadable in any offline workspace regardless of the profile that produced 
 | `mode` | global | `live`, `offline` | — | Deprecated since v0.1.4 — use `profile` |
 | `server.host` | server | any IP / `0.0.0.0` | `127.0.0.1` | Set `0.0.0.0` for Profile B |
 | `server.port` | server | integer | `8000` | — |
-| `server.snapshot_path` | server | directory path | `C:\LegacyMCP-Data\snapshots\` | Default output dir for `create_snapshot` when `output_path` is not specified |
+| `server.snapshot_path` | server | directory path | `%ProgramData%\LegacyMCP\snapshots\` | Default output dir for `create_snapshot` when `output_path` is not specified |
 | `server.ssl_certfile` | server | file path | — | Both or neither with ssl_keyfile |
 | `server.ssl_keyfile` | server | file path | — | Both or neither with ssl_certfile |
 | `forest.module` | per forest | free string | — | Optional metadata, e.g. `ad-core` |
