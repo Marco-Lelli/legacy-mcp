@@ -136,7 +136,7 @@ if ($LogPath) {
     Write-Host '    Logs          : (path unknown -- check install directory)' -ForegroundColor Yellow
 }
 
-# Determine snapshot path from config.yaml, falling back to <InstallPath>\snapshots
+# Determine snapshot path from config.yaml, falling back to %ProgramData%\LegacyMCP\snapshots
 $SnapshotPathDisplay = $null
 if ($ConfigPath -and (Test-Path $ConfigPath)) {
     $yamlContent = Get-Content $ConfigPath -Raw -Encoding UTF8

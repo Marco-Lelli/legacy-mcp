@@ -178,6 +178,13 @@ if (-not (Test-Path $clientCertDir)) {
     }
 }
 
+# Copy CA certificate to the local client certs directory so the client is self-contained.
+# mcp-remote-live.ps1 falls back to $PSScriptRoot\certs\server.crt if no -CaCertPath is passed,
+# which resolves to the same directory after migration.
+Copy-Item -Path $CaCertPath -Destination $clientCertDir -Force
+$LocalCertPath = Join-Path $clientCertDir (Split-Path $CaCertPath -Leaf)
+Write-OK "CA certificate copied to: $LocalCertPath"
+
 # Encrypt the API key with DPAPI (user-scope) and write to client\.legacymcp-key.
 # mcp-remote-live.ps1 reads it via $PSScriptRoot, so key and PS1 must be co-located.
 $keyFile   = Join-Path $clientDir '.legacymcp-key'
@@ -210,11 +217,11 @@ Write-OK "mcp-remote-live.ps1 copied to: $ps1Path"
 
 $batPath    = Join-Path $clientDir 'mcp-remote-live.bat'
 $batContent  = "@echo off`r`n"
-$batContent += "set NODE_EXTRA_CA_CERTS=$CaCertPath`r`n"
+$batContent += "set NODE_EXTRA_CA_CERTS=$LocalCertPath`r`n"
 $batContent += "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned"
 $batContent += " -File `"$ps1Path`""
 $batContent += " -ServerUrl `"$ServerUrl`""
-$batContent += " -CaCertPath `"$CaCertPath`""
+$batContent += " -CaCertPath `"$LocalCertPath`""
 [System.IO.File]::WriteAllText($batPath, $batContent, (New-Object System.Text.UTF8Encoding $false))
 Write-OK "BAT entry point generated: $batPath"
 

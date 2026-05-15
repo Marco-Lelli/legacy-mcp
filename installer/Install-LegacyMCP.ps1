@@ -409,7 +409,7 @@ if (-not (Test-Path $VenvDir)) {
 
 # Always install/update the package (runs whether venv was just created or pre-existing)
 Write-Info 'Installing LegacyMCP package (pip install -e .) ...'
-& "$VenvDir\Scripts\python.exe" -m pip install -e $RepoRoot --quiet
+& "$VenvDir\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check -e $RepoRoot
 Write-OK 'Package installed.'
 
 # Copy config template if config.yaml does not exist

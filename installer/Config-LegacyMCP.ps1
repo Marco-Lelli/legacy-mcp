@@ -643,6 +643,7 @@ function Invoke-Validate {
                         Write-OK "ServiceAccount '$runningAs' has 'Log on as a service' right."
                     } else {
                         Write-Warn "ServiceAccount '$runningAs' may lack 'Log on as a service' right -- verify in secpol.msc"
+                        Write-Warn "Note: secedit reflects local policy only. If the right is granted via GPO it will not appear here."
                     }
                 } catch {
                     Write-Warn "Could not verify SeServiceLogonRight for '$runningAs': $_"
