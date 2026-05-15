@@ -107,30 +107,31 @@ Windows manages credentials automatically — no passwords stored anywhere.
 
 ## Installation — Server Side
 
-### 1. Copy the repository
+### 1. Copy the installer source
 
-Copy the `legacy-mcp` folder to the server machine (e.g. `C:\legacy-mcp`).
-The server machine does not require git.
+Copy the `legacy-mcp` source folder to the server machine
+(e.g. `C:\LegacyMCP-Setup\`). The server machine does not require git.
 
 ### 2. Run the installer
 
 Open PowerShell as Administrator:
 
 ```powershell
-cd C:\legacy-mcp\installer
-.\Install-LegacyMCP.ps1 -Profile B-core -ServiceAccount "DOMAIN\svc_legacymcp$"
+cd C:\LegacyMCP-Setup\installer
+.\Install-LegacyMCP.ps1 -DeployProfile B -ServiceAccount "DOMAIN\svc_legacymcp$"
 ```
 
 For a non-gMSA account:
 
 ```powershell
-.\Install-LegacyMCP.ps1 -Profile B-core -ServiceAccount "DOMAIN\svc_legacymcp"
+.\Install-LegacyMCP.ps1 -DeployProfile B -ServiceAccount "DOMAIN\svc_legacymcp"
 ```
 
 The installer will:
-- Create the Python virtual environment and install dependencies
-- Generate a TLS certificate (self-signed SHA-256)
-- Generate an API key and store it encrypted (DPAPI machine-scope)
+- Create the Python virtual environment in `%ProgramFiles%\LegacyMCP\.venv`
+- Generate a TLS certificate (self-signed SHA-256) in `%ProgramData%\LegacyMCP\certs\`
+- Generate an API key and store it encrypted (DPAPI-NG, SID-scoped)
+- Write configuration paths to the Windows registry
 - Register and start the Windows service via NSSM
 - Register the Windows EventLog source
 - Create a Windows Firewall rule to allow inbound TCP on port 8000
@@ -150,7 +151,7 @@ Get-NetFirewallRule -DisplayName "LegacyMCP MCP Server"
 ### 3. Configure workspaces
 
 ```powershell
-.\Manage-Workspaces.ps1 -Add -Name "contoso.local" -File "C:\LegacyMCP-Data\contoso.local.json"
+.\Manage-Workspaces.ps1 -Add -Name "contoso.local" -File "%ProgramData%\LegacyMCP\data\contoso.local.json"
 ```
 
 For a live workspace:
@@ -167,8 +168,8 @@ For a live workspace:
 
 ### 4. Copy the TLS certificate to the consultant machine
 
-The server certificate is at `<InstallPath>\certs\server.crt`.
-To find the exact path, run:
+The server certificate is at `%ProgramData%\LegacyMCP\certs\server.crt`.
+To confirm the path, run:
 
 ```powershell
 .\Config-LegacyMCP.ps1 -Get
@@ -184,10 +185,10 @@ Copy `server.crt` to the consultant machine via a secure channel.
 or from a standalone folder outside it — useful when the consultant machine
 does not have the full repository.
 
-**Option 1 — From the repository**
+**Option 1 — From the installer source**
 
 ```powershell
-cd C:\path\to\legacy-mcp\installer
+cd C:\LegacyMCP-Setup\installer
 .\Setup-LegacyMCPClient.ps1 `
   -ServerUrl "https://SERVER_IP:8000/mcp" `
   -CaCertPath "C:\path\to\server.crt"
@@ -210,8 +211,9 @@ cd C:\LegacyMCP-Client\installer
 ```
 
 In both options, the script will prompt for the API key, then:
-- Store the API key encrypted (DPAPI user-scope) in `..\client\.legacymcp-key`
-- Generate `..\client\mcp-remote-live.bat` (Claude Desktop entry point)
+- Copy the CA certificate to `%LOCALAPPDATA%\LegacyMCP\certs\`
+- Store the API key encrypted (DPAPI user-scope) in `%LOCALAPPDATA%\LegacyMCP\.legacymcp-key`
+- Generate `%LOCALAPPDATA%\LegacyMCP\mcp-remote-live.bat` (Claude Desktop entry point)
 - Update `claude_desktop_config.json` automatically
 
 Restart Claude Desktop after setup.
@@ -244,11 +246,12 @@ legacy CA compatibility, see [tls-certificate-setup.md](tls-certificate-setup.md
 **Claude Desktop does not connect:**
 - Verify the service is running: `Get-Service LegacyMCP`
 - Check the EventLog: `Get-EventLog -LogName LegacyMCP -Newest 20`
-- Verify `NODE_EXTRA_CA_CERTS` is set correctly in `mcp-remote-live.bat`
+- Verify `NODE_EXTRA_CA_CERTS` is set correctly in
+  `%LOCALAPPDATA%\LegacyMCP\mcp-remote-live.bat`
 
 **Authentication errors:**
 - API key mismatch — re-run `Setup-LegacyMCPClient.ps1` with the correct key
-- Check server config: `.\Config-LegacyMCP.ps1 -Action Validate`
+- Check server config: `.\Config-LegacyMCP.ps1 -Validate`
 
 **WinRM / Kerberos errors:**
 - Verify WinRM HTTPS is enabled on the DC: `Test-WSMan -ComputerName DC01 -UseSSL`
