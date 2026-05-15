@@ -157,11 +157,25 @@ if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
 # ---------------------------------------------------------------------------
 Write-Step 'Step 3 -- Save API key and generate client files'
 
-$repoRoot  = Split-Path $PSScriptRoot -Parent
-$clientDir = Join-Path $repoRoot 'client'
+$clientDir     = "$env:LOCALAPPDATA\LegacyMCP"
+$clientCertDir = "$env:LOCALAPPDATA\LegacyMCP\certs"
 if (-not (Test-Path $clientDir)) {
-    New-Item -ItemType Directory -Path $clientDir -Force | Out-Null
-    Write-OK "Created client directory: $clientDir"
+    try {
+        New-Item -ItemType Directory -Path $clientDir -ErrorAction Stop | Out-Null
+        Write-OK "Client directory created: $clientDir"
+    } catch {
+        Write-Fail "Failed to create client directory '${clientDir}': $_"
+        exit 1
+    }
+}
+if (-not (Test-Path $clientCertDir)) {
+    try {
+        New-Item -ItemType Directory -Path $clientCertDir -ErrorAction Stop | Out-Null
+        Write-OK "Client certs directory created: $clientCertDir"
+    } catch {
+        Write-Fail "Failed to create client certs directory '${clientCertDir}': $_"
+        exit 1
+    }
 }
 
 # Encrypt the API key with DPAPI (user-scope) and write to client\.legacymcp-key.
