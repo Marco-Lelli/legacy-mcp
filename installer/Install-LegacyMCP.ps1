@@ -36,18 +36,19 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
-# Resolve installation root (parent of installer\)
+# Resolve paths
 # ---------------------------------------------------------------------------
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$InstallPath = Split-Path -Parent $ScriptDir   # repo / install root
+$RepoRoot    = Split-Path -Parent $ScriptDir   # source directory (pyproject.toml, config templates, scripts)
 $NssmExe     = Join-Path $ScriptDir 'tools\nssm.exe'
 
-# Default paths derived from install root
-$ConfigPath  = Join-Path $InstallPath 'config\config.yaml'
-$LogPath             = Join-Path $InstallPath 'logs'
-$SnapshotPathEffective = if ($SnapshotPath) { $SnapshotPath } else { Join-Path $InstallPath 'snapshots' }
-$VenvPython  = Join-Path $InstallPath '.venv\Scripts\python.exe'
-$Port        = 8000
+# Installation layout -- Windows standard paths
+$InstallPath           = "$env:ProgramFiles\LegacyMCP"
+$ConfigPath            = "$env:ProgramData\LegacyMCP\config\config.yaml"
+$LogPath               = "$env:ProgramData\LegacyMCP\logs"
+$SnapshotPathEffective = if ($SnapshotPath) { $SnapshotPath } else { "$env:ProgramData\LegacyMCP\snapshots" }
+$VenvPython            = Join-Path $InstallPath '.venv\Scripts\python.exe'
+$Port                  = 8000
 
 # ---------------------------------------------------------------------------
 # Output helpers
@@ -377,6 +378,20 @@ if ($preflightFail) {
 # ---------------------------------------------------------------------------
 Write-Step 'Phase 2 -- Installation'
 
+# Create installation directory
+if (-not (Test-Path $InstallPath)) {
+    try {
+        New-Item -ItemType Directory -Path $InstallPath -ErrorAction Stop | Out-Null
+        Write-OK "Installation directory created: $InstallPath"
+    } catch {
+        Write-Fail "Failed to create installation directory '${InstallPath}': $_"
+        Write-Fail 'Installation requires Administrator privileges to write to Program Files.'
+        exit 1
+    }
+} else {
+    Write-OK "Installation directory already exists: $InstallPath"
+}
+
 # Create virtual environment
 $VenvDir = Join-Path $InstallPath '.venv'
 if ($Force -and (Test-Path $VenvDir)) {
@@ -394,12 +409,23 @@ if (-not (Test-Path $VenvDir)) {
 
 # Always install/update the package (runs whether venv was just created or pre-existing)
 Write-Info 'Installing LegacyMCP package (pip install -e .) ...'
-& "$VenvDir\Scripts\python.exe" -m pip install -e $InstallPath --quiet
+& "$VenvDir\Scripts\python.exe" -m pip install -e $RepoRoot --quiet
 Write-OK 'Package installed.'
 
 # Copy config template if config.yaml does not exist
 $ConfigExampleKey = if ($DeployProfile -eq 'B') { 'config.example-B.yaml' } else { 'config.example-A.yaml' }
-$ConfigExample    = Join-Path $InstallPath "config\$ConfigExampleKey"
+$ConfigExample    = Join-Path $RepoRoot "config\$ConfigExampleKey"
+
+$ConfigDir = Split-Path $ConfigPath -Parent
+if (-not (Test-Path $ConfigDir)) {
+    try {
+        New-Item -ItemType Directory -Path $ConfigDir -ErrorAction Stop | Out-Null
+        Write-OK "Config directory created: $ConfigDir"
+    } catch {
+        Write-Fail "Failed to create config directory '${ConfigDir}': $_"
+        exit 1
+    }
+}
 
 if (-not (Test-Path $ConfigPath)) {
     if (Test-Path $ConfigExample) {
@@ -414,16 +440,26 @@ if (-not (Test-Path $ConfigPath)) {
 
 # Create log directory
 if (-not (Test-Path $LogPath)) {
-    New-Item -ItemType Directory -Path $LogPath -Force | Out-Null
-    Write-OK "Log directory created: $LogPath"
+    try {
+        New-Item -ItemType Directory -Path $LogPath -ErrorAction Stop | Out-Null
+        Write-OK "Log directory created: $LogPath"
+    } catch {
+        Write-Fail "Failed to create log directory '${LogPath}': $_"
+        exit 1
+    }
 } else {
     Write-OK "Log directory already exists: $LogPath"
 }
 
 # Create snapshot directory
 if (-not (Test-Path $SnapshotPathEffective)) {
-    New-Item -ItemType Directory -Path $SnapshotPathEffective -Force | Out-Null
-    Write-OK "Snapshot directory created: $SnapshotPathEffective"
+    try {
+        New-Item -ItemType Directory -Path $SnapshotPathEffective -ErrorAction Stop | Out-Null
+        Write-OK "Snapshot directory created: $SnapshotPathEffective"
+    } catch {
+        Write-Fail "Failed to create snapshot directory '${SnapshotPathEffective}': $_"
+        exit 1
+    }
 } else {
     Write-OK "Snapshot directory already exists: $SnapshotPathEffective"
 }
@@ -448,7 +484,7 @@ Set-ItemProperty -Path $RegRoot -Name 'Transport'   -Value $transport   -Type St
 Set-ItemProperty -Path $RegRoot -Name 'Port'        -Value $Port        -Type DWord
 
 # Version from pyproject.toml (best effort)
-$PyprojectPath = Join-Path $InstallPath 'pyproject.toml'
+$PyprojectPath = Join-Path $RepoRoot 'pyproject.toml'
 if (Test-Path $PyprojectPath) {
     $pyprojectContent = Get-Content $PyprojectPath -Raw
     if ($pyprojectContent -match 'version\s*=\s*"([^"]+)"') {
@@ -494,9 +530,15 @@ if ($DeployProfile -eq 'B') {
     }
 
     # --- TLS Certificate ---
-    $CertDir = Join-Path $InstallPath 'certs'
+    $CertDir = "$env:ProgramData\LegacyMCP\certs"
     if (-not (Test-Path $CertDir)) {
-        New-Item -ItemType Directory -Path $CertDir -Force | Out-Null
+        try {
+            New-Item -ItemType Directory -Path $CertDir -ErrorAction Stop | Out-Null
+            Write-OK "Certs directory created: $CertDir"
+        } catch {
+            Write-Fail "Failed to create certs directory '${CertDir}': $_"
+            exit 1
+        }
     }
 
     $resolvedCertFile = $CertFile
@@ -666,7 +708,7 @@ print('OK')
 # ---------------------------------------------------------------------------
 Write-Step 'Phase 4 -- EventLog registration'
 
-$RegisterEventLog = Join-Path $InstallPath 'scripts\Register-EventLog.ps1'
+$RegisterEventLog = Join-Path $RepoRoot 'scripts\Register-EventLog.ps1'
 if (Test-Path $RegisterEventLog) {
     & powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File $RegisterEventLog
 } else {
@@ -845,7 +887,7 @@ if ($DeployProfile -eq 'A') {
     Write-Host ''
 
     $serverName  = "$env:COMPUTERNAME.$env:USERDNSDOMAIN"
-    $certDisplay = if ($resolvedCertFile) { $resolvedCertFile } else { 'C:\LegacyMCP\certs\server.crt' }
+    $certDisplay = if ($resolvedCertFile) { $resolvedCertFile } else { "$env:ProgramData\LegacyMCP\certs\server.crt" }
 
     Write-Host ''
     Write-Host '==========================================' -ForegroundColor Yellow

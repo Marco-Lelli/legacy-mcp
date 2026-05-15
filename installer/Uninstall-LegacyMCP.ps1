@@ -144,8 +144,8 @@ if ($ConfigPath -and (Test-Path $ConfigPath)) {
         $SnapshotPathDisplay = $Matches[1].Trim()
     }
 }
-if (-not $SnapshotPathDisplay -and $InstallPath) {
-    $SnapshotPathDisplay = Join-Path $InstallPath 'snapshots'
+if (-not $SnapshotPathDisplay) {
+    $SnapshotPathDisplay = "$env:ProgramData\LegacyMCP\snapshots"
 }
 
 if ($SnapshotPathDisplay) {

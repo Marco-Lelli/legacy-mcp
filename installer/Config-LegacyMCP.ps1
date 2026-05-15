@@ -602,7 +602,7 @@ function Invoke-Validate {
         if ($yamlContent) {
             $snapshotDir = Get-ConfigYamlSnapshotPath -Content $yamlContent
             if (-not $snapshotDir) {
-                Write-Warn "snapshot_path not configured in config.yaml -- server will use default <InstallPath>\snapshots"
+                Write-Warn "snapshot_path not configured in config.yaml -- server will use default %ProgramData%\LegacyMCP\snapshots"
             } elseif (-not (Test-Path $snapshotDir)) {
                 Write-Fail "snapshot_path directory not found: $snapshotDir"
                 $hasError = $true
