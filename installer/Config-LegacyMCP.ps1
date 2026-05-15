@@ -566,6 +566,15 @@ function Invoke-Validate {
     } elseif ($deployProfile -like 'B*') {
         Write-Host '  [Profile B checks]'
 
+        # ApiKey check -- required for authentication in Profile B
+        $regPropsRaw = Get-ItemProperty -Path $REG_ROOT -ErrorAction SilentlyContinue
+        if ($null -eq $regPropsRaw -or [string]::IsNullOrEmpty($regPropsRaw.ApiKey)) {
+            Write-Fail 'ApiKey not found in registry. Profile B requires an API key. Re-run Install-LegacyMCP.ps1 -DeployProfile B.'
+            $hasError = $true
+        } else {
+            Write-OK 'ApiKey present in registry (encrypted).'
+        }
+
         if ($transport -ne 'streamable-http') {
             Write-Fail "Profile B requires Transport 'streamable-http', found '$transport'."
             $hasError = $true

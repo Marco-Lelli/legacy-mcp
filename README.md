@@ -142,7 +142,7 @@ flowchart TD
 
 5. **TLS on all non-localhost endpoints** — no plaintext traffic outside localhost under any deployment profile.
 
-6. **Credentials never in plaintext** — gMSA for service accounts, Azure Key Vault for enterprise deployments, Windows Credential Manager for explicit credentials. Never in config files, environment variables, or logs.
+6. **Credentials never in plaintext** — gMSA for service accounts, Azure Key Vault for enterprise deployments, DPAPI user-scope encryption for explicit credentials on client machines. Never in config files, environment variables, or logs.
 
 7. **Code integrity** — signed PowerShell collector, signed executable releases, published SHA256 hashes for all release artifacts.
 

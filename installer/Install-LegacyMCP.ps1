@@ -478,18 +478,22 @@ if (-not (Test-Path $SnapshotPathEffective)) {
 Write-Step 'Phase 3 -- Windows Registry'
 
 $RegRoot = 'HKLM:\SOFTWARE\LegacyMCP'
-if (-not (Test-Path $RegRoot)) {
-    New-Item -Path $RegRoot -Force | Out-Null
-}
-
 $transport = if ($DeployProfile -eq 'B') { 'streamable-http' } else { 'stdio' }
 
-Set-ItemProperty -Path $RegRoot -Name 'InstallPath' -Value $InstallPath -Type String
-Set-ItemProperty -Path $RegRoot -Name 'ConfigPath'  -Value $ConfigPath  -Type String
-Set-ItemProperty -Path $RegRoot -Name 'LogPath'     -Value $LogPath     -Type String
-Set-ItemProperty -Path $RegRoot -Name 'Profile'     -Value $DeployProfile     -Type String
-Set-ItemProperty -Path $RegRoot -Name 'Transport'   -Value $transport   -Type String
-Set-ItemProperty -Path $RegRoot -Name 'Port'        -Value $Port        -Type DWord
+try {
+    if (-not (Test-Path $RegRoot)) {
+        New-Item -Path $RegRoot -Force | Out-Null
+    }
+    Set-ItemProperty -Path $RegRoot -Name 'InstallPath' -Value $InstallPath -Type String
+    Set-ItemProperty -Path $RegRoot -Name 'ConfigPath'  -Value $ConfigPath  -Type String
+    Set-ItemProperty -Path $RegRoot -Name 'LogPath'     -Value $LogPath     -Type String
+    Set-ItemProperty -Path $RegRoot -Name 'Profile'     -Value $DeployProfile     -Type String
+    Set-ItemProperty -Path $RegRoot -Name 'Transport'   -Value $transport   -Type String
+    Set-ItemProperty -Path $RegRoot -Name 'Port'        -Value $Port        -Type DWord
+} catch {
+    Write-Fail "Failed to write registry entries at '$RegRoot': $_"
+    exit 1
+}
 
 # Version from pyproject.toml (best effort)
 $PyprojectPath = Join-Path $RepoRoot 'pyproject.toml'
@@ -503,11 +507,16 @@ if (Test-Path $PyprojectPath) {
 
 # Service subkey
 $RegService = 'HKLM:\SOFTWARE\LegacyMCP\Service'
-if (-not (Test-Path $RegService)) {
-    New-Item -Path $RegService -Force | Out-Null
+try {
+    if (-not (Test-Path $RegService)) {
+        New-Item -Path $RegService -Force | Out-Null
+    }
+    $autoStart = if ($DeployProfile -eq 'B') { 1 } else { 0 }
+    Set-ItemProperty -Path $RegService -Name 'AutoStart' -Value $autoStart -Type DWord
+} catch {
+    Write-Fail "Failed to write service registry entries at '$RegService': $_"
+    exit 1
 }
-$autoStart = if ($DeployProfile -eq 'B') { 1 } else { 0 }
-Set-ItemProperty -Path $RegService -Name 'AutoStart' -Value $autoStart -Type DWord
 
 Write-OK 'Registry written.'
 
@@ -645,8 +654,8 @@ cert = (
     .issuer_name(name)
     .public_key(key.public_key())
     .serial_number(x509.random_serial_number())
-    .not_valid_before(datetime.datetime.utcnow())
-    .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=730))
+    .not_valid_before(datetime.datetime.now(datetime.timezone.utc))
+    .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=730))
     .add_extension(x509.SubjectAlternativeName([
         x509.DNSName(hostname),
         x509.DNSName(socket.gethostname()),
