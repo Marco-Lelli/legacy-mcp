@@ -87,19 +87,19 @@ workspace:
     - name: contoso.local-pki
       module: ad-pki
       mode: offline           # this module does not support live
-      file: data/contoso-pki.json
+      file: C:/ProgramData/LegacyMCP/data/contoso-pki.json
 
     - name: contoso.local-snapshot-2025
       relation: snapshot
       module: ad-core
       mode: offline
-      file: data/contoso-snapshot-20250318.json
+      file: C:/ProgramData/LegacyMCP/data/contoso-snapshot-20250318.json
 
 server:
   host: 0.0.0.0   # required: bind on all interfaces for LAN access
   port: 8000
-  ssl_certfile: certs/server.crt
-  ssl_keyfile:  certs/server.key
+  ssl_certfile: C:\ProgramData\LegacyMCP\certs\server.crt
+  ssl_keyfile:  C:\ProgramData\LegacyMCP\certs\server.key
 ```
 
 **`server.host` note:** uvicorn binds to `127.0.0.1` by default and is not reachable
@@ -111,8 +111,8 @@ Restrict access at the firewall level. TLS is strongly recommended.
 Run `Setup-LegacyMCPClient.ps1` once on each consultant's machine (non-elevated,
 regular user context). The script:
 
-1. Encrypts the API key with DPAPI user-scope → `client\.legacymcp-key`
-2. Generates `client\mcp-remote-live.bat` — the Claude Desktop entry point
+1. Encrypts the API key with DPAPI user-scope → `%LOCALAPPDATA%\LegacyMCP\.legacymcp-key`
+2. Generates `%LOCALAPPDATA%\LegacyMCP\mcp-remote-live.bat` — the Claude Desktop entry point
 3. Adds the `legacymcp-live` entry to `claude_desktop_config.json`
 
 **Why a BAT file?**
@@ -129,7 +129,7 @@ The `claude_desktop_config.json` entry added by Setup looks like:
 {
   "mcpServers": {
     "legacymcp-live": {
-      "command": "C:\\path\\to\\legacy-mcp\\client\\mcp-remote-live.bat",
+      "command": "C:\\Users\\<username>\\AppData\\Local\\LegacyMCP\\mcp-remote-live.bat",
       "args": []
     }
   }
@@ -139,12 +139,8 @@ The `claude_desktop_config.json` entry added by Setup looks like:
 The paths are absolute and written by `Setup-LegacyMCPClient.ps1` — no manual
 editing of the JSON file is needed.
 
-**Files that must NOT be committed:**
-- `client\mcp-remote-live.bat` — generated with deployment-specific absolute paths
-- `client\.legacymcp-key` — DPAPI-encrypted key file (user-specific)
-- `client\certs\` — deployment-specific TLS certificates
-
-All are excluded in `.gitignore`.
+> Client files (`.legacymcp-key`, `mcp-remote-live.bat`, `server.crt`) are generated
+> in `%LOCALAPPDATA%\LegacyMCP\` and are never part of the repository.
 
 ---
 
@@ -195,7 +191,7 @@ workspace:
   forests:
     - name: contoso.local
       module: ad-core
-      file: data/contoso.json    # uploaded via LegacyMCP Portal
+      file: C:/ProgramData/LegacyMCP/data/contoso.json    # uploaded via LegacyMCP Portal
 
 server:
   host: 127.0.0.1   # bind to localhost; reverse proxy terminates TLS externally

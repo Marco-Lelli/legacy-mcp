@@ -31,18 +31,26 @@ self-signed SHA-256 certificate. This is necessary because:
 
 ### Option B — Corporate CA certificate
 
-If your environment has a modern CA (SHA-256), you can use a CA-issued
-certificate. Place the files in the certs directory:
-- `%ProgramData%\LegacyMCP\certs\server.crt` — certificate (PEM)
-- `%ProgramData%\LegacyMCP\certs\server.key` — private key (PEM)
+If you have a CA-signed certificate in PEM format, use the built-in replace action:
 
-Then update `config.yaml`:
-
-```yaml
-server:
-  ssl_certfile: C:\ProgramData\LegacyMCP\certs\server.crt
-  ssl_keyfile:  C:\ProgramData\LegacyMCP\certs\server.key
+```powershell
+cd C:\LegacyMCP-Setup\installer
+.\Install-LegacyMCP.ps1 -Action ReplaceCert `
+    -CertFile "C:\path\to\server.crt" `
+    -CertKeyFile "C:\path\to\server.key"
 ```
+
+This command:
+1. Updates `ssl_certfile` and `ssl_keyfile` in `config.yaml`
+2. Restarts the LegacyMCP service
+3. Displays the current API key so you can update clients
+
+After replacing the certificate, update each consultant machine:
+copy the new `server.crt` to `%LOCALAPPDATA%\LegacyMCP\certs\` and restart Claude Desktop.
+
+> **Note:** Your CA certificate must use SHA-256. SHA-1 CA certificates
+> (e.g. Windows Server 2012 R2 AD CS default) are incompatible with
+> uvicorn/OpenSSL — see N-TLS-1.
 
 ---
 

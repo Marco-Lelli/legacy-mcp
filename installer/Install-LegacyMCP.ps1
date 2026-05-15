@@ -402,6 +402,10 @@ if ($Force -and (Test-Path $VenvDir)) {
 if (-not (Test-Path $VenvDir)) {
     Write-Info "Creating virtual environment in: $VenvDir"
     & python -m venv $VenvDir
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Failed to create virtual environment at '$VenvDir'. Check Python installation and available disk space."
+        exit 1
+    }
     Write-OK 'Virtual environment created.'
 } else {
     Write-Info 'Virtual environment already exists -- skipping creation.'
@@ -410,6 +414,10 @@ if (-not (Test-Path $VenvDir)) {
 # Always install/update the package (runs whether venv was just created or pre-existing)
 Write-Info 'Installing LegacyMCP package (pip install -e .) ...'
 & "$VenvDir\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check -e $RepoRoot
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail 'pip install failed. Check the output above for details.'
+    exit 1
+}
 Write-OK 'Package installed.'
 
 # Copy config template if config.yaml does not exist
@@ -729,17 +737,31 @@ if ($DeployProfile -eq 'B') {
         Write-Info 'Removing existing LegacyMCP service for clean reinstall...'
         Stop-Service -Name 'LegacyMCP' -Force -ErrorAction SilentlyContinue
         & $NssmExe remove LegacyMCP confirm
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "NSSM failed to remove existing service. Exit code: $LASTEXITCODE"
+            exit 1
+        }
     }
 
     $PythonExe = Join-Path $InstallPath '.venv\Scripts\python.exe'
-    & $NssmExe install  LegacyMCP $PythonExe
-    $NssmArgs  = "-m legacy_mcp.server --config `"$ConfigPath`" --transport streamable-http"
-    & $NssmExe set      LegacyMCP AppParameters  $NssmArgs
-    & $NssmExe set      LegacyMCP AppDirectory   $InstallPath
-    & $NssmExe set      LegacyMCP Description   'Legacy MCP Server for Active Directory (Profile B)'
-    & $NssmExe set      LegacyMCP Start         SERVICE_AUTO_START
-    & $NssmExe set      LegacyMCP AppStdout     (Join-Path $LogPath 'legacymcp.log')
-    & $NssmExe set      LegacyMCP AppStderr     (Join-Path $LogPath 'legacymcp-error.log')
+    & $NssmExe install LegacyMCP $PythonExe
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "NSSM failed to install service. Exit code: $LASTEXITCODE"
+        exit 1
+    }
+    $NssmArgs = "-m legacy_mcp.server --config `"$ConfigPath`" --transport streamable-http"
+    & $NssmExe set LegacyMCP AppParameters $NssmArgs
+    if ($LASTEXITCODE -ne 0) { Write-Fail "NSSM set AppParameters failed. Exit code: $LASTEXITCODE"; exit 1 }
+    & $NssmExe set LegacyMCP AppDirectory $InstallPath
+    if ($LASTEXITCODE -ne 0) { Write-Fail "NSSM set AppDirectory failed. Exit code: $LASTEXITCODE"; exit 1 }
+    & $NssmExe set LegacyMCP Description 'Legacy MCP Server for Active Directory (Profile B)'
+    if ($LASTEXITCODE -ne 0) { Write-Fail "NSSM set Description failed. Exit code: $LASTEXITCODE"; exit 1 }
+    & $NssmExe set LegacyMCP Start SERVICE_AUTO_START
+    if ($LASTEXITCODE -ne 0) { Write-Fail "NSSM set Start failed. Exit code: $LASTEXITCODE"; exit 1 }
+    & $NssmExe set LegacyMCP AppStdout (Join-Path $LogPath 'legacymcp.log')
+    if ($LASTEXITCODE -ne 0) { Write-Fail "NSSM set AppStdout failed. Exit code: $LASTEXITCODE"; exit 1 }
+    & $NssmExe set LegacyMCP AppStderr (Join-Path $LogPath 'legacymcp-error.log')
+    if ($LASTEXITCODE -ne 0) { Write-Fail "NSSM set AppStderr failed. Exit code: $LASTEXITCODE"; exit 1 }
 
     Write-OK 'LegacyMCP service installed via NSSM.'
 

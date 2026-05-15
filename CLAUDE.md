@@ -25,10 +25,9 @@ legacy-mcp/
 ├── config/                 # config templates for profiles A / B / C
 ├── docs/                   # architecture and documentation
 ├── client/                 # consultant client scripts
-│   ├── mcp-remote-live.ps1   # DPAPI wrapper for mcp-remote
-│   ├── mcp-remote-live.bat   # Claude Desktop entry point (generated, gitignored)
-│   ├── .legacymcp-key        # DPAPI-encrypted API key (generated, gitignored)
-│   └── certs/                # server TLS certificate (gitignored)
+│   └── mcp-remote-live.ps1   # runtime script (source, in repo)
+│   # .legacymcp-key, mcp-remote-live.bat and certs/ are generated
+│   # in %LOCALAPPDATA%\LegacyMCP\ -- not in the repository
 ├── installer/              # PowerShell installer and permission scripts
 ├── src/legacy_mcp/         # MCP server — Python
 │   ├── server.py           # FastMCP entrypoint
@@ -151,8 +150,8 @@ workspace:
 server:
   host: 0.0.0.0
   port: 8000
-  ssl_certfile: certs/server.crt
-  ssl_keyfile: certs/server.key
+  ssl_certfile: C:\ProgramData\LegacyMCP\certs\server.crt
+  ssl_keyfile:  C:\ProgramData\LegacyMCP\certs\server.key
 ```
 
 ### config.yaml — deprecated fields

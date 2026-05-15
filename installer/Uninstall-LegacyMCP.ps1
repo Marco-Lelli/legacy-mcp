@@ -116,6 +116,19 @@ if (Test-Path $RegRoot) {
 }
 
 # ---------------------------------------------------------------------------
+# Step 3.5 -- Windows Firewall rule
+# ---------------------------------------------------------------------------
+Write-Step 'Step 3.5 -- Windows Firewall rule'
+
+$fwRule = Get-NetFirewallRule -DisplayName 'LegacyMCP MCP Server' -ErrorAction SilentlyContinue
+if ($fwRule) {
+    Remove-NetFirewallRule -DisplayName 'LegacyMCP MCP Server'
+    Write-OK "Firewall rule 'LegacyMCP MCP Server' removed."
+} else {
+    Write-Info "Firewall rule 'LegacyMCP MCP Server' not found -- skipping."
+}
+
+# ---------------------------------------------------------------------------
 # Step 4 -- Summary: preserved files
 # ---------------------------------------------------------------------------
 Write-Step 'Step 4 -- Preserved files'

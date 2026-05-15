@@ -4,13 +4,14 @@
     Configure a consultant PC to connect to a LegacyMCP Profile B server.
 
 .DESCRIPTION
-    Saves the API key as a DPAPI user-scope encrypted file (client\.legacymcp-key),
-    generates client\mcp-remote-live.bat as the Claude Desktop entry point, and
-    adds or updates the legacymcp-live entry in claude_desktop_config.json.
+    Saves the API key as a DPAPI user-scope encrypted file
+    (%LOCALAPPDATA%\LegacyMCP\.legacymcp-key), generates
+    %LOCALAPPDATA%\LegacyMCP\mcp-remote-live.bat as the Claude Desktop entry point,
+    and adds or updates the legacymcp-live entry in claude_desktop_config.json.
 
     The API key is never stored in plain text. It is encrypted with DPAPI
     (user-scope) so only the current Windows user account can decrypt it.
-    client\mcp-remote-live.ps1 reads the key at runtime via $PSScriptRoot.
+    mcp-remote-live.ps1 reads the key at runtime from %LOCALAPPDATA%\LegacyMCP\.
 
     Claude Desktop cannot use powershell.exe directly as a MCP server command --
     PowerShell emits startup output to stdout before mcp-remote takes control,
