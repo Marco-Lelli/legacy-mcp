@@ -100,6 +100,7 @@ if ($Profile -eq 'A' -and (Test-LMElevation)) {
 
 $VERSION      = '0.2.3'
 $SERVICE_NAME = 'LegacyMCP'
+$REG_ROOT     = if ($Profile -eq 'A') { 'HKCU:\SOFTWARE\LegacyMCP' } else { 'HKLM:\SOFTWARE\LegacyMCP' }
 
 # ===========================================================================
 # PROFILE A
@@ -164,11 +165,11 @@ if ($Profile -eq 'A') {
 
         Write-LMStep 'Step 7 -- Registry'
         try {
-            Set-LMRegistry -Name 'InstallPath' -Value $InstallPath
-            Set-LMRegistry -Name 'ConfigPath'  -Value $ConfigPath
-            Set-LMRegistry -Name 'Profile'     -Value 'A'
-            Set-LMRegistry -Name 'Transport'   -Value 'stdio'
-            Set-LMRegistry -Name 'Version'     -Value $VERSION
+            Set-LMRegistry -Key $REG_ROOT -Name 'InstallPath' -Value $InstallPath
+            Set-LMRegistry -Key $REG_ROOT -Name 'ConfigPath'  -Value $ConfigPath
+            Set-LMRegistry -Key $REG_ROOT -Name 'Profile'     -Value 'A'
+            Set-LMRegistry -Key $REG_ROOT -Name 'Transport'   -Value 'stdio'
+            Set-LMRegistry -Key $REG_ROOT -Name 'Version'     -Value $VERSION
             Write-LMOK 'Registry entries written.'
         } catch {
             Write-LMWarn "Could not write registry entries: $_"
@@ -192,13 +193,13 @@ if ($Profile -eq 'A') {
 
         Write-LMStep 'LegacyMCP Uninstall -- Profile A'
 
-        $cfg         = Get-LMConfig
-        $InstallPath = if ($InstallPath) { $InstallPath } elseif ($cfg['InstallPath']) { $cfg['InstallPath'] } else { "$env:ProgramFiles\LegacyMCP" }
-        $ConfigPath  = if ($ConfigPath)  { $ConfigPath }  elseif ($cfg['ConfigPath'])  { $cfg['ConfigPath'] }  else { "$env:ProgramData\LegacyMCP\config\config.yaml" }
+        $cfg         = Get-LMConfig -RegistryRoot $REG_ROOT
+        $InstallPath = if ($InstallPath) { $InstallPath } elseif ($cfg['InstallPath']) { $cfg['InstallPath'] } else { "$env:LOCALAPPDATA\LegacyMCP" }
+        $ConfigPath  = if ($ConfigPath)  { $ConfigPath }  elseif ($cfg['ConfigPath'])  { $cfg['ConfigPath'] }  else { "$env:LOCALAPPDATA\LegacyMCP\config\config.yaml" }
         $VenvPath    = Join-Path $InstallPath '.venv'
 
         try {
-            Remove-LMRegistry
+            Remove-LMRegistry -Key $REG_ROOT
             Write-LMOK 'Registry entries removed.'
         } catch {
             Write-LMWarn "Could not remove registry entries (non-blocking): $_"
@@ -262,7 +263,7 @@ if ($Profile -eq 'A') {
 
         Write-LMStep 'Step 6 -- API key'
         if (-not $ApiKey) { $ApiKey = New-LMApiKey }
-        Protect-LMApiKey -ApiKey $ApiKey -ServiceAccount $ServiceAccount
+        Protect-LMApiKey -ApiKey $ApiKey -ServiceAccount $ServiceAccount -RegistryRoot $REG_ROOT
         Write-LMInfo 'API key stored (DPAPI-NG, SID-scoped). Keep a secure copy if needed.'
         $ApiKey = $null
 
@@ -282,7 +283,7 @@ if ($Profile -eq 'A') {
             Write-LMOK 'config.yaml created from template.'
         }
         # Write ConfigPath to registry now so Set-LMConfig can find it for SnapshotPath
-        Set-LMRegistry -Name 'ConfigPath' -Value $ConfigPath
+        Set-LMRegistry -Key $REG_ROOT -Name 'ConfigPath' -Value $ConfigPath
         # Update SSL cert paths in config.yaml
         Invoke-LMReplaceCert -CertFile $certResult.CertFile -CertKeyFile $certResult.KeyFile `
             -CertDir $CertDir -ConfigPath $ConfigPath
@@ -296,18 +297,18 @@ if ($Profile -eq 'A') {
             -InstallPath $InstallPath -LogPath $LogPath `
             -ServiceAccount $ServiceAccount -Port $Port
         # SnapshotPath after service install so icacls can grant to service account
-        Set-LMConfig -Name 'SnapshotPath' -Value $SnapshotPath
+        Set-LMConfig -RegistryRoot $REG_ROOT -Name 'SnapshotPath' -Value $SnapshotPath
 
         Write-LMStep 'Step 10 -- Firewall'
         Add-LMFirewallRule -Port $Port
 
         Write-LMStep 'Step 11 -- Registry'
-        Set-LMRegistry -Name 'InstallPath'  -Value $InstallPath
-        Set-LMRegistry -Name 'LogPath'      -Value $LogPath
-        Set-LMRegistry -Name 'Profile'      -Value $Profile
-        Set-LMRegistry -Name 'Transport'    -Value 'streamable-http'
-        Set-LMRegistry -Name 'Port'         -Value $Port -Type 'DWord'
-        Set-LMRegistry -Name 'Version'      -Value $VERSION
+        Set-LMRegistry -Key $REG_ROOT -Name 'InstallPath'  -Value $InstallPath
+        Set-LMRegistry -Key $REG_ROOT -Name 'LogPath'      -Value $LogPath
+        Set-LMRegistry -Key $REG_ROOT -Name 'Profile'      -Value $Profile
+        Set-LMRegistry -Key $REG_ROOT -Name 'Transport'    -Value 'streamable-http'
+        Set-LMRegistry -Key $REG_ROOT -Name 'Port'         -Value $Port -Type 'DWord'
+        Set-LMRegistry -Key $REG_ROOT -Name 'Version'      -Value $VERSION
         Write-LMOK 'Registry entries written.'
 
         Write-LMStep 'Step 12 -- Start service'
@@ -340,7 +341,7 @@ if ($Profile -eq 'A') {
 
         Write-LMStep "LegacyMCP Uninstall -- Profile $Profile Server"
 
-        $cfg         = Get-LMConfig
+        $cfg         = Get-LMConfig -RegistryRoot $REG_ROOT
         $InstallPath = if ($InstallPath) { $InstallPath } elseif ($cfg['InstallPath']) { $cfg['InstallPath'] } else { "$env:ProgramFiles\LegacyMCP" }
         $ConfigPath  = if ($ConfigPath)  { $ConfigPath }  elseif ($cfg['ConfigPath'])  { $cfg['ConfigPath'] }  else { "$env:ProgramData\LegacyMCP\config\config.yaml" }
         $LogPath     = if ($LogPath)     { $LogPath }     elseif ($cfg['LogPath'])     { $cfg['LogPath'] }     else { "$env:ProgramData\LegacyMCP\logs" }
@@ -358,7 +359,7 @@ if ($Profile -eq 'A') {
 
         Write-LMStep 'Step 4 -- Registry'
         try {
-            Remove-LMRegistry
+            Remove-LMRegistry -Key $REG_ROOT
             Write-LMOK 'Registry entries removed.'
         } catch {
             Write-LMWarn "Could not remove registry entries: $_"
