@@ -263,6 +263,7 @@ if ($Profile -eq 'A') {
 
         Write-LMStep 'Step 6 -- API key'
         if (-not $ApiKey) { $ApiKey = New-LMApiKey }
+        $displayApiKey = $ApiKey
         Protect-LMApiKey -ApiKey $ApiKey -ServiceAccount $ServiceAccount -RegistryRoot $REG_ROOT
         Write-LMInfo 'API key stored (DPAPI-NG, SID-scoped). Keep a secure copy if needed.'
         $ApiKey = $null
@@ -284,9 +285,13 @@ if ($Profile -eq 'A') {
         }
         # Write ConfigPath to registry now so Set-LMConfig can find it for SnapshotPath
         Set-LMRegistry -Key $REG_ROOT -Name 'ConfigPath' -Value $ConfigPath
-        # Update SSL cert paths in config.yaml
-        Invoke-LMReplaceCert -CertFile $certResult.CertFile -CertKeyFile $certResult.KeyFile `
-            -CertDir $CertDir -ConfigPath $ConfigPath
+        # Update SSL cert paths in config.yaml.
+        # Both Import-LMCert (user-provided) and New-LMSelfSignedCert already place the
+        # cert in $CertDir -- only the YAML update is needed here. Invoke-LMReplaceCert
+        # would call Import-LMCert again, causing "overwrite with itself" on PS 5.1.
+        Update-LMYamlSslFields -YamlPath $ConfigPath `
+            -SslCertFile $certResult.CertFile -SslKeyFile $certResult.KeyFile
+        Write-LMOK 'ssl_certfile and ssl_keyfile updated in config.yaml.'
 
         Write-LMStep 'Step 8 -- EventLog'
         Register-LMEventLog
@@ -324,6 +329,10 @@ if ($Profile -eq 'A') {
         Write-LMInfo "Logs:          $LogPath"
         Write-LMInfo "Port:          $Port"
         Write-LMInfo "Certificate:   $($certResult.CertFile)"
+        Write-Host ''
+        Write-LMWarn 'API key (save this -- needed for client setup):'
+        Write-LMWarn "  $displayApiKey"
+        $displayApiKey = $null
         Write-Host ''
         Write-LMWarn 'Copy the CA certificate to the consultant PC:'
         Write-LMWarn "  $($certResult.CertFile)"

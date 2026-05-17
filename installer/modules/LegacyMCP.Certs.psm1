@@ -161,4 +161,4 @@ function Invoke-LMReplaceCert {
     }
 }
 
-Export-ModuleMember -Function New-LMSelfSignedCert, Import-LMCert, Invoke-LMReplaceCert
+Export-ModuleMember -Function New-LMSelfSignedCert, Import-LMCert, Invoke-LMReplaceCert, Update-LMYamlSslFields
