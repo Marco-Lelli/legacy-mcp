@@ -118,13 +118,13 @@ Open PowerShell as Administrator:
 
 ```powershell
 cd C:\LegacyMCP-Setup\installer
-.\Install-LegacyMCP.ps1 -DeployProfile B -ServiceAccount "DOMAIN\svc_legacymcp$"
+.\Setup-LegacyMCP.ps1 -Profile B-core -Role Server -Mode Install -ServiceAccount "DOMAIN\svc_legacymcp$"
 ```
 
 For a non-gMSA account:
 
 ```powershell
-.\Install-LegacyMCP.ps1 -DeployProfile B -ServiceAccount "DOMAIN\svc_legacymcp"
+.\Setup-LegacyMCP.ps1 -Profile B-core -Role Server -Mode Install -ServiceAccount "DOMAIN\svc_legacymcp"
 ```
 
 The installer will:
@@ -169,11 +169,8 @@ For a live workspace:
 ### 4. Copy the TLS certificate to the consultant machine
 
 The server certificate is at `%ProgramData%\LegacyMCP\certs\server.crt`.
-To confirm the path, run:
-
-```powershell
-.\Config-LegacyMCP.ps1 -Get
-```
+The path is also recorded in the Windows registry under
+`HKLM:\SOFTWARE\LegacyMCP\CertFile`.
 
 Copy `server.crt` to the consultant machine via a secure channel.
 
@@ -181,36 +178,18 @@ Copy `server.crt` to the consultant machine via a secure channel.
 
 ## Installation — Client Side
 
-`Setup-LegacyMCPClient.ps1` can be run either from inside the repository
-or from a standalone folder outside it — useful when the consultant machine
-does not have the full repository.
-
-**Option 1 — From the installer source**
+Run the unified installer on the consultant machine as your **normal user account
+(not Administrator)**. Copy `installer\` (including `installer\modules\` and
+`installer\mcp-remote-live.ps1`) to the consultant machine if needed.
 
 ```powershell
 cd C:\LegacyMCP-Setup\installer
-.\Setup-LegacyMCPClient.ps1 `
+.\Setup-LegacyMCP.ps1 -Profile B-core -Role Client -Mode Install `
   -ServerUrl "https://SERVER_IP:8000/mcp" `
   -CaCertPath "C:\path\to\server.crt"
 ```
 
-**Option 2 — From a standalone folder (no repository required)**
-
-1. Create a folder on the consultant machine, e.g. `C:\LegacyMCP-Client\installer\`
-2. Copy these files from `installer\` into that folder:
-   - `Setup-LegacyMCPClient.ps1`
-   - `mcp-remote-live.ps1`
-3. Copy the server certificate (`server.crt`) to a location of your choice.
-4. Run from that folder:
-
-```powershell
-cd C:\LegacyMCP-Client\installer
-.\Setup-LegacyMCPClient.ps1 `
-  -ServerUrl "https://SERVER_IP:8000/mcp" `
-  -CaCertPath "C:\path\to\server.crt"
-```
-
-In both options, the script will prompt for the API key, then:
+The script will prompt for the API key, then:
 - Copy the CA certificate to `%LOCALAPPDATA%\LegacyMCP\certs\`
 - Store the API key encrypted (DPAPI user-scope) in `%LOCALAPPDATA%\LegacyMCP\.legacymcp-key`
 - Generate `%LOCALAPPDATA%\LegacyMCP\mcp-remote-live.bat` (Claude Desktop entry point)
@@ -250,8 +229,8 @@ legacy CA compatibility, see [tls-certificate-setup.md](tls-certificate-setup.md
   `%LOCALAPPDATA%\LegacyMCP\mcp-remote-live.bat`
 
 **Authentication errors:**
-- API key mismatch — re-run `Setup-LegacyMCPClient.ps1` with the correct key
-- Check server config: `.\Config-LegacyMCP.ps1 -Validate`
+- API key mismatch — re-run `.\Setup-LegacyMCP.ps1 -Profile B-core -Role Client -Mode Install` with the correct key
+- Check server config: review `%ProgramData%\LegacyMCP\config\config.yaml`
 
 **WinRM / Kerberos errors:**
 - Verify WinRM HTTPS is enabled on the DC: `Test-WSMan -ComputerName DC01 -UseSSL`

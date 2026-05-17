@@ -24,11 +24,19 @@ legacy-mcp/
 │   └── modules/            # PS helper modules per AD area
 ├── config/                 # config templates for profiles A / B / C
 ├── docs/                   # architecture and documentation
-├── client/                 # consultant client scripts
-│   └── mcp-remote-live.ps1   # runtime script (source, in repo)
-│   # .legacymcp-key, mcp-remote-live.bat and certs/ are generated
-│   # in %LOCALAPPDATA%\LegacyMCP\ -- not in the repository
 ├── installer/              # PowerShell installer and permission scripts
+│   ├── Setup-LegacyMCP.ps1   # unified installer/configurator (Profile A, B, C)
+│   ├── mcp-remote-live.ps1   # consultant client runtime script (source, in repo)
+│   │   # .legacymcp-key, mcp-remote-live.bat and certs/ are generated
+│   │   # in %LOCALAPPDATA%\LegacyMCP\ -- not in the repository
+│   ├── modules/            # PS functional modules
+│   │   ├── LegacyMCP.Common.psm1
+│   │   ├── LegacyMCP.Python.psm1
+│   │   ├── LegacyMCP.Service.psm1
+│   │   ├── LegacyMCP.Certs.psm1
+│   │   ├── LegacyMCP.Config.psm1
+│   │   └── LegacyMCP.Client.psm1
+│   └── tools/              # bundled binaries (nssm.exe)
 ├── src/legacy_mcp/         # MCP server — Python
 │   ├── server.py           # FastMCP entrypoint
 │   ├── config.py           # YAML config loader and validation
@@ -295,7 +303,7 @@ on server restart.
 ### EventLog
 - Dedicated log: "LegacyMCP" (not the generic Application log)
 - Source name: "LegacyMCP-Server"
-- Setup required once: run `scripts/Register-EventLog.ps1` as Administrator
+- Registered automatically during Profile B Server installation (`Setup-LegacyMCP.ps1`); absorbed into `LegacyMCP.Service.psm1` (`Register-LMEventLog`)
 - If not registered, the server continues to function but emits a warning
   on the first failed EventLog write
 
