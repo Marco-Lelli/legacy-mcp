@@ -479,7 +479,7 @@ function New-LMApiKey {
 }
 
 # ---------------------------------------------------------------------------
-# Protect-LMApiKey / Get-LMApiKey  (DPAPI-NG via pwsh.exe subprocess)
+# Protect-LMApiKey / Get-LMApiKey  (DPAPI-NG in-process via Import-Module)
 # ---------------------------------------------------------------------------
 
 function Protect-LMApiKey {
@@ -493,21 +493,18 @@ function Protect-LMApiKey {
     )
     Assert-LMElevation -Context 'Protect-LMApiKey'
     try {
+        Import-Module SecretManagement.DpapiNG -ErrorAction Stop
+    } catch {
+        throw 'SecretManagement.DpapiNG module not installed. Run: Install-Module SecretManagement.DpapiNG -Scope AllUsers'
+    }
+    try {
         $svcSid = (New-Object System.Security.Principal.NTAccount($ServiceAccount)).Translate(
             [System.Security.Principal.SecurityIdentifier]).Value
-        # Pass secrets via env vars to avoid quoting issues in subprocess command string
-        $env:_LM_APIKEY = $ApiKey
-        $env:_LM_SID    = $svcSid
-        $cmd = 'Import-Module SecretManagement.DpapiNG -ErrorAction Stop; ConvertTo-DpapiNGSecret -InputObject $env:_LM_APIKEY -Sid $env:_LM_SID'
-        $encryptedKey = & pwsh.exe -NoProfile -NonInteractive -Command $cmd
-        if ($LASTEXITCODE -ne 0 -or -not $encryptedKey) {
-            throw "DPAPI-NG encryption failed (exit $LASTEXITCODE)."
-        }
+        $encryptedKey = ConvertTo-DpapiNGSecret -InputObject $ApiKey -Sid $svcSid
         Set-LMRegistry -Key $RegistryRoot -Name 'ApiKey' -Value $encryptedKey
         Write-LMOK 'API key stored encrypted (DPAPI-NG, SID-scoped) in registry.'
-    } finally {
-        $env:_LM_APIKEY = $null
-        $env:_LM_SID    = $null
+    } catch {
+        throw "Failed to encrypt API key with DPAPI-NG: $_"
     }
 }
 
@@ -516,14 +513,17 @@ function Get-LMApiKey {
     param([string]$RegistryRoot = $REG_ROOT)
     $props = Get-ItemProperty -Path $RegistryRoot -ErrorAction SilentlyContinue
     if ($null -eq $props -or [string]::IsNullOrEmpty($props.ApiKey)) { return $null }
-    $env:_LM_ENCKEY = $props.ApiKey
     try {
-        $cmd       = 'Import-Module SecretManagement.DpapiNG -ErrorAction Stop; ConvertFrom-DpapiNGSecret -InputObject $env:_LM_ENCKEY'
-        $plaintext = & pwsh.exe -NoProfile -NonInteractive -Command $cmd
-        if ($LASTEXITCODE -ne 0) { return $null }
-        return $plaintext
-    } finally {
-        $env:_LM_ENCKEY = $null
+        Import-Module SecretManagement.DpapiNG -ErrorAction Stop
+    } catch {
+        Write-LMWarn 'SecretManagement.DpapiNG module not installed -- cannot decrypt API key.'
+        return $null
+    }
+    try {
+        return ConvertFrom-DpapiNGSecret -InputObject $props.ApiKey
+    } catch {
+        Write-LMWarn "Failed to decrypt API key: $_"
+        return $null
     }
 }
 
