@@ -69,6 +69,58 @@ function Install-LMService {
             if ($svcSecure)   { $svcSecure.Dispose() }
             if ($svcPassword) { $svcPassword = $null }
         }
+        Write-LMOK "Service account set to: $ServiceAccount"
+
+        # SeServiceLogonRight check -- non-gMSA accounts must have this right
+        # to start a Windows service. gMSA receive it automatically from AD.
+        Write-LMInfo "Checking 'Log on as a service' right for: $ServiceAccount"
+
+        $secpolCfg = Join-Path $env:TEMP 'legacymcp_secpol.cfg'
+        $seceditDb  = Join-Path $env:TEMP 'legacymcp_secedit.sdb'
+
+        try {
+            $ntAcct = New-Object System.Security.Principal.NTAccount($ServiceAccount)
+            $sid    = $ntAcct.Translate([System.Security.Principal.SecurityIdentifier]).Value
+
+            & secedit /export /cfg $secpolCfg /quiet | Out-Null
+            $cfgContent = Get-Content $secpolCfg -Raw -Encoding Unicode
+
+            if ($cfgContent -match "SeServiceLogonRight\s*=.*\*$sid") {
+                Write-LMOK "Account has 'Log on as a service' right."
+            } else {
+                $lines   = $cfgContent -split '\r?\n'
+                $patched = $false
+                for ($i = 0; $i -lt $lines.Count; $i++) {
+                    if ($lines[$i] -match '^SeServiceLogonRight\s*=') {
+                        $lines[$i] = $lines[$i].TrimEnd() + ",*$sid"
+                        $patched = $true
+                        break
+                    }
+                }
+                if (-not $patched) {
+                    for ($i = 0; $i -lt $lines.Count; $i++) {
+                        if ($lines[$i] -match '^\[Privilege Rights\]') {
+                            $before = $lines[0..$i]
+                            $after  = if ($i + 1 -lt $lines.Count) { $lines[($i+1)..($lines.Count-1)] } else { @() }
+                            $lines  = $before + "SeServiceLogonRight = *$sid" + $after
+                            break
+                        }
+                    }
+                }
+                [System.IO.File]::WriteAllText(
+                    $secpolCfg,
+                    ($lines -join "`r`n"),
+                    [System.Text.Encoding]::Unicode
+                )
+                & secedit /configure /db $seceditDb /cfg $secpolCfg /areas USER_RIGHTS /quiet | Out-Null
+                Write-LMWarn "Granted 'Log on as a service' to $ServiceAccount -- verify in secpol.msc before production deployment"
+            }
+        } catch {
+            Write-LMWarn "Could not check SeServiceLogonRight: $_"
+        } finally {
+            if (Test-Path $secpolCfg) { Remove-Item $secpolCfg -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $seceditDb)  { Remove-Item $seceditDb  -Force -ErrorAction SilentlyContinue }
+        }
     }
 
     Write-LMOK "Service '$ServiceName' installed via NSSM."

@@ -21,11 +21,10 @@ function New-LMSelfSignedCert {
 
     $env:LEGACYMCP_CERT_FILE = $certFile
     $env:LEGACYMCP_KEY_FILE  = $keyFile
-    $env:LEGACYMCP_HOSTNAME  = $Hostname
     $env:LEGACYMCP_CERT_DAYS = $ValidityDays.ToString()
 
     $genPy = @'
-import os, datetime, ipaddress
+import os, socket, datetime, ipaddress
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
@@ -33,7 +32,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 cert_file = os.environ['LEGACYMCP_CERT_FILE']
 key_file  = os.environ['LEGACYMCP_KEY_FILE']
-hostname  = os.environ.get('LEGACYMCP_HOSTNAME', 'legacymcp-server')
+hostname  = socket.getfqdn()
 days      = int(os.environ.get('LEGACYMCP_CERT_DAYS', '730'))
 
 key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -71,7 +70,6 @@ print('OK')
     & $VenvPython -c $genPy | Out-Null
     Remove-Item Env:LEGACYMCP_CERT_FILE  -ErrorAction SilentlyContinue
     Remove-Item Env:LEGACYMCP_KEY_FILE   -ErrorAction SilentlyContinue
-    Remove-Item Env:LEGACYMCP_HOSTNAME   -ErrorAction SilentlyContinue
     Remove-Item Env:LEGACYMCP_CERT_DAYS  -ErrorAction SilentlyContinue
 
     if ($LASTEXITCODE -ne 0) {

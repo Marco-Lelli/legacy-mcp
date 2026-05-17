@@ -95,10 +95,7 @@ function Get-LMYamlPort {
 function Test-LMYamlHasHost {
     param([string]$Content)
     if (-not $Content) { return $false }
-    foreach ($line in ($Content -split '\r?\n')) {
-        if ($line.TrimStart().StartsWith('host')) { return $true }
-    }
-    return $false
+    return ($Content -match '(?m)^\s*host\s*:')
 }
 
 function Test-LMYamlHasHost0000 {

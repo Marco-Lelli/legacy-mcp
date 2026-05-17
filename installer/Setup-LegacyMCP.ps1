@@ -85,13 +85,16 @@ if ($Profile -like 'B*' -and $Role -eq 'Client' -and $Mode -eq 'Install') {
 # Elevation
 # ---------------------------------------------------------------------------
 
-if ($Profile -like 'B*' -or $Profile -eq 'C') {
+if (($Profile -like 'B*' -and $Role -eq 'Server') -or $Profile -eq 'C') {
     Assert-LMElevation -Context "Profile $Profile $Mode"
 }
 if ($Profile -eq 'A' -and (Test-LMElevation)) {
     throw ('Profile A setup must NOT run as Administrator. ' +
            'Running elevated would create the virtual environment and config ' +
            'in the Administrator profile, making them invisible to Claude Desktop.')
+}
+if ($Profile -like 'B*' -and $Role -eq 'Client' -and (Test-LMElevation)) {
+    throw 'Do not run as Administrator. Run as the normal user account whose Claude Desktop you are configuring.'
 }
 
 # ---------------------------------------------------------------------------
@@ -414,6 +417,14 @@ if ($Profile -eq 'A') {
             }
         }
 
+        if ($ServerUrl -notmatch '^https://') {
+            throw "ServerUrl must start with https://. Got: $ServerUrl"
+        }
+        if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
+            Write-LMWarn 'npx not found in PATH. Install Node.js (https://nodejs.org) and ensure npx is in PATH.'
+            Write-LMWarn 'Continuing -- npx must be available before Claude Desktop can use this MCP server.'
+        }
+
         Write-LMStep 'Step 1 -- CA certificate'
         if (-not (Test-Path $CaCertPath)) { throw "CA certificate not found: $CaCertPath" }
         $localCertPath = Join-Path $ClientCertDir (Split-Path $CaCertPath -Leaf)
@@ -427,6 +438,7 @@ if ($Profile -eq 'A') {
         $bstr        = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($apiKeyInput)
         try {
             $plainKey = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+            if (-not $plainKey) { throw 'API key cannot be empty.' }
             Protect-LMClientApiKey -ApiKey $plainKey -OutputPath $keyPath
         } finally {
             [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
