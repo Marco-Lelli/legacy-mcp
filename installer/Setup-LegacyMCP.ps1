@@ -324,6 +324,7 @@ if ($Profile -eq 'A') {
         Write-LMOK "Service '$SERVICE_NAME' started."
 
         Write-LMStep 'Setup complete'
+        $fqdn = [System.Net.Dns]::GetHostEntry('').HostName
         Write-LMOK  "Profile $Profile Server installation successful."
         Write-LMInfo "Service:       $SERVICE_NAME (Running)"
         Write-LMInfo "Install path:  $InstallPath"
@@ -342,7 +343,7 @@ if ($Profile -eq 'A') {
         Write-Host ''
         Write-LMInfo 'NEXT STEP: on the consultant PC, run:'
         Write-LMInfo "  .\Setup-LegacyMCP.ps1 -Profile $Profile -Role Client -Mode Install"
-        Write-LMInfo "    -ServerUrl https://$($env:COMPUTERNAME):$Port/mcp"
+        Write-LMInfo "    -ServerUrl https://$($fqdn):$Port/mcp"
         Write-LMInfo '    -CaCertPath <path-to-copied-server.crt>'
         Write-Host ''
         Write-LMInfo 'To configure forests, use Manage-Workspaces.ps1:'
@@ -433,17 +434,17 @@ if ($Profile -eq 'A') {
         Write-LMInfo 'NODE_EXTRA_CA_CERTS will be set in the BAT entry point.'
 
         Write-LMStep 'Step 2 -- API key'
-        $keyPath     = Join-Path $ClientPath '.legacymcp-key'
-        $apiKeyInput = Read-Host "Enter the API key for $ServerUrl" -AsSecureString
-        $bstr        = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($apiKeyInput)
-        try {
-            $plainKey = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
-            if (-not $plainKey) { throw 'API key cannot be empty.' }
-            Protect-LMClientApiKey -ApiKey $plainKey -OutputPath $keyPath
-        } finally {
-            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-            $plainKey = $null
+        $keyPath = Join-Path $ClientPath '.legacymcp-key'
+        if (-not $ApiKey) {
+            $apiKeySecure = Read-Host "Enter the API key for $ServerUrl" -AsSecureString
+            $ApiKey = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+                [Runtime.InteropServices.Marshal]::SecureStringToBSTR($apiKeySecure))
+        } else {
+            Write-LMInfo "Using API key provided via -ApiKey parameter."
         }
+        if (-not $ApiKey) { throw 'API key cannot be empty.' }
+        Protect-LMClientApiKey -ApiKey $ApiKey -OutputPath $keyPath
+        $ApiKey = $null
 
         Write-LMStep 'Step 3 -- BAT entry point'
         Copy-Item -Path $ps1Source -Destination $Ps1Path -Force
