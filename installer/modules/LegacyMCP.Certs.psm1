@@ -31,10 +31,10 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-cert_file = os.environ["LEGACYMCP_CERT_FILE"]
-key_file  = os.environ["LEGACYMCP_KEY_FILE"]
-hostname  = os.environ.get("LEGACYMCP_HOSTNAME", "legacymcp-server")
-days      = int(os.environ.get("LEGACYMCP_CERT_DAYS", "730"))
+cert_file = os.environ['LEGACYMCP_CERT_FILE']
+key_file  = os.environ['LEGACYMCP_KEY_FILE']
+hostname  = os.environ.get('LEGACYMCP_HOSTNAME', 'legacymcp-server')
+days      = int(os.environ.get('LEGACYMCP_CERT_DAYS', '730'))
 
 key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 now = datetime.datetime.now(datetime.timezone.utc)
@@ -43,10 +43,10 @@ subject = issuer = x509.Name([
 ])
 san = x509.SubjectAlternativeName([
     x509.DNSName(hostname),
-    x509.DNSName("localhost"),
+    x509.DNSName('localhost'),
 ])
 try:
-    san._general_names._general_names.append(x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")))
+    san._general_names._general_names.append(x509.IPAddress(ipaddress.IPv4Address('127.0.0.1')))
 except Exception:
     pass
 cert = (x509.CertificateBuilder()
@@ -58,14 +58,14 @@ cert = (x509.CertificateBuilder()
     .not_valid_after(now + datetime.timedelta(days=days))
     .add_extension(san, critical=False)
     .sign(key, hashes.SHA256()))
-with open(cert_file, "wb") as f:
+with open(cert_file, 'wb') as f:
     f.write(cert.public_bytes(serialization.Encoding.PEM))
-with open(key_file, "wb") as f:
+with open(key_file, 'wb') as f:
     f.write(key.private_bytes(
         serialization.Encoding.PEM,
         serialization.PrivateFormat.TraditionalOpenSSL,
         serialization.NoEncryption()))
-print("OK")
+print('OK')
 '@
 
     & $VenvPython -c $genPy | Out-Null
