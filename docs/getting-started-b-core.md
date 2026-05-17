@@ -151,7 +151,7 @@ Get-NetFirewallRule -DisplayName "LegacyMCP MCP Server"
 ### 3. Configure workspaces
 
 ```powershell
-.\Manage-Workspaces.ps1 -Add -Name "contoso.local" -File "%ProgramData%\LegacyMCP\data\contoso.local.json"
+.\Manage-Workspaces.ps1 -Add -Name "contoso.local" -File "$env:ProgramData\LegacyMCP\data\contoso.local.json"
 ```
 
 For a live workspace:
@@ -169,9 +169,6 @@ For a live workspace:
 ### 4. Copy the TLS certificate to the consultant machine
 
 The server certificate is at `%ProgramData%\LegacyMCP\certs\server.crt`.
-The path is also recorded in the Windows registry under
-`HKLM:\SOFTWARE\LegacyMCP\CertFile`.
-
 Copy `server.crt` to the consultant machine via a secure channel.
 
 ---

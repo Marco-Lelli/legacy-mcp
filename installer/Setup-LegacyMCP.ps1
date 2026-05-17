@@ -401,12 +401,15 @@ if ($Profile -eq 'A') {
         $ClientPath    = "$env:LOCALAPPDATA\LegacyMCP"
         $ClientCertDir = "$env:LOCALAPPDATA\LegacyMCP\certs"
 
-        $ps1Source = Join-Path $RepoRoot 'client\mcp-remote-live.ps1'
+        $ps1Source = Join-Path $ScriptDir 'mcp-remote-live.ps1'
+        if (-not (Test-Path $ps1Source)) {
+            $ps1Source = Join-Path $RepoRoot 'client\mcp-remote-live.ps1'
+        }
         if (-not (Test-Path $ps1Source)) {
             $ps1Source = Join-Path $ScriptDir 'client\mcp-remote-live.ps1'
         }
         if (-not (Test-Path $ps1Source)) {
-            throw "mcp-remote-live.ps1 not found. Checked: $(Join-Path $RepoRoot 'client\mcp-remote-live.ps1') and $(Join-Path $ScriptDir 'client\mcp-remote-live.ps1')"
+            throw "mcp-remote-live.ps1 not found. Checked: $(Join-Path $ScriptDir 'mcp-remote-live.ps1'), $(Join-Path $RepoRoot 'client\mcp-remote-live.ps1'), $(Join-Path $ScriptDir 'client\mcp-remote-live.ps1')"
         }
         $Ps1Path = Join-Path $ClientPath 'mcp-remote-live.ps1'
 

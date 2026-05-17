@@ -204,7 +204,14 @@ to Git. See the DATA STORAGE section in `collector/README.txt`.
 
 **On your analysis machine:**
 
-5. Update `%LOCALAPPDATA%\LegacyMCP\config\config.yaml` to point to the real JSON:
+5. Update `%LOCALAPPDATA%\LegacyMCP\config\config.yaml` to point to the real JSON,
+   or use `Manage-Workspaces.ps1` from the `installer\` folder:
+
+```powershell
+.\Manage-Workspaces.ps1 -Add -Name "contoso.local" -File "C:\path\to\contoso.local-data.json"
+```
+
+   Or edit the file directly:
 
 ```yaml
 profile: A
