@@ -22,7 +22,7 @@ Restart-Service LegacyMCP
 Then copy the new `server.crt` to the consultant machine (`%LOCALAPPDATA%\LegacyMCP\certs\`)
 and restart Claude Desktop.
 
-> A guided `-ReplaceCert` command is planned for the Fase 3 unified installer.
+> A guided `-ReplaceCert` mode is planned for a future release of `Setup-LegacyMCP.ps1`.
 
 The installer uses Python's `cryptography` library to generate a
 self-signed SHA-256 certificate. This is necessary because:
@@ -31,22 +31,31 @@ self-signed SHA-256 certificate. This is necessary because:
 
 ### Option B — Corporate CA certificate
 
-If you have a CA-signed certificate in PEM format, use the built-in replace action:
+If you have a CA-signed certificate in PEM format, replace it manually:
+
+1. Copy the new certificate files to the server cert directory (overwrite both files):
 
 ```powershell
-cd C:\LegacyMCP-Setup\installer
-.\Install-LegacyMCP.ps1 -Action ReplaceCert `
-    -CertFile "C:\path\to\server.crt" `
-    -CertKeyFile "C:\path\to\server.key"
+Copy-Item "C:\path\to\server.crt" "$env:ProgramData\LegacyMCP\certs\server.crt" -Force
+Copy-Item "C:\path\to\server.key" "$env:ProgramData\LegacyMCP\certs\server.key" -Force
 ```
 
-This command:
-1. Updates `ssl_certfile` and `ssl_keyfile` in `config.yaml`
-2. Restarts the LegacyMCP service
-3. Displays the current API key so you can update clients
+2. Update `ssl_certfile` and `ssl_keyfile` in `%ProgramData%\LegacyMCP\config\config.yaml`
+   to point to the new files, then restart the service:
 
-After replacing the certificate, update each consultant machine:
-copy the new `server.crt` to `%LOCALAPPDATA%\LegacyMCP\certs\` and restart Claude Desktop.
+```powershell
+Restart-Service LegacyMCP
+```
+
+3. Copy the new `server.crt` to each consultant machine and re-run the client installer:
+
+```powershell
+.\Setup-LegacyMCP.ps1 -Profile B-core -Role Client -Mode Install `
+    -ServerUrl "https://SERVER:8000/mcp" `
+    -CaCertPath "C:\path\to\server.crt"
+```
+
+After replacing the certificate, restart Claude Desktop on each consultant machine.
 
 > **Note:** Your CA certificate must use SHA-256. SHA-1 CA certificates
 > (e.g. Windows Server 2012 R2 AD CS default) are incompatible with
@@ -89,8 +98,9 @@ with open("certs/server_export.key", "wb") as f:
 ## Client Configuration
 
 `NODE_EXTRA_CA_CERTS` must point to the server certificate on the consultant
-machine. This is set automatically by `Setup-LegacyMCPClient.ps1` in the
-generated `mcp-remote-live.bat`.
+machine. This is set automatically by
+`Setup-LegacyMCP.ps1 -Profile B-core -Role Client` in the generated
+`mcp-remote-live.bat`.
 
 Manual configuration if needed:
 

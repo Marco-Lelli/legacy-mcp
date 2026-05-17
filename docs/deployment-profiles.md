@@ -108,8 +108,8 @@ Restrict access at the firewall level. TLS is strongly recommended.
 
 **Client setup (consultant's machine):**
 
-Run `Setup-LegacyMCPClient.ps1` once on each consultant's machine (non-elevated,
-regular user context). The script:
+Run `Setup-LegacyMCP.ps1 -Profile B-core -Role Client -Mode Install` once on each
+consultant's machine (non-elevated, regular user context). The script:
 
 1. Encrypts the API key with DPAPI user-scope → `%LOCALAPPDATA%\LegacyMCP\.legacymcp-key`
 2. Generates `%LOCALAPPDATA%\LegacyMCP\mcp-remote-live.bat` — the Claude Desktop entry point
@@ -136,7 +136,7 @@ The `claude_desktop_config.json` entry added by Setup looks like:
 }
 ```
 
-The paths are absolute and written by `Setup-LegacyMCPClient.ps1` — no manual
+The paths are absolute and written by `Setup-LegacyMCP.ps1` — no manual
 editing of the JSON file is needed.
 
 > Client files (`.legacymcp-key`, `mcp-remote-live.bat`, `server.crt`) are generated

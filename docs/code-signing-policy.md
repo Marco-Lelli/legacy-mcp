@@ -16,11 +16,14 @@ The following artifacts are signed in each release:
 
 - `collector/Collect-ADData.ps1`
 - `collector/modules/*.psm1`
-- `installer/Install-LegacyMCP.ps1`
-- `installer/Uninstall-LegacyMCP.ps1`
-- `installer/Config-LegacyMCP.ps1`
+- `installer/Setup-LegacyMCP.ps1`
+- `installer/modules/LegacyMCP.Common.psm1`
+- `installer/modules/LegacyMCP.Python.psm1`
+- `installer/modules/LegacyMCP.Service.psm1`
+- `installer/modules/LegacyMCP.Certs.psm1`
+- `installer/modules/LegacyMCP.Config.psm1`
+- `installer/modules/LegacyMCP.Client.psm1`
 - `installer/Manage-Workspaces.ps1`
-- `installer/Setup-LegacyMCPClient.ps1`
 - `installer/mcp-remote-live.ps1`
 
 Signing is applied to all PowerShell scripts distributed in release packages.
@@ -38,7 +41,7 @@ operating it.
 To verify the signature of a downloaded script:
 
 ```powershell
-Get-AuthenticodeSignature .\Install-LegacyMCP.ps1
+Get-AuthenticodeSignature .\Setup-LegacyMCP.ps1
 ```
 
 A valid signature will show `SignerCertificate` issued by `SignPath Foundation`.
