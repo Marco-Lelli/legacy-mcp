@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] - 2026-05-17 "Solid Ground"
+
+### Changed
+- Installer redesigned from scratch: unified `Setup-LegacyMCP.ps1`
+  orchestrator replaces Install-LegacyMCP.ps1, Uninstall-LegacyMCP.ps1,
+  Setup-LegacyMCPClient.ps1, and Config-LegacyMCP.ps1
+- Modular psm1 architecture: six focused modules under installer/modules/
+  (Common, Python, Service, Certs, Config, Client)
+- Windows standard path layout: ProgramFiles (binaries/venv),
+  ProgramData (config/logs/snapshots/certs), AppData\Local (client files)
+- Profile A runs as normal user (no elevation required); files in
+  %LOCALAPPDATA%\LegacyMCP\; registry in HKCU
+- Profile B Server requires elevation; HKLM registry
+- Profile B Client forbids elevation (files in user profile)
+- claude_desktop_config.json written automatically for Profile A
+- MSIX vs exe Claude Desktop auto-detection certified on field
+- SecretManagement.DpapiNG installed automatically if missing
+- ZIP deployment: pip install legacy-mcp from PyPI when pyproject.toml
+  not present
+
+### Fixed
+- Windows Defender venv interference documented for corporate machines
+- README.md: all relative links replaced with absolute GitHub URLs for PyPI
+- Firewall rule now removed on uninstall
+- venv and NSSM operations: explicit exit code checks (P4)
+- YAML encoding: UTF-8 without BOM in all write operations (P11)
+- Self-signed certificate uses FQDN (socket.getfqdn()) for SAN
+- SeServiceLogonRight auto-grant for non-gMSA service accounts
+- SecureString BSTR zeroed after use (P6)
+- API key displayed in server install summary
+- mcp-remote-live.ps1 search path covers standalone ZIP deployment
+
+### Removed
+- installer/Install-LegacyMCP.ps1 (absorbed by Setup-LegacyMCP.ps1)
+- installer/Uninstall-LegacyMCP.ps1 (absorbed by Setup-LegacyMCP.ps1)
+- installer/Setup-LegacyMCPClient.ps1 (absorbed by Setup-LegacyMCP.ps1)
+- installer/Config-LegacyMCP.ps1 (absorbed by LegacyMCP.Config.psm1)
+- scripts/Register-EventLog.ps1 (absorbed by LegacyMCP.Service.psm1)
+
 ## [0.2.2] - 2026-05-09 "Open Library"
 
 ### Security
