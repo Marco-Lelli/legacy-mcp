@@ -55,12 +55,20 @@ function Install-LMService {
     } else {
         Write-LMWarn "Using explicit credentials for service account '$ServiceAccount'."
         Write-LMWarn "Recommendation: use a gMSA account to avoid password management. See docs/minimum-permissions.md."
-        $svcSecure   = Read-Host "Password for $ServiceAccount" -AsSecureString
-        $svcPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-            [Runtime.InteropServices.Marshal]::SecureStringToBSTR($svcSecure))
-        & $NssmExe set $ServiceName ObjectName $ServiceAccount $svcPassword
-        if ($LASTEXITCODE -ne 0) { throw "NSSM set ObjectName failed. Exit code: $LASTEXITCODE" }
+        $svcSecure   = $null
         $svcPassword = $null
+        try {
+            $svcSecure   = Read-Host "Password for $ServiceAccount" -AsSecureString
+            $svcPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+                [Runtime.InteropServices.Marshal]::SecureStringToBSTR($svcSecure))
+            & $NssmExe set $ServiceName ObjectName $ServiceAccount $svcPassword
+            if ($LASTEXITCODE -ne 0) { throw "NSSM set ObjectName failed. Exit code: $LASTEXITCODE" }
+        } catch {
+            throw "Failed to set service account credentials: $_"
+        } finally {
+            if ($svcSecure)   { $svcSecure.Dispose() }
+            if ($svcPassword) { $svcPassword = $null }
+        }
     }
 
     Write-LMOK "Service '$ServiceName' installed via NSSM."

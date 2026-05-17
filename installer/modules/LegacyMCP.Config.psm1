@@ -5,7 +5,6 @@
 Import-Module (Join-Path $PSScriptRoot 'LegacyMCP.Common.psm1') -Force -Global
 
 $REG_ROOT    = 'HKLM:\SOFTWARE\LegacyMCP'
-$REG_SERVICE = 'HKLM:\SOFTWARE\LegacyMCP\Service'
 
 # ---------------------------------------------------------------------------
 # Internal helpers -- not exported

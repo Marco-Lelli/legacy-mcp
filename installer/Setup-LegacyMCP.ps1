@@ -388,7 +388,15 @@ if ($Profile -eq 'A') {
 
         $ClientPath    = "$env:LOCALAPPDATA\LegacyMCP"
         $ClientCertDir = "$env:LOCALAPPDATA\LegacyMCP\certs"
-        $Ps1Path       = Join-Path $RepoRoot 'client\mcp-remote-live.ps1'
+
+        $ps1Source = Join-Path $RepoRoot 'client\mcp-remote-live.ps1'
+        if (-not (Test-Path $ps1Source)) {
+            $ps1Source = Join-Path $ScriptDir 'client\mcp-remote-live.ps1'
+        }
+        if (-not (Test-Path $ps1Source)) {
+            throw "mcp-remote-live.ps1 not found. Checked: $(Join-Path $RepoRoot 'client\mcp-remote-live.ps1') and $(Join-Path $ScriptDir 'client\mcp-remote-live.ps1')"
+        }
+        $Ps1Path = Join-Path $ClientPath 'mcp-remote-live.ps1'
 
         foreach ($dir in @($ClientPath, $ClientCertDir)) {
             if (-not (Test-Path $dir)) {
@@ -417,6 +425,8 @@ if ($Profile -eq 'A') {
         }
 
         Write-LMStep 'Step 3 -- BAT entry point'
+        Copy-Item -Path $ps1Source -Destination $Ps1Path -Force
+        Write-LMOK "mcp-remote-live.ps1 copied to: $Ps1Path"
         $batPath = Join-Path $ClientPath 'mcp-remote-live.bat'
         New-LMMcpRemoteBat -ServerUrl $ServerUrl -CertPath $localCertPath `
             -Ps1Path $Ps1Path -OutputPath $batPath
