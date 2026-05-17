@@ -9,7 +9,6 @@ function New-LMSelfSignedCert {
     param(
         [string]$VenvPython,
         [string]$CertDir,
-        [string]$Hostname,
         [int]$ValidityDays = 730
     )
     $certFile = Join-Path $CertDir 'server.crt'

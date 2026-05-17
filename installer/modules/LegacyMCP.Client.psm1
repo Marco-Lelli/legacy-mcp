@@ -218,7 +218,8 @@ function Protect-LMClientApiKey {
     # Only the same Windows user can decrypt with ConvertTo-SecureString.
     $secure    = $ApiKey | ConvertTo-SecureString -AsPlainText -Force
     $encrypted = $secure | ConvertFrom-SecureString
-    $encrypted | Out-File $OutputPath -Encoding UTF8
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($OutputPath, $encrypted, $utf8NoBom)
     Write-LMOK "API key saved (DPAPI user-scope): $OutputPath"
 }
 

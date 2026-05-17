@@ -260,8 +260,7 @@ if ($Profile -eq 'A') {
         if ($CertFile -and $CertKeyFile) {
             $certResult = Import-LMCert -CertFile $CertFile -CertKeyFile $CertKeyFile -CertDir $CertDir
         } else {
-            $hostname   = $env:COMPUTERNAME
-            $certResult = New-LMSelfSignedCert -VenvPython $venvPython -CertDir $CertDir -Hostname $hostname
+            $certResult = New-LMSelfSignedCert -VenvPython $venvPython -CertDir $CertDir
         }
 
         Write-LMStep 'Step 6 -- API key'
@@ -437,8 +436,12 @@ if ($Profile -eq 'A') {
         $keyPath = Join-Path $ClientPath '.legacymcp-key'
         if (-not $ApiKey) {
             $apiKeySecure = Read-Host "Enter the API key for $ServerUrl" -AsSecureString
-            $ApiKey = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-                [Runtime.InteropServices.Marshal]::SecureStringToBSTR($apiKeySecure))
+            $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($apiKeySecure)
+            try {
+                $ApiKey = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+            } finally {
+                [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+            }
         } else {
             Write-LMInfo "Using API key provided via -ApiKey parameter."
         }
