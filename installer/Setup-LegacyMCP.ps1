@@ -138,7 +138,12 @@ if ($Profile -eq 'A') {
         $venvPython = Join-Path $VenvPath 'Scripts\python.exe'
 
         Write-LMStep 'Step 4 -- Package installation'
-        Install-LMPackage -VenvPath $VenvPath -PackageOrPath $RepoRoot -Editable
+        if (Test-Path (Join-Path $RepoRoot 'pyproject.toml')) {
+            Install-LMPackage -VenvPath $VenvPath -PackageOrPath $RepoRoot -Editable
+        } else {
+            Write-LMInfo 'Source tree not found -- installing from PyPI.'
+            Install-LMPackage -VenvPath $VenvPath -PackageOrPath 'legacy-mcp'
+        }
 
         Write-LMStep 'Step 5 -- Configuration'
         $templatePath = Join-Path $RepoRoot 'config\config.example-A.yaml'
@@ -246,7 +251,12 @@ if ($Profile -eq 'A') {
         $venvPython = Join-Path $VenvPath 'Scripts\python.exe'
 
         Write-LMStep 'Step 3 -- Package installation'
-        Install-LMPackage -VenvPath $VenvPath -PackageOrPath $RepoRoot -Editable
+        if (Test-Path (Join-Path $RepoRoot 'pyproject.toml')) {
+            Install-LMPackage -VenvPath $VenvPath -PackageOrPath $RepoRoot -Editable
+        } else {
+            Write-LMInfo 'Source tree not found -- installing from PyPI.'
+            Install-LMPackage -VenvPath $VenvPath -PackageOrPath 'legacy-mcp'
+        }
 
         Write-LMStep 'Step 4 -- Directories'
         foreach ($dir in @($InstallPath, (Split-Path $ConfigPath -Parent), $LogPath, $SnapshotPath, $CertDir)) {

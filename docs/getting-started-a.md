@@ -42,6 +42,10 @@ extract `legacymcp-installer.zip` to a folder of your choice, and
 open a PowerShell window (as your **normal user account, not Administrator**)
 in the `installer\` subfolder.
 
+> The installer detects that the source tree is not present and installs
+> the `legacy-mcp` package automatically from PyPI. An internet connection
+> is required during installation.
+
 **Option 2 — Clone with Git**
 
 ```bash
@@ -50,6 +54,10 @@ git clone https://github.com/Marco-Lelli/legacy-mcp.git
 
 Open a PowerShell window (as your **normal user account, not Administrator**)
 in the `installer\` subfolder.
+
+> With the full source tree, the installer uses `pip install -e .` (editable
+> install). This is the recommended mode for development and field testing
+> where you may need to modify the server code.
 
 **Both options — run the installer:**
 

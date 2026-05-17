@@ -506,6 +506,11 @@ function Protect-LMApiKey {
         [string]$RegistryRoot = $REG_ROOT
     )
     Assert-LMElevation -Context 'Protect-LMApiKey'
+    if (-not (Get-Module -ListAvailable -Name SecretManagement.DpapiNG)) {
+        Write-LMInfo 'Installing required module SecretManagement.DpapiNG...'
+        Install-Module SecretManagement.DpapiNG -Scope AllUsers -Force -ErrorAction Stop
+        Write-LMOK 'SecretManagement.DpapiNG installed.'
+    }
     try {
         Import-Module SecretManagement.DpapiNG -ErrorAction Stop
     } catch {
@@ -527,6 +532,16 @@ function Get-LMApiKey {
     param([string]$RegistryRoot = $REG_ROOT)
     $props = Get-ItemProperty -Path $RegistryRoot -ErrorAction SilentlyContinue
     if ($null -eq $props -or [string]::IsNullOrEmpty($props.ApiKey)) { return $null }
+    if (-not (Get-Module -ListAvailable -Name SecretManagement.DpapiNG)) {
+        Write-LMInfo 'Installing required module SecretManagement.DpapiNG...'
+        try {
+            Install-Module SecretManagement.DpapiNG -Scope AllUsers -Force -ErrorAction Stop
+            Write-LMOK 'SecretManagement.DpapiNG installed.'
+        } catch {
+            Write-LMWarn "Could not install SecretManagement.DpapiNG: $_"
+            return $null
+        }
+    }
     try {
         Import-Module SecretManagement.DpapiNG -ErrorAction Stop
     } catch {

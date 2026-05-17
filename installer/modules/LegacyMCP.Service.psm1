@@ -59,8 +59,12 @@ function Install-LMService {
         $svcPassword = $null
         try {
             $svcSecure   = Read-Host "Password for $ServiceAccount" -AsSecureString
-            $svcPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-                [Runtime.InteropServices.Marshal]::SecureStringToBSTR($svcSecure))
+            $svcBstr     = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($svcSecure)
+            try {
+                $svcPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto($svcBstr)
+            } finally {
+                [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($svcBstr)
+            }
             & $NssmExe set $ServiceName ObjectName $ServiceAccount $svcPassword
             if ($LASTEXITCODE -ne 0) { throw "NSSM set ObjectName failed. Exit code: $LASTEXITCODE" }
         } catch {
