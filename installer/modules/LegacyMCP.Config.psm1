@@ -110,7 +110,7 @@ function Test-LMYamlHasHost0000 {
 function Test-LMYamlHasCredentialLeak {
     param([string]$Content)
     if (-not $Content) { return $false }
-    return ($Content -match '(?i)(password|secret)\s*:\s*\S')
+    return ($Content -match '(?im)^\s*(password|secret)\s*:')
 }
 
 function Test-LMNssmServiceExists {
@@ -196,6 +196,12 @@ function Set-LMConfig {
             if ($valid -notcontains $Value) {
                 throw "Invalid Profile value '$Value'. Allowed: $($valid -join ', ')"
             }
+            if ($Value -eq 'C') {
+                Write-LMInfo 'Profile C is an enterprise deployment. Manual configuration required.'
+                Write-LMInfo 'Registry value updated. No automatic service or transport changes applied.'
+                Set-LMRegistry -Key $RegistryRoot -Name 'Profile' -Value $Value
+                return
+            }
             if ($Value -like 'B*' -and -not (Test-LMNssmServiceExists)) {
                 Write-LMWarn "Profile '$Value' requires the LegacyMCP Windows service."
                 Write-LMWarn "Run Setup-LegacyMCP.ps1 -Profile $Value to set up the service."
@@ -236,23 +242,35 @@ function Set-LMConfig {
             if (-not $cfgPath -or -not (Test-Path $cfgPath)) {
                 throw 'config.yaml not found. Set ConfigPath first.'
             }
-            if (-not (Test-Path $Value)) {
-                New-Item -ItemType Directory -Path $Value -Force | Out-Null
-                Write-LMOK "Snapshot directory created: $Value"
+            try {
+                if (-not (Test-Path $Value)) {
+                    New-Item -ItemType Directory -Path $Value -Force | Out-Null
+                    Write-LMOK "Snapshot directory created: $Value"
+                }
+            } catch {
+                throw "Cannot create snapshot directory '$Value': $_"
             }
             $wmiSvc = $null
             try { $wmiSvc = Get-CimInstance Win32_Service -Filter "Name='LegacyMCP'" -ErrorAction SilentlyContinue } catch {}
             if ($wmiSvc -and $wmiSvc.StartName) {
                 $svcAcct   = $wmiSvc.StartName
-                $icaclsOut = & icacls $Value /grant "${svcAcct}:(M)" 2>&1
-                if ($LASTEXITCODE -eq 0) {
-                    Write-LMOK "Write access granted to '$svcAcct' on: $Value"
-                } else {
-                    throw "Cannot grant write access on '$Value' for '$svcAcct': $icaclsOut"
+                try {
+                    $icaclsOut = & icacls $Value /grant "${svcAcct}:(M)" 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-LMOK "Write access granted to '$svcAcct' on: $Value"
+                    } else {
+                        throw "Cannot grant write access on '$Value' for '$svcAcct': $icaclsOut"
+                    }
+                } catch {
+                    throw "Error setting permissions on '$Value': $_"
                 }
             }
-            Update-LMYamlSnapshotPath -YamlPath $cfgPath -Value $Value
-            Write-LMOK "snapshot_path updated in config.yaml: $Value"
+            try {
+                Update-LMYamlSnapshotPath -YamlPath $cfgPath -Value $Value
+                Write-LMOK "snapshot_path updated in config.yaml: $Value"
+            } catch {
+                throw "Cannot update config.yaml: $_"
+            }
         }
         default {
             throw "Unknown key '$Name'. Settable: Transport, Profile, Port, ConfigPath, InstallPath, LogPath, SnapshotPath."

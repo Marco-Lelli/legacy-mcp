@@ -112,7 +112,7 @@ function Update-LMYamlSslFields {
     # Single implementation -- resolves MED-P15-1 (duplicate in Install + Config scripts)
     $certLine = "  ssl_certfile: $SslCertFile"
     $keyLine  = "  ssl_keyfile:  $SslKeyFile"
-    $content  = Get-Content $YamlPath -Raw
+    $content  = Get-Content $YamlPath -Raw -Encoding UTF8
 
     if ($content -match '(?m)^\s*#?\s*ssl_certfile\s*:') {
         $content = $content -replace '(?m)^\s*#?\s*ssl_certfile\s*:.*', $certLine
@@ -124,7 +124,7 @@ function Update-LMYamlSslFields {
     } else {
         $content = $content -replace '(?m)(^\s*ssl_certfile\s*:.*)', "`$1`n$keyLine"
     }
-    [System.IO.File]::WriteAllText($YamlPath, $content, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText($YamlPath, $content, [System.Text.UTF8Encoding]::new($false))
 }
 
 function Invoke-LMReplaceCert {
