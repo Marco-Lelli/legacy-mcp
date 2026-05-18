@@ -1,7 +1,7 @@
 # LegacyMCP
 
 <p align="center">
-  <img src="docs/images/legacy-mcp-logo.png" alt="LegacyMCP" width="200"/>
+  <img src="https://raw.githubusercontent.com/Marco-Lelli/legacy-mcp/master/docs/images/legacy-mcp-logo.png" alt="LegacyMCP" width="200"/>
 </p>
 
 > Active Directory MCP Server for AI-powered assessment
