@@ -9,14 +9,17 @@ function Get-PKIData {
     $enrollmentDN = "CN=Enrollment Services,CN=Public Key Services,CN=Services,$configDN"
 
     try {
-        Get-ADObject -SearchBase $enrollmentDN -Filter "objectClass -eq 'pKIEnrollmentService'" @CommonParams |
-            ForEach-Object {
-                [PSCustomObject]@{
-                    Name              = $_.Name
-                    DistinguishedName = $_.DistinguishedName
-                    ObjectClass       = $_.ObjectClass
+        $result = @(
+            Get-ADObject -SearchBase $enrollmentDN -Filter "objectClass -eq 'pKIEnrollmentService'" @CommonParams |
+                ForEach-Object {
+                    [PSCustomObject]@{
+                        Name              = $_.Name
+                        DistinguishedName = $_.DistinguishedName
+                        ObjectClass       = $_.ObjectClass
+                    }
                 }
-            }
+        )
+        return $result
     } catch {
         Write-Warning "PKI discovery failed: $_"
         @()
