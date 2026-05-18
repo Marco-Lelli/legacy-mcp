@@ -15,7 +15,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install PSScriptAnalyzer
         shell: pwsh
@@ -52,13 +52,13 @@ jobs:
         run: Compress-Archive -Path installer -DestinationPath legacymcp-installer.zip -Force
 
       - name: Upload collector artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: legacymcp-collector
           path: legacymcp-collector.zip
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: legacymcp-installer
           path: legacymcp-installer.zip
@@ -89,7 +89,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v5
         with:
