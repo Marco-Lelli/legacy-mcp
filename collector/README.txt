@@ -1,7 +1,7 @@
 ================================================================================
   Collect-ADData.ps1
   LegacyMCP Offline Collector - Active Directory Data Export
-  Version 1.6.4 - May 2026
+  Version 1.6.5 - May 2026
   Marco Lelli, Impresoft 4ward
 ================================================================================
 
@@ -448,6 +448,14 @@ NOTES
 
 VERSION HISTORY
 ---------------
+
+  v1.6.5 - May 2026
+    - Collect-ADData.ps1: pki section now always serialized as JSON array.
+      @() wrapping added at the assignment site so ConvertTo-Json receives
+      an array even when a single CA is present (P2, P8).
+    - PKI.psm1: pipeline output wrapped in @() for defensive consistency.
+    - live.py: pki embedded PS command wrapped in @() before ConvertTo-Json
+      to align Live Mode behavior with collector (P2).
 
   v1.6.4 - May 2026
     - DNS.psm1: iterate all DCs for zone collection instead of first DC only; warn if no DC has DNS role

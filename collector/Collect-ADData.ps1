@@ -3,7 +3,7 @@
 
 <#
 .SYNOPSIS
-    LegacyMCP Offline Data Collector v1.6.4 - exports AD data to a structured JSON file.
+    LegacyMCP Offline Data Collector v1.6.5 - exports AD data to a structured JSON file.
 
 .DESCRIPTION
     Collects Active Directory data across all sections covered by LegacyMCP Core
@@ -204,7 +204,7 @@ $script:LogPath = [System.IO.Path]::ChangeExtension($OutputPath, ".log")
 $sep = "=" * 80
 @(
     $sep,
-    "LegacyMCP Collector v1.6.4 -- collection started",
+    "LegacyMCP Collector v1.6.5 -- collection started",
     "Forest : $forestNameEarly",
     "DC     : $dcNameEarly",
     "Output : $OutputPath",
@@ -562,7 +562,7 @@ try {
         version            = "1.0"
         forest             = $forestName
         collected_at       = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        collector_version  = "1.6.4"
+        collector_version  = "1.6.5"
         collected_by       = "$env:USERDOMAIN\$env:USERNAME"
         collection_summary = [ordered]@{
             sections_ok    = $script:sectionsOK
