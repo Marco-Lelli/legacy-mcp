@@ -288,13 +288,13 @@ _SCRIPTS: dict[str, str] = {
         "$enrollmentDN = 'CN=Enrollment Services,CN=Public Key Services,"
         "CN=Services,' + $configDN\n"
         "try {\n"
-        "  Get-ADObject -SearchBase $enrollmentDN -Filter * | ForEach-Object {\n"
+        "  @(Get-ADObject -SearchBase $enrollmentDN -Filter * | ForEach-Object {\n"
         "    [PSCustomObject]@{\n"
         "      Name              = $_.Name\n"
         "      DistinguishedName = $_.DistinguishedName\n"
         "      ObjectClass       = $_.ObjectClass\n"
         "    }\n"
-        "  } | ConvertTo-Json -Depth 3\n"
+        "  }) | ConvertTo-Json -Depth 3\n"
         "} catch { '[]' }"
     ),
     # ------------------------------------------------------------------
