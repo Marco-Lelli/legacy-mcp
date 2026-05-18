@@ -520,9 +520,9 @@ if ($null -ne $data["computers"]) {
 }
 
 # --- PKI / CA Discovery ---
-$data["pki"] = Invoke-Section "PKI / CA Discovery" {
+$data["pki"] = @(Invoke-Section "PKI / CA Discovery" {
     Get-PKIData -CommonParams $commonParams
-}
+})
 if ($null -ne $data["pki"]) {
     Write-CollectorLog -Level INFO -Section "PKI / CA Discovery" `
         -Message "collected: $(@($data['pki']).Count) CAs"
