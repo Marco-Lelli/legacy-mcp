@@ -197,8 +197,13 @@ function New-LMMcpRemoteBat {
     $bat += " -ServerUrl `"$ServerUrl`""
     $bat += " -CaCertPath `"$CertPath`""
 
-    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-    [System.IO.File]::WriteAllText($OutputPath, $bat, $utf8NoBom)
+    try {
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($OutputPath, $bat, $utf8NoBom)
+    } catch {
+        Write-Error "New-LMMcpRemoteBat: Failed to write BAT file to '$OutputPath': $_"
+        exit 1
+    }
     Write-LMOK "BAT entry point generated: $OutputPath"
 }
 
