@@ -9,7 +9,8 @@ function New-LMSelfSignedCert {
     param(
         [string]$VenvPython,
         [string]$CertDir,
-        [int]$ValidityDays = 730
+        [int]$ValidityDays = 730,
+        [string]$Hostname = ''
     )
     $certFile = Join-Path $CertDir 'server.crt'
     $keyFile  = Join-Path $CertDir 'server.key'
@@ -18,9 +19,10 @@ function New-LMSelfSignedCert {
         New-Item -ItemType Directory -Path $CertDir -Force | Out-Null
     }
 
-    $env:LEGACYMCP_CERT_FILE = $certFile
-    $env:LEGACYMCP_KEY_FILE  = $keyFile
-    $env:LEGACYMCP_CERT_DAYS = $ValidityDays.ToString()
+    $env:LEGACYMCP_CERT_FILE     = $certFile
+    $env:LEGACYMCP_KEY_FILE      = $keyFile
+    $env:LEGACYMCP_CERT_DAYS     = $ValidityDays.ToString()
+    $env:LEGACYMCP_CERT_HOSTNAME = $Hostname
 
     $genPy = @'
 import os, socket, datetime, ipaddress
@@ -31,7 +33,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 cert_file = os.environ['LEGACYMCP_CERT_FILE']
 key_file  = os.environ['LEGACYMCP_KEY_FILE']
-hostname  = socket.getfqdn()
+hostname  = os.environ.get('LEGACYMCP_CERT_HOSTNAME') or socket.getfqdn()
 days      = int(os.environ.get('LEGACYMCP_CERT_DAYS', '730'))
 
 key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -67,9 +69,10 @@ print('OK')
 '@
 
     & $VenvPython -c $genPy | Out-Null
-    Remove-Item Env:LEGACYMCP_CERT_FILE  -ErrorAction SilentlyContinue
-    Remove-Item Env:LEGACYMCP_KEY_FILE   -ErrorAction SilentlyContinue
-    Remove-Item Env:LEGACYMCP_CERT_DAYS  -ErrorAction SilentlyContinue
+    Remove-Item Env:LEGACYMCP_CERT_FILE     -ErrorAction SilentlyContinue
+    Remove-Item Env:LEGACYMCP_KEY_FILE      -ErrorAction SilentlyContinue
+    Remove-Item Env:LEGACYMCP_CERT_DAYS     -ErrorAction SilentlyContinue
+    Remove-Item Env:LEGACYMCP_CERT_HOSTNAME -ErrorAction SilentlyContinue
 
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to generate self-signed certificate."
@@ -94,8 +97,13 @@ function Import-LMCert {
     }
     $destCert = Join-Path $CertDir 'server.crt'
     $destKey  = Join-Path $CertDir 'server.key'
-    Copy-Item -Path $CertFile    -Destination $destCert -Force
-    Copy-Item -Path $CertKeyFile -Destination $destKey  -Force
+    try {
+        Copy-Item -Path $CertFile    -Destination $destCert -Force
+        Copy-Item -Path $CertKeyFile -Destination $destKey  -Force
+    } catch {
+        Write-Error "Import-LMCert: Failed to copy certificate files to '$CertDir': $_"
+        exit 1
+    }
     Write-LMOK "Certificate copied to $CertDir"
     return @{ CertFile = $destCert; KeyFile = $destKey }
 }
@@ -111,7 +119,11 @@ function Update-LMYamlSslFields {
     # Single implementation -- resolves MED-P15-1 (duplicate in Install + Config scripts)
     $certLine = "  ssl_certfile: $SslCertFile"
     $keyLine  = "  ssl_keyfile:  $SslKeyFile"
-    $content  = Get-Content $YamlPath -Raw -Encoding UTF8
+    try {
+        $content = Get-Content $YamlPath -Raw -Encoding UTF8
+    } catch {
+        throw "Update-LMYamlSslFields: Failed to read '$YamlPath': $_"
+    }
 
     if ($content -match '(?m)^\s*#?\s*ssl_certfile\s*:') {
         $content = $content -replace '(?m)^\s*#?\s*ssl_certfile\s*:.*', $certLine
@@ -123,9 +135,14 @@ function Update-LMYamlSslFields {
     } else {
         $content = $content -replace '(?m)(^\s*ssl_certfile\s*:.*)', "`$1`n$keyLine"
     }
-    [System.IO.File]::WriteAllText($YamlPath, $content, [System.Text.UTF8Encoding]::new($false))
+    try {
+        [System.IO.File]::WriteAllText($YamlPath, $content, [System.Text.UTF8Encoding]::new($false))
+    } catch {
+        throw "Update-LMYamlSslFields: Failed to write '$YamlPath': $_"
+    }
 }
 
+# Reserved for future use -- wired into Setup-LegacyMCP.ps1 when -Mode Repair is implemented.
 function Invoke-LMReplaceCert {
     [CmdletBinding()]
     param(
