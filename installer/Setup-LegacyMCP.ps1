@@ -128,7 +128,12 @@ if ($Profile -eq 'A') {
         Write-LMStep 'Step 2 -- Directories'
         foreach ($dir in @($InstallPath, (Split-Path $ConfigPath -Parent), $DataPath)) {
             if (-not (Test-Path $dir)) {
-                New-Item -ItemType Directory -Path $dir -Force | Out-Null
+                try {
+                    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+                } catch {
+                    Write-Error "Setup: Failed to create directory '$dir': $_"
+                    exit 1
+                }
                 Write-LMOK "Created: $dir"
             }
         }
@@ -147,6 +152,10 @@ if ($Profile -eq 'A') {
 
         Write-LMStep 'Step 5 -- Configuration'
         $templatePath = Join-Path $RepoRoot 'config\config.example-A.yaml'
+        if (-not (Test-Path $templatePath)) {
+            Write-Error "Setup: Config template not found: $templatePath"
+            exit 1
+        }
         if (Test-Path $ConfigPath) {
             Write-LMWarn "config.yaml already exists at: $ConfigPath"
             $answer = Read-Host 'Overwrite? [y/N]'
@@ -261,16 +270,23 @@ if ($Profile -eq 'A') {
         Write-LMStep 'Step 4 -- Directories'
         foreach ($dir in @($InstallPath, (Split-Path $ConfigPath -Parent), $LogPath, $SnapshotPath, $CertDir)) {
             if (-not (Test-Path $dir)) {
-                New-Item -ItemType Directory -Path $dir -Force | Out-Null
+                try {
+                    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+                } catch {
+                    Write-Error "Setup: Failed to create directory '$dir': $_"
+                    exit 1
+                }
                 Write-LMOK "Created: $dir"
             }
         }
+
+        $fqdn = [System.Net.Dns]::GetHostEntry('').HostName
 
         Write-LMStep 'Step 5 -- TLS certificate'
         if ($CertFile -and $CertKeyFile) {
             $certResult = Import-LMCert -CertFile $CertFile -CertKeyFile $CertKeyFile -CertDir $CertDir
         } else {
-            $certResult = New-LMSelfSignedCert -VenvPython $venvPython -CertDir $CertDir
+            $certResult = New-LMSelfSignedCert -VenvPython $venvPython -CertDir $CertDir -Hostname $fqdn
         }
 
         Write-LMStep 'Step 6 -- API key'
@@ -282,6 +298,10 @@ if ($Profile -eq 'A') {
 
         Write-LMStep 'Step 7 -- Configuration'
         $templatePath = Join-Path $RepoRoot 'config\config.example-B.yaml'
+        if (-not (Test-Path $templatePath)) {
+            Write-Error "Setup: Config template not found: $templatePath"
+            exit 1
+        }
         if (Test-Path $ConfigPath) {
             Write-LMWarn "config.yaml already exists at: $ConfigPath"
             $answer = Read-Host 'Overwrite? [y/N]'
@@ -296,7 +316,12 @@ if ($Profile -eq 'A') {
             Write-LMOK 'config.yaml created from template.'
         }
         # Write ConfigPath to registry now so Set-LMConfig can find it for SnapshotPath
-        Set-LMRegistry -Key $REG_ROOT -Name 'ConfigPath' -Value $ConfigPath
+        try {
+            Set-LMRegistry -Key $REG_ROOT -Name 'ConfigPath' -Value $ConfigPath
+        } catch {
+            Write-Error "Setup: Failed to write ConfigPath to registry '$REG_ROOT': $_"
+            exit 1
+        }
         # Update SSL cert paths in config.yaml.
         # Both Import-LMCert (user-provided) and New-LMSelfSignedCert already place the
         # cert in $CertDir -- only the YAML update is needed here. Invoke-LMReplaceCert
@@ -314,26 +339,40 @@ if ($Profile -eq 'A') {
             -InstallPath $InstallPath -LogPath $LogPath `
             -ServiceAccount $ServiceAccount -Port $Port
         # SnapshotPath after service install so icacls can grant to service account
-        Set-LMConfig -RegistryRoot $REG_ROOT -Name 'SnapshotPath' -Value $SnapshotPath
+        try {
+            Set-LMConfig -RegistryRoot $REG_ROOT -Name 'SnapshotPath' -Value $SnapshotPath
+        } catch {
+            Write-Error "Setup: Failed to configure SnapshotPath '$SnapshotPath': $_"
+            exit 1
+        }
 
         Write-LMStep 'Step 10 -- Firewall'
         Add-LMFirewallRule -Port $Port
 
         Write-LMStep 'Step 11 -- Registry'
-        Set-LMRegistry -Key $REG_ROOT -Name 'InstallPath'  -Value $InstallPath
-        Set-LMRegistry -Key $REG_ROOT -Name 'LogPath'      -Value $LogPath
-        Set-LMRegistry -Key $REG_ROOT -Name 'Profile'      -Value $Profile
-        Set-LMRegistry -Key $REG_ROOT -Name 'Transport'    -Value 'streamable-http'
-        Set-LMRegistry -Key $REG_ROOT -Name 'Port'         -Value $Port -Type 'DWord'
-        Set-LMRegistry -Key $REG_ROOT -Name 'Version'      -Value $VERSION
+        try {
+            Set-LMRegistry -Key $REG_ROOT -Name 'InstallPath'  -Value $InstallPath
+            Set-LMRegistry -Key $REG_ROOT -Name 'LogPath'      -Value $LogPath
+            Set-LMRegistry -Key $REG_ROOT -Name 'Profile'      -Value $Profile
+            Set-LMRegistry -Key $REG_ROOT -Name 'Transport'    -Value 'streamable-http'
+            Set-LMRegistry -Key $REG_ROOT -Name 'Port'         -Value $Port -Type 'DWord'
+            Set-LMRegistry -Key $REG_ROOT -Name 'Version'      -Value $VERSION
+        } catch {
+            Write-Error "Setup: Failed to write registry entries under '$REG_ROOT': $_"
+            exit 1
+        }
         Write-LMOK 'Registry entries written.'
 
         Write-LMStep 'Step 12 -- Start service'
-        Start-Service -Name $SERVICE_NAME
-        Write-LMOK "Service '$SERVICE_NAME' started."
+        try {
+            Start-Service -Name $SERVICE_NAME
+            Write-LMOK "Service '$SERVICE_NAME' started."
+        } catch {
+            Write-Error "Setup: Failed to start service '$SERVICE_NAME': $_"
+            exit 1
+        }
 
         Write-LMStep 'Setup complete'
-        $fqdn = [System.Net.Dns]::GetHostEntry('').HostName
         Write-LMOK  "Profile $Profile Server installation successful."
         Write-LMInfo "Service:       $SERVICE_NAME (Running)"
         Write-LMInfo "Install path:  $InstallPath"
@@ -425,7 +464,12 @@ if ($Profile -eq 'A') {
 
         foreach ($dir in @($ClientPath, $ClientCertDir)) {
             if (-not (Test-Path $dir)) {
-                New-Item -ItemType Directory -Path $dir -Force | Out-Null
+                try {
+                    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+                } catch {
+                    Write-Error "Setup: Failed to create directory '$dir': $_"
+                    exit 1
+                }
                 Write-LMOK "Created: $dir"
             }
         }
