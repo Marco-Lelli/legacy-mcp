@@ -117,6 +117,10 @@ function Install-LMService {
                     [System.Text.Encoding]::Unicode
                 )
                 & secedit /configure /db $seceditDb /cfg $secpolCfg /areas USER_RIGHTS /quiet | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Error "Install-LMService: secedit /configure failed (exit $LASTEXITCODE) granting SeServiceLogonRight to '$ServiceAccount'. Grant manually via secpol.msc."
+                    exit 1
+                }
                 Write-LMWarn "Granted 'Log on as a service' to $ServiceAccount -- verify in secpol.msc before production deployment"
             }
         } catch {
@@ -149,6 +153,10 @@ function Uninstall-LMService {
 
     if ($NssmExe -and (Test-Path $NssmExe)) {
         & $NssmExe remove $ServiceName confirm
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Uninstall-LMService: NSSM failed to remove service '$ServiceName'. Exit code: $LASTEXITCODE"
+            exit 1
+        }
         Write-LMOK "Service '$ServiceName' removed via NSSM."
     } else {
         Write-LMInfo "nssm.exe not found -- using sc.exe."
@@ -188,8 +196,12 @@ function Remove-LMFirewallRule {
     param([string]$RuleName = 'LegacyMCP MCP Server')
     $existing = Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue
     if ($existing) {
-        Remove-NetFirewallRule -DisplayName $RuleName
-        Write-LMOK "Firewall rule '$RuleName' removed."
+        try {
+            Remove-NetFirewallRule -DisplayName $RuleName
+            Write-LMOK "Firewall rule '$RuleName' removed."
+        } catch {
+            Write-LMWarn "Remove-LMFirewallRule: Could not remove firewall rule '$RuleName': $_"
+        }
     } else {
         Write-LMInfo "Firewall rule '$RuleName' not found -- skipping."
     }
