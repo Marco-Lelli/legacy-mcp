@@ -4,6 +4,7 @@
 
 Import-Module (Join-Path $PSScriptRoot 'LegacyMCP.Common.psm1') -Force -Global
 
+# HKLM: machine-scoped default for Profile B service accounts (not user-specific).
 $REG_ROOT    = 'HKLM:\SOFTWARE\LegacyMCP'
 
 # ---------------------------------------------------------------------------
@@ -13,7 +14,11 @@ $REG_ROOT    = 'HKLM:\SOFTWARE\LegacyMCP'
 function Get-LMYamlContent {
     param([string]$ConfigPath)
     if (-not $ConfigPath -or -not (Test-Path $ConfigPath)) { return $null }
-    return Get-Content $ConfigPath -Raw -Encoding UTF8
+    try {
+        return Get-Content $ConfigPath -Raw -Encoding UTF8
+    } catch {
+        throw "Get-LMYamlContent: Cannot read '$ConfigPath' (file may be locked): $_"
+    }
 }
 
 function Get-LMYamlSnapshotPath {
