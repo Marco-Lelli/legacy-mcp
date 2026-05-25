@@ -252,9 +252,10 @@ if ($Profile -eq 'A') {
         if (-not $ConfigPath)   { $ConfigPath   = "$env:ProgramData\LegacyMCP\config\config.yaml" }
         if (-not $LogPath)      { $LogPath      = "$env:ProgramData\LegacyMCP\logs" }
         if (-not $SnapshotPath) { $SnapshotPath = "$env:ProgramData\LegacyMCP\snapshots" }
-        $CertDir  = "$env:ProgramData\LegacyMCP\certs"
-        $NssmExe  = Join-Path $ScriptDir 'tools\nssm.exe'
-        $VenvPath = Join-Path $InstallPath '.venv'
+        $CertDir    = "$env:ProgramData\LegacyMCP\certs"
+        $NssmSource = Join-Path $ScriptDir 'tools\nssm.exe'
+        $NssmExe    = Join-Path $InstallPath 'nssm.exe'
+        $VenvPath   = Join-Path $InstallPath '.venv'
 
         $existingVersion = $null
         if (Test-Path $REG_ROOT) {
@@ -341,6 +342,18 @@ if ($Profile -eq 'A') {
                 }
                 Write-LMOK "Created: $dir"
             }
+        }
+
+        if (-not (Test-Path $NssmSource)) {
+            Write-Error "Setup: nssm.exe not found in installer tools: $NssmSource"
+            exit 1
+        }
+        try {
+            Copy-Item -Path $NssmSource -Destination $NssmExe -Force
+            Write-LMOK "nssm.exe copied to: $NssmExe"
+        } catch {
+            Write-Error "Setup: Failed to copy nssm.exe to '$NssmExe': $_"
+            exit 1
         }
 
         $fqdn = [System.Net.Dns]::GetHostEntry('').HostName
@@ -435,6 +448,7 @@ if ($Profile -eq 'A') {
             Set-LMRegistry -Key $REG_ROOT -Name 'Version'          -Value $VERSION
             Set-LMRegistry -Key $REG_ROOT -Name 'InstallMode'      -Value $installMode
             Set-LMRegistry -Key $REG_ROOT -Name 'InstalledVersion' -Value $InstalledVersion
+            Set-LMRegistry -Key $REG_ROOT -Name 'NssmPath'         -Value $NssmExe
         } catch {
             Write-Error "Setup: Failed to write registry entries under '$REG_ROOT': $_"
             exit 1
@@ -489,7 +503,13 @@ if ($Profile -eq 'A') {
         $ConfigPath  = if ($ConfigPath)  { $ConfigPath }  elseif ($cfg['ConfigPath'])  { $cfg['ConfigPath'] }  else { "$env:ProgramData\LegacyMCP\config\config.yaml" }
         $LogPath     = if ($LogPath)     { $LogPath }     elseif ($cfg['LogPath'])     { $cfg['LogPath'] }     else { "$env:ProgramData\LegacyMCP\logs" }
         $SnapshotPath = if ($SnapshotPath) { $SnapshotPath } elseif ($cfg['SnapshotPath']) { $cfg['SnapshotPath'] } else { "$env:ProgramData\LegacyMCP\snapshots" }
-        $NssmExe     = Join-Path $ScriptDir 'tools\nssm.exe'
+        $NssmExe = if ($cfg['NssmPath'] -and (Test-Path $cfg['NssmPath'])) {
+            $cfg['NssmPath']
+        } elseif (Test-Path (Join-Path $InstallPath 'nssm.exe')) {
+            Join-Path $InstallPath 'nssm.exe'
+        } else {
+            Join-Path $ScriptDir 'tools\nssm.exe'
+        }
 
         Write-LMStep 'Step 1 -- Stop and remove service'
         Uninstall-LMService -NssmExe $NssmExe -ServiceName $SERVICE_NAME
