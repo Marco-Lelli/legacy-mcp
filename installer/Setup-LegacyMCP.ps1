@@ -46,6 +46,9 @@ param(
     [string]$ServerUrl,
     [string]$CaCertPath,
 
+    # Purge -- remove registry and ProgramData on Uninstall
+    [switch]$Purge,
+
     # GUI (Phase 5)
     [switch]$Gui
 )
@@ -83,6 +86,10 @@ if ($Profile -like 'B*' -and $Role -eq 'Client' -and $Mode -eq 'Install') {
 }
 if ($ApiKey -and $ApiKey.Length -lt 16) {
     Write-Error "Setup-LegacyMCP: -ApiKey is too short (minimum 16 characters)"
+    exit 1
+}
+if ($Purge -and $Mode -ne 'Uninstall') {
+    Write-Error "Setup-LegacyMCP: -Purge can only be used with -Mode Uninstall"
     exit 1
 }
 
@@ -521,19 +528,50 @@ if ($Profile -eq 'A') {
         Unregister-LMEventLog
 
         Write-LMStep 'Step 4 -- Registry'
-        try {
-            Remove-LMRegistry -Key $REG_ROOT
-            Write-LMOK 'Registry entries removed.'
-        } catch {
-            Write-LMWarn "Could not remove registry entries: $_"
+        Write-LMInfo 'Registry preserved (install state retained for reinstall/upgrade).'
+
+        Write-LMStep 'Step 5 -- Purge'
+        if ($Purge) {
+            $purgeDataPath = Join-Path $env:ProgramData 'LegacyMCP'
+            Write-LMWarn 'This will permanently delete:'
+            Write-LMWarn "  Registry: $REG_ROOT"
+            Write-LMWarn "  Data:     $purgeDataPath"
+            $confirm = Read-Host 'Type YES to confirm purge'
+            if ($confirm -eq 'YES') {
+                try {
+                    Remove-LMRegistry -Key $REG_ROOT
+                    Write-LMOK 'Registry entries removed.'
+                } catch {
+                    Write-LMWarn "Could not remove registry entries: $_"
+                }
+                if (Test-Path $purgeDataPath) {
+                    try {
+                        Remove-Item $purgeDataPath -Recurse -Force
+                        Write-LMOK "Removed: $purgeDataPath"
+                    } catch {
+                        Write-LMWarn "Could not remove '$purgeDataPath': $_"
+                        Write-LMInfo "Remove manually: $purgeDataPath"
+                    }
+                } else {
+                    Write-LMInfo "Data directory not found (already removed): $purgeDataPath"
+                }
+            } else {
+                Write-LMInfo 'Purge cancelled.'
+            }
+        } else {
+            Write-LMInfo 'Skipped (run with -Purge to remove registry and data).'
         }
 
         Write-LMStep 'Uninstall complete'
         Write-LMOK  "Profile $Profile Server uninstalled."
-        Write-LMWarn 'Data files preserved -- delete securely when no longer needed:'
-        Write-LMInfo "  Config:    $ConfigPath"
-        Write-LMInfo "  Logs:      $LogPath"
-        Write-LMInfo "  Snapshots: $SnapshotPath"
+        if (-not $Purge) {
+            Write-LMInfo 'Registry and data files preserved.'
+            Write-LMInfo "  Config:    $ConfigPath"
+            Write-LMInfo "  Logs:      $LogPath"
+            Write-LMInfo "  Snapshots: $SnapshotPath"
+            Write-LMInfo 'To remove all data and configuration:'
+            Write-LMInfo "  .\Setup-LegacyMCP.ps1 -Profile $Profile -Role Server -Mode Uninstall -Purge"
+        }
 
     } else {
         throw "Mode '$Mode' is not yet implemented for Profile $Profile Server."
