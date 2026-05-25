@@ -40,6 +40,7 @@ param(
     [int]$Port = 8000,
     [string]$CertFile,
     [string]$CertKeyFile,
+    [switch]$DevInstall,
 
     # Profile B Client -- mandatory
     [string]$ServerUrl,
@@ -260,11 +261,25 @@ if ($Profile -eq 'A') {
         $venvPython = Join-Path $VenvPath 'Scripts\python.exe'
 
         Write-LMStep 'Step 3 -- Package installation'
-        if (Test-Path (Join-Path $RepoRoot 'pyproject.toml')) {
-            Install-LMPackage -VenvPath $VenvPath -PackageOrPath $RepoRoot -Editable
+        $installMode = if ($DevInstall) { 'dev' } else { 'release' }
+        if ($DevInstall) {
+            if (-not (Test-Path (Join-Path $RepoRoot 'pyproject.toml'))) {
+                Write-Error "Setup-LegacyMCP: -DevInstall requires a source tree (pyproject.toml not found at: $RepoRoot)"
+                exit 1
+            }
+            try {
+                Install-LMPackage -VenvPath $VenvPath -PackageOrPath $RepoRoot -Editable
+            } catch {
+                Write-Error "Setup-LegacyMCP: pip install failed (mode: dev): $_"
+                exit 1
+            }
         } else {
-            Write-LMInfo 'Source tree not found -- installing from PyPI.'
-            Install-LMPackage -VenvPath $VenvPath -PackageOrPath 'legacy-mcp'
+            try {
+                Install-LMPackage -VenvPath $VenvPath -PackageOrPath 'legacy-mcp'
+            } catch {
+                Write-Error "Setup-LegacyMCP: pip install failed (mode: release): $_"
+                exit 1
+            }
         }
 
         Write-LMStep 'Step 4 -- Directories'
