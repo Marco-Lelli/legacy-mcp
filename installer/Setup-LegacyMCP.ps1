@@ -524,16 +524,18 @@ if ($Profile -eq 'A') {
         $ConfigPath  = if ($ConfigPath)  { $ConfigPath }  elseif ($cfg['ConfigPath'])  { $cfg['ConfigPath'] }  else { "$env:ProgramData\LegacyMCP\config\config.yaml" }
         $LogPath     = if ($LogPath)     { $LogPath }     elseif ($cfg['LogPath'])     { $cfg['LogPath'] }     else { "$env:ProgramData\LegacyMCP\logs" }
         $SnapshotPath = if ($SnapshotPath) { $SnapshotPath } elseif ($cfg['SnapshotPath']) { $cfg['SnapshotPath'] } else { "$env:ProgramData\LegacyMCP\snapshots" }
-        $NssmExe = if ($cfg['NssmPath'] -and (Test-Path $cfg['NssmPath'])) {
+        $NssmExe  = if ($cfg['NssmPath'] -and (Test-Path $cfg['NssmPath'])) {
             $cfg['NssmPath']
         } elseif (Test-Path (Join-Path $InstallPath 'nssm.exe')) {
             Join-Path $InstallPath 'nssm.exe'
         } else {
             Join-Path $ScriptDir 'tools\nssm.exe'
         }
+        $VenvPath = Join-Path $InstallPath '.venv'
 
         Write-LMStep 'Step 1 -- Stop and remove service'
-        Uninstall-LMService -NssmExe $NssmExe -ServiceName $SERVICE_NAME
+        Uninstall-LMService -NssmExe $NssmExe -ServiceName $SERVICE_NAME `
+            -VenvPath $VenvPath -RegistryRoot $REG_ROOT
 
         Write-LMStep 'Step 2 -- Firewall rule'
         Remove-LMFirewallRule

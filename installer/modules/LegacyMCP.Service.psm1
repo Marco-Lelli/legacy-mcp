@@ -138,7 +138,9 @@ function Uninstall-LMService {
     [CmdletBinding()]
     param(
         [string]$NssmExe,
-        [string]$ServiceName
+        [string]$ServiceName,
+        [string]$VenvPath,
+        [string]$RegistryRoot = 'HKLM:\SOFTWARE\LegacyMCP'
     )
     Assert-LMElevation -Context 'Service uninstallation'
 
@@ -162,6 +164,25 @@ function Uninstall-LMService {
         Write-LMInfo "nssm.exe not found -- using sc.exe."
         & sc.exe delete $ServiceName | Out-Null
         Write-LMOK "Service '$ServiceName' removed via sc.exe."
+    }
+
+    if ($VenvPath -and (Test-Path $VenvPath)) {
+        $regProps         = Get-ItemProperty -Path $RegistryRoot -ErrorAction SilentlyContinue
+        $installMode      = if ($regProps) { $regProps.InstallMode }      else { $null }
+        $installedVersion = if ($regProps) { $regProps.InstalledVersion } else { $null }
+        $versionLabel     = if ($installedVersion) { $installedVersion } else { 'unknown' }
+        Write-LMInfo "Uninstalling legacy-mcp package (mode: $installMode, version: $versionLabel)..."
+        $venvPython = Join-Path $VenvPath 'Scripts\python.exe'
+        if (Test-Path $venvPython) {
+            try {
+                & $venvPython -m pip uninstall legacy-mcp -y 2>&1 | Out-Null
+                Write-LMOK 'legacy-mcp package uninstalled.'
+            } catch {
+                Write-LMWarn "Could not uninstall legacy-mcp package: $_"
+            }
+        } else {
+            Write-LMWarn 'Python not found in venv -- package uninstall skipped.'
+        }
     }
 }
 
