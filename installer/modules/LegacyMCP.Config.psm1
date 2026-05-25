@@ -152,7 +152,7 @@ function Get-LMConfig {
     $props = Get-ItemProperty -Path $RegistryRoot -ErrorAction SilentlyContinue
     if ($null -eq $props) { return $result }
 
-    foreach ($name in @('InstallPath','Version','ConfigPath','LogPath','Profile','Transport','Port')) {
+    foreach ($name in @('InstallPath','Version','ConfigPath','LogPath','Profile','Transport','Port','InstallMode','InstalledVersion','NssmPath')) {
         if ($null -ne $props.$name) { $result[$name] = $props.$name }
     }
 
@@ -397,6 +397,25 @@ function Test-LMConfig {
             Write-LMFail 'ApiKey not found in registry. Profile B requires an API key.'; $hasError = $true
         } else {
             Write-LMOK 'ApiKey present in registry (encrypted).'
+        }
+
+        $installedVersion = if ($regProps) { $regProps.InstalledVersion } else { $null }
+        $installMode      = if ($regProps) { $regProps.InstallMode }      else { $null }
+        if ($installedVersion) {
+            Write-LMInfo "InstalledVersion: $installedVersion  InstallMode: $installMode"
+        }
+
+        $sslCertFile = $null
+        if ($yamlContent -and $yamlContent -match '(?m)^\s*ssl_certfile\s*:\s*(.+)$') {
+            $sslCertFile = $Matches[1].Trim()
+        }
+        if (-not $sslCertFile) {
+            $sslCertFile = Join-Path $env:ProgramData 'LegacyMCP\certs\server.crt'
+        }
+        if (Test-Path $sslCertFile) {
+            Write-LMOK "TLS certificate found: $sslCertFile"
+        } else {
+            Write-LMFail "TLS certificate not found: $sslCertFile"; $hasError = $true
         }
 
         if ($transport -ne 'streamable-http') {

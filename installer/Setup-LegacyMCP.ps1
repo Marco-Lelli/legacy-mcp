@@ -311,6 +311,24 @@ if ($Profile -eq 'A') {
                 exit 1
             }
         }
+        $InstalledVersion = $null
+        if ($DevInstall) {
+            try {
+                $gitHash = & git -C $RepoRoot rev-parse --short HEAD 2>&1
+                if ($LASTEXITCODE -eq 0 -and $gitHash) {
+                    $InstalledVersion = "dev-$($gitHash.ToString().Trim())"
+                }
+            } catch {}
+            if (-not $InstalledVersion) { $InstalledVersion = 'dev-unknown' }
+        } else {
+            try {
+                $pipOut = & (Join-Path $VenvPath 'Scripts\python.exe') -m pip show legacy-mcp 2>&1
+                $verLine = $pipOut | Select-String '^Version:' | Select-Object -First 1
+                if ($verLine) { $InstalledVersion = ($verLine.Line -replace 'Version:\s*', '').Trim() }
+            } catch {}
+            if (-not $InstalledVersion) { $InstalledVersion = $VERSION }
+        }
+        Write-LMInfo "Package installed (mode: $installMode, version: $InstalledVersion)."
 
         Write-LMStep 'Step 4 -- Directories'
         foreach ($dir in @($InstallPath, (Split-Path $ConfigPath -Parent), $LogPath, $SnapshotPath, $CertDir)) {
@@ -409,12 +427,14 @@ if ($Profile -eq 'A') {
 
         Write-LMStep 'Step 11 -- Registry'
         try {
-            Set-LMRegistry -Key $REG_ROOT -Name 'InstallPath'  -Value $InstallPath
-            Set-LMRegistry -Key $REG_ROOT -Name 'LogPath'      -Value $LogPath
-            Set-LMRegistry -Key $REG_ROOT -Name 'Profile'      -Value $Profile
-            Set-LMRegistry -Key $REG_ROOT -Name 'Transport'    -Value 'streamable-http'
-            Set-LMRegistry -Key $REG_ROOT -Name 'Port'         -Value $Port -Type 'DWord'
-            Set-LMRegistry -Key $REG_ROOT -Name 'Version'      -Value $VERSION
+            Set-LMRegistry -Key $REG_ROOT -Name 'InstallPath'      -Value $InstallPath
+            Set-LMRegistry -Key $REG_ROOT -Name 'LogPath'          -Value $LogPath
+            Set-LMRegistry -Key $REG_ROOT -Name 'Profile'          -Value $Profile
+            Set-LMRegistry -Key $REG_ROOT -Name 'Transport'        -Value 'streamable-http'
+            Set-LMRegistry -Key $REG_ROOT -Name 'Port'             -Value $Port -Type 'DWord'
+            Set-LMRegistry -Key $REG_ROOT -Name 'Version'          -Value $VERSION
+            Set-LMRegistry -Key $REG_ROOT -Name 'InstallMode'      -Value $installMode
+            Set-LMRegistry -Key $REG_ROOT -Name 'InstalledVersion' -Value $InstalledVersion
         } catch {
             Write-Error "Setup: Failed to write registry entries under '$REG_ROOT': $_"
             exit 1
