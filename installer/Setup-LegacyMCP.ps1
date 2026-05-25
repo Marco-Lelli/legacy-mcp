@@ -541,10 +541,23 @@ if ($Profile -eq 'A') {
         Write-LMStep 'Step 3 -- EventLog'
         Unregister-LMEventLog
 
-        Write-LMStep 'Step 4 -- Registry'
+        Write-LMStep 'Step 4 -- Binaries'
+        if (Test-Path $InstallPath) {
+            try {
+                Remove-Item $InstallPath -Recurse -Force
+                Write-LMOK "Install directory removed: $InstallPath"
+            } catch {
+                Write-LMWarn "Could not remove '$InstallPath': $_"
+                Write-LMInfo "Remove manually: $InstallPath"
+            }
+        } else {
+            Write-LMInfo "Install directory not found (already removed): $InstallPath"
+        }
+
+        Write-LMStep 'Step 5 -- Registry'
         Write-LMInfo 'Registry preserved (install state retained for reinstall/upgrade).'
 
-        Write-LMStep 'Step 5 -- Purge'
+        Write-LMStep 'Step 6 -- Purge'
         if ($Purge) {
             $purgeDataPath = Join-Path $env:ProgramData 'LegacyMCP'
             Write-LMWarn 'This will permanently delete:'
