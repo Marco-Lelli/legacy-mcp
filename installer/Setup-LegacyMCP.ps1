@@ -437,7 +437,8 @@ if ($Profile -eq 'A') {
         # cert in $CertDir -- only the YAML update is needed here. Invoke-LMReplaceCert
         # would call Import-LMCert again, causing "overwrite with itself" on PS 5.1.
         Update-LMYamlSslFields -YamlPath $ConfigPath `
-            -SslCertFile $certResult.CertFile -SslKeyFile $certResult.KeyFile
+            -SslCertFile $certResult.CertFile -SslKeyFile $certResult.KeyFile `
+            -VenvPython $venvPython
         Write-LMOK 'ssl_certfile and ssl_keyfile updated in config.yaml.'
 
         Write-LMStep 'Step 8 -- EventLog'

@@ -109,20 +109,25 @@ function Import-LMCert {
 }
 
 function Update-LMYamlSslFields {
-    # Internal helper -- not exported
     param(
         [string]$YamlPath,
         [string]$SslCertFile,
-        [string]$SslKeyFile
+        [string]$SslKeyFile,
+        [string]$VenvPython = ""
     )
-    # Extracted from Install-LegacyMCP.ps1 lines 65-88
-    # Single implementation -- resolves MED-P15-1 (duplicate in Install + Config scripts)
     $certLine = "  ssl_certfile: $SslCertFile"
     $keyLine  = "  ssl_keyfile:  $SslKeyFile"
+
+    $rawBytes = [System.IO.File]::ReadAllBytes($YamlPath)
+    $hasBom   = ($rawBytes.Length -ge 3 -and $rawBytes[0] -eq 0xEF -and
+                 $rawBytes[1] -eq 0xBB -and $rawBytes[2] -eq 0xBF)
     try {
-        $content = Get-Content $YamlPath -Raw -Encoding UTF8
+        $content = [System.Text.Encoding]::UTF8.GetString($rawBytes)
     } catch {
-        throw "Update-LMYamlSslFields: Failed to read '$YamlPath': $_"
+        $content = [System.Text.Encoding]::GetEncoding(1252).GetString($rawBytes)
+    }
+    if ($hasBom -and $content.Length -gt 0 -and $content[0] -eq [char]0xFEFF) {
+        $content = $content.Substring(1)
     }
 
     if ($content -match '(?m)^\s*#?\s*ssl_certfile\s*:') {
@@ -135,10 +140,27 @@ function Update-LMYamlSslFields {
     } else {
         $content = $content -replace '(?m)(^\s*ssl_certfile\s*:.*)', "`$1`n$keyLine"
     }
+
+    $tmpPath = "$YamlPath.tmp"
     try {
-        [System.IO.File]::WriteAllText($YamlPath, $content, [System.Text.UTF8Encoding]::new($false))
+        [System.IO.File]::WriteAllText($tmpPath, $content, [System.Text.UTF8Encoding]::new($false))
     } catch {
-        throw "Update-LMYamlSslFields: Failed to write '$YamlPath': $_"
+        throw "Update-LMYamlSslFields: Failed to write tmp file '$tmpPath': $_"
+    }
+
+    if ($VenvPython -and (Test-Path $VenvPython)) {
+        $result = & $VenvPython -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' $tmpPath 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Remove-Item $tmpPath -Force -ErrorAction SilentlyContinue
+            throw "Update-LMYamlSslFields: YAML validation failed after SSL field update: $result"
+        }
+    }
+
+    try {
+        Move-Item -Path $tmpPath -Destination $YamlPath -Force
+    } catch {
+        Remove-Item $tmpPath -Force -ErrorAction SilentlyContinue
+        throw "Update-LMYamlSslFields: Failed to replace '$YamlPath' with updated content: $_"
     }
 }
 
