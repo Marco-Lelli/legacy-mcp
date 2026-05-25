@@ -36,7 +36,7 @@ param(
     [string]$SnapshotPath,
     [string]$LogPath,
     [string]$ServiceAccount,
-    [string]$ApiKey,
+    [string]$ApiKey = "",
     [int]$Port = 8000,
     [string]$CertFile,
     [string]$CertKeyFile,
@@ -80,6 +80,10 @@ if ($Profile -like 'B*' -and $Role -eq 'Server' -and $Mode -eq 'Install' -and -n
 if ($Profile -like 'B*' -and $Role -eq 'Client' -and $Mode -eq 'Install') {
     if (-not $ServerUrl)  { throw '-ServerUrl is required for Profile B Client installation.' }
     if (-not $CaCertPath) { throw '-CaCertPath is required for Profile B Client installation.' }
+}
+if ($ApiKey -and $ApiKey.Length -lt 16) {
+    Write-Error "Setup-LegacyMCP: -ApiKey is too short (minimum 16 characters)"
+    exit 1
 }
 
 # ---------------------------------------------------------------------------
@@ -305,11 +309,18 @@ if ($Profile -eq 'A') {
         }
 
         Write-LMStep 'Step 6 -- API key'
-        if (-not $ApiKey) { $ApiKey = New-LMApiKey }
-        $displayApiKey = $ApiKey
-        Protect-LMApiKey -ApiKey $ApiKey -ServiceAccount $ServiceAccount -RegistryRoot $REG_ROOT
-        Write-LMInfo 'API key stored (DPAPI-NG, SID-scoped). Keep a secure copy if needed.'
-        $ApiKey = $null
+        if ($ApiKey) {
+            $displayApiKey = $ApiKey
+            Protect-LMApiKey -ApiKey $ApiKey -ServiceAccount $ServiceAccount -RegistryRoot $REG_ROOT
+            Write-LMInfo 'API key stored (DPAPI-NG, SID-scoped). Provided via -ApiKey parameter.'
+            $ApiKey = $null
+        } else {
+            $newApiKey = New-LMApiKey
+            $displayApiKey = $newApiKey
+            Protect-LMApiKey -ApiKey $newApiKey -ServiceAccount $ServiceAccount -RegistryRoot $REG_ROOT
+            Write-LMInfo 'API key stored (DPAPI-NG, SID-scoped). Keep a secure copy if needed.'
+            $newApiKey = $null
+        }
 
         Write-LMStep 'Step 7 -- Configuration'
         $templatePath = Join-Path $RepoRoot 'config\config.example-B.yaml'
