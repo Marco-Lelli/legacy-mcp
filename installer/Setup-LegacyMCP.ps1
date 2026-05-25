@@ -263,6 +263,20 @@ if ($Profile -eq 'A') {
         $NssmSource = Join-Path $ScriptDir 'tools\nssm.exe'
         $NssmExe    = Join-Path $InstallPath 'nssm.exe'
         $VenvPath   = Join-Path $InstallPath '.venv'
+        $installMode = if ($DevInstall) { 'dev' } else { 'release' }
+
+        if ((Test-Path $REG_ROOT) -and (Test-Path $VenvPath)) {
+            $existingMode = (Get-ItemProperty -Path $REG_ROOT `
+                -ErrorAction SilentlyContinue).InstallMode
+            if ($existingMode -and $existingMode -ne $installMode) {
+                Write-Error ("Setup: Cannot switch InstallMode from '$existingMode'" +
+                    " to '$installMode' while the existing venv is still present.`n" +
+                    "Run uninstall first to remove the venv:`n" +
+                    "  .\Setup-LegacyMCP.ps1 -Profile $Profile -Role Server -Mode Uninstall`n" +
+                    "Then reinstall with the desired mode.")
+                exit 1
+            }
+        }
 
         $existingVersion = $null
         if (Test-Path $REG_ROOT) {
