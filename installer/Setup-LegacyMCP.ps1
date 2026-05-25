@@ -256,6 +256,32 @@ if ($Profile -eq 'A') {
         $NssmExe  = Join-Path $ScriptDir 'tools\nssm.exe'
         $VenvPath = Join-Path $InstallPath '.venv'
 
+        $existingVersion = $null
+        if (Test-Path $REG_ROOT) {
+            $existingProps = Get-ItemProperty -Path $REG_ROOT `
+                -ErrorAction SilentlyContinue
+            $existingVersion = if ($existingProps -and $existingProps.InstalledVersion) {
+                $existingProps.InstalledVersion
+            } else {
+                'unknown (pre-v0.2.4)'
+            }
+        }
+        $keepCredentials = $false
+        if ($existingVersion) {
+            Write-LMWarn "[!] Existing LegacyMCP installation detected (version: $existingVersion)"
+            Write-Host ''
+            Write-LMInfo '    API key and certificate found on this machine.'
+            Write-LMInfo '    Do you want to keep existing credentials?'
+            Write-LMInfo '    Existing clients will continue to work without reconfiguration.'
+            Write-Host ''
+            Write-LMInfo '    [K] Keep existing credentials (recommended)'
+            Write-LMInfo '    [R] Regenerate all credentials (clients will need reconfiguration)'
+            Write-Host ''
+            $choice = Read-Host 'Choice [K/R] (default: K)'
+            if ([string]::IsNullOrWhiteSpace($choice)) { $choice = 'K' }
+            $keepCredentials = ($choice.ToUpper() -eq 'K')
+        }
+
         Write-LMStep 'Step 1 -- Python'
         $pythonExe = Find-LMPython
         Write-LMOK "Python found: $pythonExe"
@@ -302,7 +328,10 @@ if ($Profile -eq 'A') {
         $fqdn = [System.Net.Dns]::GetHostEntry('').HostName
 
         Write-LMStep 'Step 5 -- TLS certificate'
-        if ($CertFile -and $CertKeyFile) {
+        if ($keepCredentials) {
+            $certResult = @{ CertFile = (Join-Path $CertDir 'server.crt'); KeyFile = (Join-Path $CertDir 'server.key') }
+            Write-LMOK 'Existing TLS certificate preserved.'
+        } elseif ($CertFile -and $CertKeyFile) {
             $certResult = Import-LMCert -CertFile $CertFile -CertKeyFile $CertKeyFile -CertDir $CertDir
         } else {
             $certResult = New-LMSelfSignedCert -VenvPython $venvPython -CertDir $CertDir -Hostname $fqdn
@@ -314,6 +343,9 @@ if ($Profile -eq 'A') {
             Protect-LMApiKey -ApiKey $ApiKey -ServiceAccount $ServiceAccount -RegistryRoot $REG_ROOT
             Write-LMInfo 'API key stored (DPAPI-NG, SID-scoped). Provided via -ApiKey parameter.'
             $ApiKey = $null
+        } elseif ($keepCredentials) {
+            $displayApiKey = $null
+            Write-LMOK 'API key preserved (existing DPAPI-NG entry retained).'
         } else {
             $newApiKey = New-LMApiKey
             $displayApiKey = $newApiKey
@@ -408,9 +440,13 @@ if ($Profile -eq 'A') {
         Write-LMInfo "Port:          $Port"
         Write-LMInfo "Certificate:   $($certResult.CertFile)"
         Write-Host ''
-        Write-LMWarn 'API key (save this -- needed for client setup):'
-        Write-LMWarn "  $displayApiKey"
-        $displayApiKey = $null
+        if ($displayApiKey) {
+            Write-LMWarn 'API key (save this -- needed for client setup):'
+            Write-LMWarn "  $displayApiKey"
+            $displayApiKey = $null
+        } else {
+            Write-LMInfo 'API key: preserved (clients unchanged).'
+        }
         Write-Host ''
         Write-LMWarn 'Copy the CA certificate to the consultant PC:'
         Write-LMWarn "  $($certResult.CertFile)"
