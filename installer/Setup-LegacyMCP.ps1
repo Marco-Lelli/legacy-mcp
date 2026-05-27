@@ -306,7 +306,24 @@ if ($Profile -eq 'A') {
 
         Write-LMStep 'Step 1 -- Python'
         $pythonExe = Find-LMPython
-        Write-LMOK "Python found: $pythonExe"
+
+        $pythonExeLower = $pythonExe.ToLower()
+        $appDataLocal   = $env:LOCALAPPDATA.ToLower()
+        $appDataRoaming = $env:APPDATA.ToLower()
+        if ($pythonExeLower.StartsWith($appDataLocal) -or
+            $pythonExeLower.StartsWith($appDataRoaming)) {
+            Write-Error (
+                "Setup: Python is installed for the current user only " +
+                "('$pythonExe').`n" +
+                "Profile B Server requires Python installed for all users " +
+                "so the service account can access it.`n" +
+                "Fix: uninstall Python, then reinstall it selecting " +
+                "'Install for all users' in the Python installer.`n" +
+                "Typical system-wide path: C:\Program Files\Python3xx\python.exe"
+            )
+            exit 1
+        }
+        Write-LMOK "Python found (system-wide): $pythonExe"
 
         Write-LMStep 'Step 2 -- Virtual environment'
         New-LMVenv -PythonExe $pythonExe -VenvPath $VenvPath
