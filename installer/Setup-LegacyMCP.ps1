@@ -304,6 +304,44 @@ if ($Profile -eq 'A') {
             $keepCredentials = ($choice.ToUpper() -eq 'K')
         }
 
+        # Check service state -- only when reinstalling over existing installation
+        $serviceWasRunning = $false
+        if ($existingVersion) {
+            $svc = Get-Service -Name $SERVICE_NAME -ErrorAction SilentlyContinue
+            if ($svc) {
+                if ($svc.Status -eq 'Running') {
+                    Write-Host ''
+                    Write-LMWarn "Service '$SERVICE_NAME' is currently running."
+                    Write-LMInfo "  It must be stopped before reinstalling."
+                    $stopChoice = Read-Host "Stop service and proceed? [y/N]"
+                    if ($stopChoice.ToLower() -ne 'y') {
+                        Write-Error ("Setup: Reinstall aborted -- service '$SERVICE_NAME' " +
+                            "is running and stop was not confirmed.`n" +
+                            "Stop the service manually and re-run the installer.")
+                        exit 1
+                    }
+                    try {
+                        Stop-Service -Name $SERVICE_NAME -Force -ErrorAction Stop
+                        Write-LMOK "Service '$SERVICE_NAME' stopped."
+                        $serviceWasRunning = $true
+                    } catch {
+                        Write-Error ("Setup: Failed to stop service '$SERVICE_NAME': $_`n" +
+                            "Stop it manually (Stop-Service $SERVICE_NAME -Force " +
+                            "or Task Manager) and re-run the installer.")
+                        exit 1
+                    }
+                } elseif ($svc.Status -ne 'Stopped') {
+                    Write-Error ("Setup: Service '$SERVICE_NAME' is in an unexpected " +
+                        "state ('$($svc.Status)').`n" +
+                        "Wait for the service to reach a stable state (Running or " +
+                        "Stopped) and re-run the installer.")
+                    exit 1
+                }
+                # Status -eq 'Stopped': proceed silently, no action needed
+            }
+            # Service not found: fresh reinstall scenario, proceed normally
+        }
+
         Write-LMStep 'Step 1 -- Python'
         $pythonExe = Find-LMPython
 
