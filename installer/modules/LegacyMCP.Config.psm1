@@ -399,6 +399,12 @@ function Test-LMConfig {
             Write-LMOK 'ApiKey present in registry (encrypted).'
         }
 
+        if ($regProps -and $regProps.KeyPasswordBlob) {
+            Write-LMOK 'TLS KeyPassword  : protected (DPAPI-NG encrypted)'
+        } else {
+            Write-LMWarn 'TLS KeyPassword  : not set (pre-v0.2.4 installation -- key unencrypted)'
+        }
+
         $installedVersion = if ($regProps) { $regProps.InstalledVersion } else { $null }
         $installMode      = if ($regProps) { $regProps.InstallMode }      else { $null }
         if ($installedVersion) {
