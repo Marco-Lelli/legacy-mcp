@@ -19,10 +19,25 @@ function New-LMSelfSignedCert {
         New-Item -ItemType Directory -Path $CertDir -Force | Out-Null
     }
 
+    # RandomNumberGenerator::GetBytes(int) is .NET 6+; use instance pattern for PS 5.1 / .NET 4.x
+    try {
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        $bytes = New-Object byte[] 32
+        $rng.GetBytes($bytes)
+        $keyPassword = [Convert]::ToBase64String($bytes) -replace '[+/=]', ''
+        $rng.Dispose()
+        if ([string]::IsNullOrEmpty($keyPassword)) {
+            throw 'Generated password is empty.'
+        }
+    } catch {
+        throw "New-LMSelfSignedCert: Failed to generate TLS key password: $_"
+    }
+
     $env:LEGACYMCP_CERT_FILE     = $certFile
     $env:LEGACYMCP_KEY_FILE      = $keyFile
     $env:LEGACYMCP_CERT_DAYS     = $ValidityDays.ToString()
     $env:LEGACYMCP_CERT_HOSTNAME = $Hostname
+    $env:LEGACYMCP_KEY_PASSWORD  = $keyPassword
 
     $genPy = @'
 import os, socket, datetime, ipaddress
@@ -31,10 +46,11 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-cert_file = os.environ['LEGACYMCP_CERT_FILE']
-key_file  = os.environ['LEGACYMCP_KEY_FILE']
-hostname  = os.environ.get('LEGACYMCP_CERT_HOSTNAME') or socket.getfqdn()
-days      = int(os.environ.get('LEGACYMCP_CERT_DAYS', '730'))
+cert_file    = os.environ['LEGACYMCP_CERT_FILE']
+key_file     = os.environ['LEGACYMCP_KEY_FILE']
+hostname     = os.environ.get('LEGACYMCP_CERT_HOSTNAME') or socket.getfqdn()
+days         = int(os.environ.get('LEGACYMCP_CERT_DAYS', '730'))
+key_password = os.environ.get('LEGACYMCP_KEY_PASSWORD', '').encode('utf-8')
 
 key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 now = datetime.datetime.now(datetime.timezone.utc)
@@ -60,11 +76,13 @@ cert = (x509.CertificateBuilder()
     .sign(key, hashes.SHA256()))
 with open(cert_file, 'wb') as f:
     f.write(cert.public_bytes(serialization.Encoding.PEM))
+enc = (serialization.BestAvailableEncryption(key_password)
+       if key_password else serialization.NoEncryption())
 with open(key_file, 'wb') as f:
     f.write(key.private_bytes(
         serialization.Encoding.PEM,
         serialization.PrivateFormat.TraditionalOpenSSL,
-        serialization.NoEncryption()))
+        enc))
 print('OK')
 '@
 
@@ -73,13 +91,18 @@ print('OK')
     Remove-Item Env:LEGACYMCP_KEY_FILE      -ErrorAction SilentlyContinue
     Remove-Item Env:LEGACYMCP_CERT_DAYS     -ErrorAction SilentlyContinue
     Remove-Item Env:LEGACYMCP_CERT_HOSTNAME -ErrorAction SilentlyContinue
+    Remove-Item Env:LEGACYMCP_KEY_PASSWORD  -ErrorAction SilentlyContinue
 
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to generate self-signed certificate."
     }
     Write-LMOK "Self-signed certificate generated: $certFile (valid $ValidityDays days)"
     Write-LMWarn "Clients must trust this CA. Copy $certFile to the consultant PC."
-    return @{ CertFile = $certFile; KeyFile = $keyFile }
+    return [PSCustomObject]@{
+        CertFile    = $certFile
+        KeyFile     = $keyFile
+        KeyPassword = $keyPassword
+    }
 }
 
 function Import-LMCert {

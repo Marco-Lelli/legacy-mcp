@@ -551,6 +551,34 @@ function Protect-LMApiKey {
     }
 }
 
+function Protect-LMKeyPasswordBlob {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$PlainText,
+        [Parameter(Mandatory)]
+        [string]$ServiceAccount
+    )
+    Assert-LMElevation -Context 'Protect-LMKeyPasswordBlob'
+    if (-not (Get-Module -ListAvailable -Name SecretManagement.DpapiNG)) {
+        Write-LMInfo 'Installing required module SecretManagement.DpapiNG...'
+        Install-Module SecretManagement.DpapiNG -Scope AllUsers -Force -ErrorAction Stop
+        Write-LMOK 'SecretManagement.DpapiNG installed.'
+    }
+    try {
+        Import-Module SecretManagement.DpapiNG -ErrorAction Stop
+    } catch {
+        throw 'SecretManagement.DpapiNG module not installed. Run: Install-Module SecretManagement.DpapiNG -Scope AllUsers'
+    }
+    try {
+        $svcSid = (New-Object System.Security.Principal.NTAccount($ServiceAccount)).Translate(
+            [System.Security.Principal.SecurityIdentifier]).Value
+        return ConvertTo-DpapiNGSecret -InputObject $PlainText -Sid $svcSid
+    } catch {
+        throw "Failed to encrypt secret with DPAPI-NG: $_"
+    }
+}
+
 function Get-LMApiKey {
     [CmdletBinding()]
     param([string]$RegistryRoot = $REG_ROOT)
@@ -585,4 +613,5 @@ function Get-LMApiKey {
 # ---------------------------------------------------------------------------
 
 Export-ModuleMember -Function Get-LMConfig, Set-LMConfig, Test-LMConfig,
-                              New-LMApiKey, Protect-LMApiKey, Get-LMApiKey
+                              New-LMApiKey, Protect-LMApiKey, Get-LMApiKey,
+                              Protect-LMKeyPasswordBlob

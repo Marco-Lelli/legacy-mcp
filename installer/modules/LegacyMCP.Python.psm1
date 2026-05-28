@@ -54,7 +54,7 @@ function New-LMVenv {
         Write-LMInfo "Virtual environment already exists at '$VenvPath' -- skipping creation."
         return
     }
-    & $PythonExe -m venv $VenvPath
+    & $PythonExe -m venv $VenvPath | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to create virtual environment at '$VenvPath'. " +
               "Check Python installation, available disk space, and antivirus exclusions."
@@ -74,7 +74,7 @@ function Install-LMPackage {
     if ($Editable) { $pipArgs += '-e' }
     $pipArgs += $PackageOrPath
 
-    & $venvPip @pipArgs
+    & $venvPip @pipArgs | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "pip install failed for '$PackageOrPath'. " +
               "Check network connectivity, antivirus exclusions, and pip output above."

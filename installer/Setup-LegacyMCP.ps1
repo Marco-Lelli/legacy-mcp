@@ -435,6 +435,7 @@ if ($Profile -eq 'A') {
         $fqdn = [System.Net.Dns]::GetHostEntry('').HostName
 
         Write-LMStep 'Step 5 -- TLS certificate'
+        $keyPasswordBlob = $null
         if ($keepCredentials) {
             $certResult = @{ CertFile = (Join-Path $CertDir 'server.crt'); KeyFile = (Join-Path $CertDir 'server.key') }
             Write-LMOK 'Existing TLS certificate preserved.'
@@ -442,6 +443,19 @@ if ($Profile -eq 'A') {
             $certResult = Import-LMCert -CertFile $CertFile -CertKeyFile $CertKeyFile -CertDir $CertDir
         } else {
             $certResult = New-LMSelfSignedCert -VenvPython $venvPython -CertDir $CertDir -Hostname $fqdn
+            if ($certResult.KeyPassword) {
+                try {
+                    $keyPasswordBlob = Protect-LMKeyPasswordBlob `
+                        -PlainText $certResult.KeyPassword `
+                        -ServiceAccount $ServiceAccount
+                    Write-LMOK 'TLS key password encrypted (DPAPI-NG, SID-scoped).'
+                } catch {
+                    Write-Error "Setup: Failed to encrypt TLS key password: $_"
+                    exit 1
+                }
+                $certResult.KeyPassword = $null
+                [System.GC]::Collect()
+            }
         }
 
         Write-LMStep 'Step 6 -- API key'
@@ -526,6 +540,9 @@ if ($Profile -eq 'A') {
             Set-LMRegistry -Key $REG_ROOT -Name 'InstallMode'      -Value $installMode
             Set-LMRegistry -Key $REG_ROOT -Name 'InstalledVersion' -Value $InstalledVersion
             Set-LMRegistry -Key $REG_ROOT -Name 'NssmPath'         -Value $NssmExe
+            if ($keyPasswordBlob) {
+                Set-LMRegistry -Key $REG_ROOT -Name 'KeyPasswordBlob' -Value $keyPasswordBlob
+            }
         } catch {
             Write-Error "Setup: Failed to write registry entries under '$REG_ROOT': $_"
             exit 1
