@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import logging
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,6 +16,8 @@ from legacy_mcp.config_registry import read_registry_config
 from legacy_mcp.eventlog import writer as eventlog
 from legacy_mcp.workspace.workspace import Workspace
 from legacy_mcp import tools
+
+logger = logging.getLogger(__name__)
 
 
 def create_server(
@@ -111,6 +116,54 @@ def create_server(
     return mcp
 
 
+def _get_key_password() -> bytes | None:
+    """Read the TLS private key password from the Windows registry via DPAPI-NG.
+    Returns the password as bytes, or None if not configured (legacy install).
+    """
+    if sys.platform != "win32":
+        return None
+
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\LegacyMCP") as key:
+            blob, _ = winreg.QueryValueEx(key, "KeyPasswordBlob")
+    except (OSError, FileNotFoundError):
+        return None
+
+    if not blob:
+        return None
+
+    logger.debug("_get_key_password: blob_len=%d", len(blob))
+
+    _ps_exe = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+    ps_cmd = (
+        "Import-Module SecretManagement.DpapiNG -ErrorAction Stop; "
+        "$blob = $env:LEGACYMCP_BLOB; "
+        "$secure = ConvertFrom-DpapiNGSecret -InputObject $blob; "
+        "[Runtime.InteropServices.Marshal]::PtrToStringAuto("
+        "[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))"
+    )
+    os.environ["LEGACYMCP_BLOB"] = blob
+    try:
+        result = subprocess.run(
+            [_ps_exe, "-NoProfile", "-NonInteractive",
+             "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+            capture_output=True, text=True, timeout=10,
+        )
+    finally:
+        os.environ.pop("LEGACYMCP_BLOB", None)
+
+    if result.stderr.strip():
+        logger.debug("_get_key_password: subprocess stderr=%s", result.stderr.strip())
+    logger.debug("_get_key_password: stdout_repr=%s", repr(result.stdout))
+    if result.returncode != 0 or not result.stdout.strip():
+        raise RuntimeError(
+            f"Failed to decrypt TLS key password from registry: {result.stderr.strip()}"
+        )
+    return result.stdout.strip().encode("utf-8")
+
+
 def _run_with_tls(
     mcp: FastMCP,
     ssl_certfile: str,
@@ -127,9 +180,29 @@ def _run_with_tls(
     BearerApiKeyMiddleware before being handed to uvicorn.  Profile A
     (stdio) never calls this function, so the middleware is never active
     for Profile A deployments.
+
+    When KeyPasswordBlob is present in the registry the private key is
+    decrypted via DPAPI-NG and passed to uvicorn as ssl_keyfile_password.
+    When absent (legacy install or imported cert) the key is used as-is.
     """
     import anyio
     import uvicorn
+
+    key_password = _get_key_password()
+
+    if key_password is None and ssl_keyfile:
+        try:
+            with open(ssl_keyfile, 'r') as f:
+                line1 = f.readline()
+                line2 = f.readline()
+            if 'ENCRYPTED' in line2 or 'ENCRYPTED PRIVATE KEY' in line1:
+                raise RuntimeError(
+                    "TLS private key is encrypted but KeyPasswordBlob is missing "
+                    "from the registry. Reinstall to restore the key password. "
+                    f"Key: {ssl_keyfile}"
+                )
+        except OSError as e:
+            raise RuntimeError(f"Cannot read TLS key file: {e}") from e
 
     async def _serve() -> None:
         app = mcp.streamable_http_app()
@@ -146,6 +219,7 @@ def _run_with_tls(
             log_level=mcp.settings.log_level.lower(),
             ssl_certfile=ssl_certfile,
             ssl_keyfile=ssl_keyfile,
+            ssl_keyfile_password=key_password,
         )
         server = uvicorn.Server(config)
         async with mcp.session_manager.run():  # ← inizializza il task group FastMCP
