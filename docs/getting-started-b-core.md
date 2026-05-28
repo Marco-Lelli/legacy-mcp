@@ -127,6 +127,15 @@ For a non-gMSA account:
 .\Setup-LegacyMCP.ps1 -Profile B-core -Role Server -Mode Install -ServiceAccount "DOMAIN\svc_legacymcp"
 ```
 
+Use `-Version` to install a specific release from PyPI:
+
+```powershell
+.\Setup-LegacyMCP.ps1 -Profile B-core -Role Server -Mode Install -ServiceAccount "DOMAIN\svc_legacymcp$" -Version 0.2.2
+```
+
+Useful when a newer version introduces a regression or an unwanted behavior
+change and you need to pin a known-good release.
+
 The installer will:
 - Create the Python virtual environment in `%ProgramFiles%\LegacyMCP\.venv`
 - Generate a TLS certificate (self-signed SHA-256) in `%ProgramData%\LegacyMCP\certs\`

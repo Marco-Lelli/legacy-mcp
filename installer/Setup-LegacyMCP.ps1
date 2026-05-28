@@ -14,6 +14,10 @@
     Operation mode: Install (default), Configure, Repair, Uninstall
 .PARAMETER Gui
     Show GUI wizard instead of CLI prompts (Phase 5 -- not yet implemented)
+.PARAMETER Version
+    Optional. Install a specific version from PyPI (e.g. -Version 0.2.2).
+    Use this when a newer version introduces a regression or an unwanted
+    behavior change. Has no effect when -DevInstall is specified.
 #>
 [CmdletBinding()]
 param(
@@ -50,7 +54,9 @@ param(
     [switch]$Purge,
 
     # GUI (Phase 5)
-    [switch]$Gui
+    [switch]$Gui,
+
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = 'Stop'
@@ -113,7 +119,7 @@ if ($Profile -like 'B*' -and $Role -eq 'Client' -and (Test-LMElevation)) {
 # Constants
 # ---------------------------------------------------------------------------
 
-$VERSION      = '0.2.3'
+$INSTALLER_VERSION = '0.2.3'
 $SERVICE_NAME = 'LegacyMCP'
 $REG_ROOT     = if ($Profile -eq 'A') { 'HKCU:\SOFTWARE\LegacyMCP' } else { 'HKLM:\SOFTWARE\LegacyMCP' }
 
@@ -198,7 +204,7 @@ if ($Profile -eq 'A') {
             Set-LMRegistry -Key $REG_ROOT -Name 'ConfigPath'  -Value $ConfigPath
             Set-LMRegistry -Key $REG_ROOT -Name 'Profile'     -Value 'A'
             Set-LMRegistry -Key $REG_ROOT -Name 'Transport'   -Value 'stdio'
-            Set-LMRegistry -Key $REG_ROOT -Name 'Version'     -Value $VERSION
+            Set-LMRegistry -Key $REG_ROOT -Name 'Version'     -Value $INSTALLER_VERSION
             Write-LMOK 'Registry entries written.'
         } catch {
             Write-LMWarn "Could not write registry entries: $_"
@@ -370,6 +376,9 @@ if ($Profile -eq 'A') {
         Write-LMStep 'Step 3 -- Package installation'
         $installMode = if ($DevInstall) { 'dev' } else { 'release' }
         if ($DevInstall) {
+            if ($Version -ne "") {
+                Write-LMWarn '-Version has no effect in DevInstall mode. The local source tree is used.'
+            }
             if (-not (Test-Path (Join-Path $RepoRoot 'pyproject.toml'))) {
                 Write-Error "Setup-LegacyMCP: -DevInstall requires a source tree (pyproject.toml not found at: $RepoRoot)"
                 exit 1
@@ -381,8 +390,9 @@ if ($Profile -eq 'A') {
                 exit 1
             }
         } else {
+            $pipPackage = if ($Version -ne "") { "legacy-mcp==$Version" } else { "legacy-mcp" }
             try {
-                Install-LMPackage -VenvPath $VenvPath -PackageOrPath 'legacy-mcp'
+                Install-LMPackage -VenvPath $VenvPath -PackageOrPath $pipPackage
             } catch {
                 Write-Error "Setup-LegacyMCP: pip install failed (mode: release): $_"
                 exit 1
@@ -403,7 +413,7 @@ if ($Profile -eq 'A') {
                 $verLine = $pipOut | Select-String '^Version:' | Select-Object -First 1
                 if ($verLine) { $InstalledVersion = ($verLine.Line -replace 'Version:\s*', '').Trim() }
             } catch {}
-            if (-not $InstalledVersion) { $InstalledVersion = $VERSION }
+            if (-not $InstalledVersion) { $InstalledVersion = $INSTALLER_VERSION }
         }
         Write-LMInfo "Package installed (mode: $installMode, version: $InstalledVersion)."
 
@@ -536,7 +546,7 @@ if ($Profile -eq 'A') {
             Set-LMRegistry -Key $REG_ROOT -Name 'Profile'          -Value $Profile
             Set-LMRegistry -Key $REG_ROOT -Name 'Transport'        -Value 'streamable-http'
             Set-LMRegistry -Key $REG_ROOT -Name 'Port'             -Value $Port -Type 'DWord'
-            Set-LMRegistry -Key $REG_ROOT -Name 'Version'          -Value $VERSION
+            Set-LMRegistry -Key $REG_ROOT -Name 'Version'          -Value $INSTALLER_VERSION
             Set-LMRegistry -Key $REG_ROOT -Name 'InstallMode'      -Value $installMode
             Set-LMRegistry -Key $REG_ROOT -Name 'InstalledVersion' -Value $InstalledVersion
             Set-LMRegistry -Key $REG_ROOT -Name 'NssmPath'         -Value $NssmExe
