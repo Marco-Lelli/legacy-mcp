@@ -692,9 +692,8 @@ if ($Profile -eq 'A') {
         $cfg        = Get-LMConfig -RegistryRoot $REG_ROOT
         $InstallPath = if ($InstallPath) { $InstallPath } elseif ($cfg['InstallPath']) { $cfg['InstallPath'] } else { "$env:ProgramFiles\LegacyMCP" }
         $ConfigPath  = if ($ConfigPath)  { $ConfigPath }  elseif ($cfg['ConfigPath'])  { $cfg['ConfigPath'] }  else { "$env:ProgramData\LegacyMCP\config\config.yaml" }
-        $CertDir     = "$env:ProgramData\LegacyMCP\certs"
-        $VenvPath    = Join-Path $InstallPath '.venv'
-        $venvPython  = Join-Path $VenvPath 'Scripts\python.exe'
+        $CertDir         = "$env:ProgramData\LegacyMCP\certs"
+        $restartRequired = $false
 
         Write-LMStep 'Current configuration'
         Test-LMConfig -RegistryRoot $REG_ROOT -Profile $Profile | Out-Null
@@ -703,6 +702,7 @@ if ($Profile -eq 'A') {
             Write-LMStep 'Updating TLS certificate'
             Invoke-LMReplaceCert -CertFile $CertFile -CertKeyFile $CertKeyFile `
                 -CertDir $CertDir -ConfigPath $ConfigPath -ServiceName $SERVICE_NAME
+            $restartRequired = $true
         }
 
         if ($ApiKey) {
@@ -719,12 +719,15 @@ if ($Profile -eq 'A') {
             Protect-LMApiKey -ApiKey $ApiKey -ServiceAccount $ServiceAccount -RegistryRoot $REG_ROOT
             Write-LMInfo 'API key updated (DPAPI-NG, SID-scoped).'
             $ApiKey = $null
+            $restartRequired = $true
         }
 
         Write-LMStep 'Configure complete'
         Write-LMOK  "Profile $Profile Server configuration updated."
-        Write-LMInfo 'Restart the service for changes to take effect:'
-        Write-LMInfo "  Restart-Service -Name $SERVICE_NAME"
+        if ($restartRequired) {
+            Write-LMWarn 'Restart the service for changes to take effect:'
+            Write-LMInfo "  Restart-Service -Name $SERVICE_NAME"
+        }
 
     } else {
         throw "Mode '$Mode' is not yet implemented for Profile $Profile Server."

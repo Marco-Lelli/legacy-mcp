@@ -209,15 +209,6 @@ function Invoke-LMReplaceCert {
     Update-LMYamlSslFields -YamlPath $ConfigPath `
         -SslCertFile $result.CertFile -SslKeyFile $result.KeyFile
     Write-LMOK "ssl_certfile and ssl_keyfile updated in config.yaml."
-
-    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-    if ($svc) {
-        Write-LMInfo "Restarting $ServiceName service..."
-        Restart-Service -Name $ServiceName -Force
-        Write-LMOK "$ServiceName service restarted."
-    } else {
-        Write-LMWarn "$ServiceName service not found -- skipping restart."
-    }
 }
 
 Export-ModuleMember -Function New-LMSelfSignedCert, Import-LMCert, Invoke-LMReplaceCert, Update-LMYamlSslFields
