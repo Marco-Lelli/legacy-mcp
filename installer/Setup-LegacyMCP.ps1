@@ -705,6 +705,24 @@ if ($Profile -eq 'A') {
             $restartRequired = $true
         }
 
+        if ($SnapshotPath -ne '') {
+            Write-LMStep 'Updating snapshot path'
+            $currentSnapshotPath = $null
+            try {
+                $cfgVals = Get-LMConfig -RegistryRoot $REG_ROOT
+                if ($cfgVals.ContainsKey('SnapshotPath')) {
+                    $currentSnapshotPath = $cfgVals['SnapshotPath']
+                }
+            } catch {}
+            if ($currentSnapshotPath) {
+                Write-LMInfo "  Current: $currentSnapshotPath"
+            }
+            Write-LMInfo "  New:     $SnapshotPath"
+            Write-LMInfo '  Note: existing snapshot files are not moved.'
+            Set-LMConfig -RegistryRoot $REG_ROOT -Name 'SnapshotPath' -Value $SnapshotPath
+            $restartRequired = $true
+        }
+
         if ($ApiKey) {
             Write-LMStep 'Updating API key'
             if (-not $ServiceAccount) {

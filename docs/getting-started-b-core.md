@@ -226,6 +226,23 @@ legacy CA compatibility, see [tls-certificate-setup.md](tls-certificate-setup.md
 
 ---
 
+## Post-installation Configuration
+
+Use `-Mode Configure` to update settings without reinstalling.
+
+Use `-SnapshotPath` to change the snapshot directory:
+
+```powershell
+.\Setup-LegacyMCP.ps1 -Profile B-core -Role Server -Mode Configure `
+    -SnapshotPath "D:\LegacyMCP\snapshots"
+```
+
+The new directory is created automatically and write permissions are
+granted to the service account. Existing snapshot files are not moved —
+copy them manually if needed. Restart the service after this change.
+
+---
+
 ## Troubleshooting
 
 **Claude Desktop does not connect:**
