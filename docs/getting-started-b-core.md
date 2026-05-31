@@ -252,6 +252,17 @@ You will be prompted to confirm. The service is restarted automatically
 to apply the new port. Reconfigure all clients with the new URL after
 this change.
 
+Use `-RotateApiKey` to generate and store a new API key:
+
+```powershell
+.\Setup-LegacyMCP.ps1 -Profile B-core -Role Server -Mode Configure `
+    -RotateApiKey
+```
+
+You will be prompted to confirm. The new key is printed once —
+copy it immediately and update all clients. The service must be
+restarted after this change.
+
 ---
 
 ## Troubleshooting

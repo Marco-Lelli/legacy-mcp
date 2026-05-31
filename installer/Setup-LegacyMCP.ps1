@@ -18,6 +18,10 @@
     Optional. Install a specific version from PyPI (e.g. -Version 0.2.2).
     Use this when a newer version introduces a regression or an unwanted
     behavior change. Has no effect when -DevInstall is specified.
+.PARAMETER RotateApiKey
+    Generate and store a new API key. The new key is printed to the
+    console for client reconfiguration. All existing clients must be
+    updated with the new key. Use in -Mode Configure only.
 #>
 [CmdletBinding()]
 param(
@@ -56,7 +60,9 @@ param(
     # GUI (Phase 5)
     [switch]$Gui,
 
-    [string]$Version = ""
+    [string]$Version = "",
+
+    [switch]$RotateApiKey
 )
 
 $ErrorActionPreference = 'Stop'
@@ -764,6 +770,37 @@ if ($Profile -eq 'A') {
             Write-LMInfo 'API key updated (DPAPI-NG, SID-scoped).'
             $ApiKey = $null
             $restartRequired = $true
+        }
+
+        if ($RotateApiKey) {
+            Write-LMStep 'Rotating API key'
+            Write-LMWarn 'Rotating the API key will:'
+            Write-LMWarn '  - Invalidate all existing client connections'
+            Write-LMWarn '  - Require reconfiguration of all clients with the new key'
+            $confirm = Read-Host 'Rotate API key? [y/N]'
+            if ($confirm -notmatch '^[Yy]$') {
+                Write-LMInfo 'API key rotation cancelled.'
+            } else {
+                if (-not $ServiceAccount) {
+                    $wmiSvc = $null
+                    try { $wmiSvc = Get-CimInstance Win32_Service -Filter "Name='LegacyMCP'" -ErrorAction SilentlyContinue } catch {}
+                    if ($wmiSvc -and $wmiSvc.StartName) { $ServiceAccount = $wmiSvc.StartName }
+                }
+                if (-not $ServiceAccount) {
+                    Write-Error 'Setup: cannot determine service account for API key rotation. Pass -ServiceAccount explicitly.'
+                    exit 1
+                }
+                $newApiKey = New-LMApiKey
+                Protect-LMApiKey -ApiKey $newApiKey -ServiceAccount $ServiceAccount -RegistryRoot $REG_ROOT
+                Write-Host ''
+                Write-LMOK 'New API key (copy this -- it will not be shown again):'
+                Write-Host "  $newApiKey" -ForegroundColor Cyan
+                Write-Host ''
+                Write-LMWarn 'Update all clients with the new API key:'
+                Write-LMInfo "  .\Setup-LegacyMCP.ps1 -Profile $Profile -Role Client -Mode Install ..."
+                $newApiKey = $null
+                $restartRequired = $true
+            }
         }
 
         Write-LMStep 'Configure complete'
