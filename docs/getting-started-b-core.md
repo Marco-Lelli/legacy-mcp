@@ -263,6 +263,26 @@ You will be prompted to confirm. The new key is printed once —
 copy it immediately and update all clients. The service must be
 restarted after this change.
 
+Use `-RotateCert` to generate a new self-signed TLS certificate:
+
+```powershell
+.\Setup-LegacyMCP.ps1 -Profile B-core -Role Server -Mode Configure `
+    -RotateCert
+```
+
+The service is restarted automatically. Distribute the new certificate
+to all clients and reconfigure them with `-CaCertPath`.
+
+When importing an external certificate with `-CertFile`/`-CertKeyFile`,
+the private key file must be unencrypted (no passphrase). The installer
+encrypts it automatically and stores the password securely.
+
+If your key file is encrypted, export an unencrypted copy first:
+
+```
+openssl rsa -in encrypted.key -out unencrypted.key
+```
+
 ---
 
 ## Troubleshooting

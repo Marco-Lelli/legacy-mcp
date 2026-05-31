@@ -22,6 +22,9 @@
     Generate and store a new API key. The new key is printed to the
     console for client reconfiguration. All existing clients must be
     updated with the new key. Use in -Mode Configure only.
+.PARAMETER RotateCert
+    Generate a new self-signed TLS certificate and key. The new certificate
+    must be distributed to all clients. Use in -Mode Configure only.
 #>
 [CmdletBinding()]
 param(
@@ -62,7 +65,9 @@ param(
 
     [string]$Version = "",
 
-    [switch]$RotateApiKey
+    [switch]$RotateApiKey,
+
+    [switch]$RotateCert
 )
 
 $ErrorActionPreference = 'Stop'
@@ -701,6 +706,7 @@ if ($Profile -eq 'A') {
         $InstallPath = if ($InstallPath) { $InstallPath } elseif ($cfg['InstallPath']) { $cfg['InstallPath'] } else { "$env:ProgramFiles\LegacyMCP" }
         $ConfigPath  = if ($ConfigPath)  { $ConfigPath }  elseif ($cfg['ConfigPath'])  { $cfg['ConfigPath'] }  else { "$env:ProgramData\LegacyMCP\config\config.yaml" }
         $CertDir         = "$env:ProgramData\LegacyMCP\certs"
+        $venvPython      = Join-Path $InstallPath '.venv\Scripts\python.exe'
         $restartRequired = $false
 
         Write-LMStep 'Current configuration'
@@ -708,8 +714,31 @@ if ($Profile -eq 'A') {
 
         if ($CertFile -and $CertKeyFile) {
             Write-LMStep 'Updating TLS certificate'
-            Invoke-LMReplaceCert -CertFile $CertFile -CertKeyFile $CertKeyFile `
-                -CertDir $CertDir -ConfigPath $ConfigPath -ServiceName $SERVICE_NAME
+            if (-not $ServiceAccount) {
+                $wmiSvc = $null
+                try { $wmiSvc = Get-CimInstance Win32_Service -Filter "Name='LegacyMCP'" -ErrorAction SilentlyContinue } catch {}
+                if ($wmiSvc -and $wmiSvc.StartName) { $ServiceAccount = $wmiSvc.StartName }
+            }
+            $certReplaceResult = Invoke-LMReplaceCert `
+                -CertFile $CertFile -CertKeyFile $CertKeyFile `
+                -CertDir $CertDir -ConfigPath $ConfigPath `
+                -ServiceName $SERVICE_NAME -VenvPython $venvPython
+            if ($certReplaceResult.KeyPassword -and $ServiceAccount) {
+                try {
+                    $keyBlob = Protect-LMKeyPasswordBlob `
+                        -PlainText $certReplaceResult.KeyPassword `
+                        -ServiceAccount $ServiceAccount
+                    Set-LMRegistry -Key $REG_ROOT -Name 'KeyPasswordBlob' -Value $keyBlob
+                    Write-LMOK 'TLS key password encrypted and KeyPasswordBlob updated.'
+                } catch {
+                    Write-LMWarn "Could not update KeyPasswordBlob: $_"
+                } finally {
+                    $certReplaceResult.KeyPassword = $null
+                }
+            } elseif ($certReplaceResult.KeyPassword) {
+                Write-LMWarn 'KeyPasswordBlob not updated -- service account unknown. Pass -ServiceAccount explicitly.'
+                $certReplaceResult.KeyPassword = $null
+            }
             $restartRequired = $true
         }
 
@@ -800,6 +829,60 @@ if ($Profile -eq 'A') {
                 Write-LMInfo "  .\Setup-LegacyMCP.ps1 -Profile $Profile -Role Client -Mode Install ..."
                 $newApiKey = $null
                 $restartRequired = $true
+            }
+        }
+
+        if ($RotateCert) {
+            Write-LMStep 'Rotating TLS certificate'
+            Write-LMWarn 'Rotating the TLS certificate will:'
+            Write-LMWarn '  - Generate a new self-signed certificate'
+            Write-LMWarn '  - Require all clients to import the new CA certificate'
+            Write-LMWarn '  - Restart the service automatically'
+            $confirm = Read-Host 'Rotate certificate? [y/N]'
+            if ($confirm -notmatch '^[Yy]$') {
+                Write-LMInfo 'Certificate rotation cancelled.'
+            } else {
+                if (-not $ServiceAccount) {
+                    $wmiSvc = $null
+                    try { $wmiSvc = Get-CimInstance Win32_Service -Filter "Name='LegacyMCP'" -ErrorAction SilentlyContinue } catch {}
+                    if ($wmiSvc -and $wmiSvc.StartName) { $ServiceAccount = $wmiSvc.StartName }
+                }
+                if (-not $ServiceAccount) {
+                    Write-Error 'Setup: cannot determine service account for certificate rotation. Pass -ServiceAccount explicitly.'
+                    exit 1
+                }
+                $fqdn       = [System.Net.Dns]::GetHostEntry('').HostName
+                $certResult = New-LMSelfSignedCert -VenvPython $venvPython -CertDir $CertDir -Hostname $fqdn
+                if ($certResult.KeyPassword) {
+                    try {
+                        $keyBlob = Protect-LMKeyPasswordBlob `
+                            -PlainText $certResult.KeyPassword `
+                            -ServiceAccount $ServiceAccount
+                        Set-LMRegistry -Key $REG_ROOT -Name 'KeyPasswordBlob' -Value $keyBlob
+                        Write-LMOK 'TLS key password encrypted and KeyPasswordBlob updated.'
+                    } catch {
+                        Write-Error "Setup: Failed to encrypt TLS key password: $_"
+                        exit 1
+                    } finally {
+                        $certResult.KeyPassword = $null
+                        [System.GC]::Collect()
+                    }
+                }
+                Update-LMYamlSslFields `
+                    -YamlPath $ConfigPath `
+                    -SslCertFile $certResult.CertFile `
+                    -SslKeyFile $certResult.KeyFile `
+                    -VenvPython $venvPython
+                Write-LMOK 'ssl_certfile and ssl_keyfile updated in config.yaml.'
+                Write-LMInfo 'Restarting service...'
+                Restart-Service -Name $SERVICE_NAME -Force
+                Write-LMOK "Service restarted with new certificate."
+                Write-LMWarn 'Distribute the new CA certificate to all clients:'
+                Write-LMInfo "  $($certResult.CertFile)"
+                Write-LMWarn 'On each client, run:'
+                Write-LMInfo "  .\Setup-LegacyMCP.ps1 -Profile $Profile -Role Client -Mode Install ..."
+                Write-LMInfo "    -CaCertPath <path-to-new-server.crt>"
+                $restartRequired = $false
             }
         }
 

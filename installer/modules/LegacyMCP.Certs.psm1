@@ -195,7 +195,8 @@ function Invoke-LMReplaceCert {
         [string]$CertKeyFile,
         [string]$CertDir,
         [string]$ConfigPath,
-        [string]$ServiceName = 'LegacyMCP'
+        [string]$ServiceName = 'LegacyMCP',
+        [string]$VenvPython  = ''
     )
     if (-not $CertFile -or -not $CertKeyFile) {
         throw "-CertFile and -CertKeyFile are required for ReplaceCert."
@@ -209,6 +210,50 @@ function Invoke-LMReplaceCert {
     Update-LMYamlSslFields -YamlPath $ConfigPath `
         -SslCertFile $result.CertFile -SslKeyFile $result.KeyFile
     Write-LMOK "ssl_certfile and ssl_keyfile updated in config.yaml."
+
+    $keyPassword = $null
+    if ($VenvPython -ne '' -and (Test-Path $VenvPython)) {
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        $bytes = New-Object byte[] 32
+        $rng.GetBytes($bytes)
+        $keyPassword = [Convert]::ToBase64String($bytes) -replace '[+/=]', ''
+        $rng.Dispose()
+
+        $env:LEGACYMCP_KEY_FILE     = $result.KeyFile
+        $env:LEGACYMCP_KEY_PASSWORD = $keyPassword
+        $encryptPy = @'
+import os, sys
+from cryptography.hazmat.primitives.serialization import (
+    load_pem_private_key, Encoding, PrivateFormat, BestAvailableEncryption
+)
+key_path = os.environ['LEGACYMCP_KEY_FILE']
+password  = os.environ['LEGACYMCP_KEY_PASSWORD'].encode()
+with open(key_path, 'rb') as f:
+    data = f.read()
+try:
+    key = load_pem_private_key(data, password=None)
+except Exception:
+    sys.stderr.write('Private key appears to be encrypted. Provide an unencrypted key file.\n')
+    sys.exit(1)
+encrypted = key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, BestAvailableEncryption(password))
+with open(key_path, 'wb') as f:
+    f.write(encrypted)
+'@
+        & $VenvPython -c $encryptPy
+        Remove-Item Env:LEGACYMCP_KEY_FILE     -ErrorAction SilentlyContinue
+        Remove-Item Env:LEGACYMCP_KEY_PASSWORD -ErrorAction SilentlyContinue
+        if ($LASTEXITCODE -ne 0) {
+            $keyPassword = $null
+            throw "Failed to encrypt private key. The key file must be unencrypted (no passphrase)."
+        }
+        Write-LMOK "Private key encrypted with new password."
+    }
+
+    return [PSCustomObject]@{
+        CertFile    = $result.CertFile
+        KeyFile     = $result.KeyFile
+        KeyPassword = $keyPassword
+    }
 }
 
 Export-ModuleMember -Function New-LMSelfSignedCert, Import-LMCert, Invoke-LMReplaceCert, Update-LMYamlSslFields
