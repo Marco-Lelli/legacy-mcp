@@ -77,6 +77,41 @@ function Update-LMYamlSnapshotPath {
     [System.IO.File]::WriteAllLines($YamlPath, $result, $utf8NoBom)
 }
 
+function Update-LMYamlPort {
+    param(
+        [Parameter(Mandatory)] [string]$YamlPath,
+        [Parameter(Mandatory)] [int]$Port
+    )
+    $rawBytes = [System.IO.File]::ReadAllBytes($YamlPath)
+    $hasBom   = ($rawBytes.Length -ge 3 -and $rawBytes[0] -eq 0xEF -and
+                 $rawBytes[1] -eq 0xBB -and $rawBytes[2] -eq 0xBF)
+    try {
+        $content = [System.Text.Encoding]::UTF8.GetString($rawBytes)
+    } catch {
+        $content = [System.Text.Encoding]::GetEncoding(1252).GetString($rawBytes)
+    }
+    if ($hasBom -and $content.Length -gt 0 -and $content[0] -eq [char]0xFEFF) {
+        $content = $content.Substring(1)
+    }
+    if ($content -match '(?m)^\s*port:\s*\d+') {
+        $content = $content -replace '(?m)^(\s*)port:\s*\d+', "`${1}port: $Port"
+    } else {
+        throw "Update-LMYamlPort: 'port:' field not found in '$YamlPath'. Add 'port:' to the server block manually."
+    }
+    $tmpPath = "$YamlPath.tmp"
+    try {
+        [System.IO.File]::WriteAllText($tmpPath, $content, [System.Text.UTF8Encoding]::new($false))
+    } catch {
+        throw "Update-LMYamlPort: Failed to write tmp file '$tmpPath': $_"
+    }
+    try {
+        Move-Item -Path $tmpPath -Destination $YamlPath -Force
+    } catch {
+        Remove-Item $tmpPath -Force -ErrorAction SilentlyContinue
+        throw "Update-LMYamlPort: Failed to replace '$YamlPath': $_"
+    }
+}
+
 function Get-LMYamlPort {
     param([string]$Content)
     if (-not $Content) { return $null }
@@ -620,4 +655,4 @@ function Get-LMApiKey {
 
 Export-ModuleMember -Function Get-LMConfig, Set-LMConfig, Test-LMConfig,
                               New-LMApiKey, Protect-LMApiKey, Get-LMApiKey,
-                              Protect-LMKeyPasswordBlob
+                              Protect-LMKeyPasswordBlob, Update-LMYamlPort

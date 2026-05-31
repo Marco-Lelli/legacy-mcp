@@ -519,6 +519,8 @@ if ($Profile -eq 'A') {
             -SslCertFile $certResult.CertFile -SslKeyFile $certResult.KeyFile `
             -VenvPython $venvPython
         Write-LMOK 'ssl_certfile and ssl_keyfile updated in config.yaml.'
+        Update-LMYamlPort -YamlPath $ConfigPath -Port $Port
+        Write-LMOK "port updated in config.yaml: $Port"
 
         Write-LMStep 'Step 8 -- EventLog'
         Register-LMEventLog
@@ -721,6 +723,30 @@ if ($Profile -eq 'A') {
             Write-LMInfo '  Note: existing snapshot files are not moved.'
             Set-LMConfig -RegistryRoot $REG_ROOT -Name 'SnapshotPath' -Value $SnapshotPath
             $restartRequired = $true
+        }
+
+        if ($PSBoundParameters.ContainsKey('Port')) {
+            Write-LMStep 'Updating port'
+            $currentPort = $null
+            try {
+                $cfgVals = Get-LMConfig -RegistryRoot $REG_ROOT
+                if ($cfgVals.ContainsKey('Port')) { $currentPort = $cfgVals['Port'] }
+            } catch {}
+            Write-LMWarn "Changing port from $currentPort to $Port will:"
+            Write-LMWarn "  - Restart the service (active sessions will be interrupted)"
+            Write-LMWarn "  - Require reconfiguration of all clients"
+            $confirm = Read-Host 'Change port? [y/N]'
+            if ($confirm -notmatch '^[Yy]$') {
+                Write-LMInfo 'Port change cancelled.'
+            } else {
+                Set-LMConfig -RegistryRoot $REG_ROOT -Name 'Port' -Value "$Port"
+                Update-LMYamlPort -YamlPath $ConfigPath -Port $Port
+                Add-LMFirewallRule -Port $Port
+                Write-LMInfo 'Restarting service to apply new port...'
+                Restart-Service -Name $SERVICE_NAME -Force
+                Write-LMOK "Service restarted on port $Port."
+                $restartRequired = $false
+            }
         }
 
         if ($ApiKey) {

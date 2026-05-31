@@ -194,7 +194,13 @@ function Add-LMFirewallRule {
     )
     $existing = Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue
     if ($existing) {
-        Write-LMInfo "Firewall rule '$RuleName' already exists -- skipping."
+        try {
+            Set-NetFirewallRule -DisplayName $RuleName -LocalPort $Port
+            Write-LMOK "Firewall rule '$RuleName' updated to port $Port."
+        } catch {
+            Write-LMWarn "Could not update firewall rule '$RuleName': $_"
+            Write-LMWarn "Update manually: Set-NetFirewallRule -DisplayName '$RuleName' -LocalPort $Port"
+        }
         return
     }
     try {
@@ -205,7 +211,7 @@ function Add-LMFirewallRule {
             -LocalPort   $Port `
             -Action      Allow `
             -Profile     Domain,Private | Out-Null
-        Write-LMOK "Firewall rule created: allow TCP inbound port $Port (Domain, Private)."
+        Write-LMOK "Firewall rule '$RuleName' created for port $Port."
     } catch {
         Write-LMWarn "Could not create firewall rule: $_"
         Write-LMWarn "Create manually: New-NetFirewallRule -DisplayName '$RuleName' -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Domain,Private"

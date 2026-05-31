@@ -241,6 +241,17 @@ The new directory is created automatically and write permissions are
 granted to the service account. Existing snapshot files are not moved —
 copy them manually if needed. Restart the service after this change.
 
+Use `-Port` to change the listening port:
+
+```powershell
+.\Setup-LegacyMCP.ps1 -Profile B-core -Role Server -Mode Configure `
+    -Port 9000
+```
+
+You will be prompted to confirm. The service is restarted automatically
+to apply the new port. Reconfigure all clients with the new URL after
+this change.
+
 ---
 
 ## Troubleshooting
