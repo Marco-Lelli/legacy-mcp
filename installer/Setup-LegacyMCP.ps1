@@ -13,7 +13,7 @@
 .PARAMETER Mode
     Operation mode: Install (default), Configure, Repair, Uninstall
 .PARAMETER Gui
-    Show GUI wizard instead of CLI prompts (Phase 5 -- not yet implemented)
+    Launch the interactive setup wizard instead of CLI prompts. Covers Install, Configure and Uninstall for Profile A and B-core.
 .PARAMETER Version
     Optional. Install a specific version from PyPI (e.g. -Version 0.2.2).
     Use this when a newer version introduces a regression or an unwanted

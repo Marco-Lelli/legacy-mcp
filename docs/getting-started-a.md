@@ -63,6 +63,8 @@ in the `installer\` subfolder.
 
 Graphical wizard (recommended):
 
+Use the `-Gui` switch to launch the interactive setup wizard instead of the CLI. The wizard covers Install, Configure and Uninstall and guides you through all parameters step by step.
+
 ```powershell
 .\Setup-LegacyMCP.ps1 -Gui
 ```

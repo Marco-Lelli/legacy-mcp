@@ -118,6 +118,8 @@ Open PowerShell as Administrator. You can use the CLI or the graphical wizard:
 
 **Graphical wizard** (recommended for first-time setup):
 
+Use the `-Gui` switch to launch the interactive setup wizard instead of the CLI. The wizard covers Install, Configure and Uninstall and guides you through all parameters step by step.
+
 ```powershell
 cd C:\LegacyMCP-Setup\installer
 .\Setup-LegacyMCP.ps1 -Gui
