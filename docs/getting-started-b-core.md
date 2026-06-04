@@ -114,7 +114,21 @@ Copy the `legacy-mcp` source folder to the server machine
 
 ### 2. Run the installer
 
-Open PowerShell as Administrator:
+Open PowerShell as Administrator. You can use the CLI or the graphical wizard:
+
+**Graphical wizard** (recommended for first-time setup):
+
+```powershell
+cd C:\LegacyMCP-Setup\installer
+.\Setup-LegacyMCP.ps1 -Gui
+```
+
+The wizard guides you through Mode, Profile, and all parameters with inline
+validation. Copy the asset files (`logo-16.png`, `logo-1024.png`,
+`server-install.gif`, `server-error.gif`) to `installer\assets\` before
+launching for the full visual experience.
+
+**CLI** (scriptable, Server Core compatible):
 
 ```powershell
 cd C:\LegacyMCP-Setup\installer

@@ -28,7 +28,6 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
     [ValidateSet('A','B-core','B-enterprise','C')]
     [string]$Profile,
 
@@ -67,7 +66,10 @@ param(
 
     [switch]$RotateApiKey,
 
-    [switch]$RotateCert
+    [switch]$RotateCert,
+
+    # Passed internally by the GUI wizard for non-gMSA service accounts
+    [SecureString]$ServiceAccountPassword = $null
 )
 
 $ErrorActionPreference = 'Stop'
@@ -81,12 +83,32 @@ Import-Module (Join-Path $ModulesDir 'LegacyMCP.Service.psm1') -Force
 Import-Module (Join-Path $ModulesDir 'LegacyMCP.Certs.psm1')   -Force
 Import-Module (Join-Path $ModulesDir 'LegacyMCP.Config.psm1')  -Force
 Import-Module (Join-Path $ModulesDir 'LegacyMCP.Client.psm1')  -Force
+$INSTALLER_VERSION = '0.2.3'
+Import-Module (Join-Path $ModulesDir 'LegacyMCP.Gui.psm1')       -Force -WarningAction SilentlyContinue
+Import-Module (Join-Path $ModulesDir 'LegacyMCP.Gui.Steps.psm1') -Force -WarningAction SilentlyContinue
+Import-Module (Join-Path $ModulesDir 'LegacyMCP.Gui.Exec.psm1')  -Force -WarningAction SilentlyContinue
+
+# ---------------------------------------------------------------------------
+# GUI wizard -- must run before all validation (wizard collects its own params)
+# ---------------------------------------------------------------------------
+
+if ($Gui) {
+    $wizardResult = Start-LMWizard `
+        -ModulesDir     $ModulesDir `
+        -ScriptDir      $ScriptDir `
+        -RepoRoot       $RepoRoot `
+        -ScriptPath     $MyInvocation.MyCommand.Path `
+        -WizardVersion  $INSTALLER_VERSION
+    if ($wizardResult) { exit 0 } else { exit 1 }
+}
+
+if ([string]::IsNullOrEmpty($Profile)) {
+    throw "-Profile is required. Specify: -Profile A, B-core, B-enterprise, or C. Use -Gui for the interactive wizard."
+}
 
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
-
-if ($Gui) { throw 'GUI mode is not yet implemented (Phase 5).' }
 
 if ($Profile -in @('B-core','B-enterprise','C') -and -not $Role) {
     throw "-Role is required for Profile $Profile. Use -Role Server or -Role Client."
@@ -130,7 +152,6 @@ if ($Profile -like 'B*' -and $Role -eq 'Client' -and (Test-LMElevation)) {
 # Constants
 # ---------------------------------------------------------------------------
 
-$INSTALLER_VERSION = '0.2.3'
 $SERVICE_NAME = 'LegacyMCP'
 $REG_ROOT     = if ($Profile -eq 'A') { 'HKCU:\SOFTWARE\LegacyMCP' } else { 'HKLM:\SOFTWARE\LegacyMCP' }
 
@@ -540,7 +561,8 @@ if ($Profile -eq 'A') {
         Install-LMService -NssmExe $NssmExe -ServiceName $SERVICE_NAME `
             -PythonExe $venvPython -ConfigPath $ConfigPath `
             -InstallPath $InstallPath -LogPath $LogPath `
-            -ServiceAccount $ServiceAccount -Port $Port
+            -ServiceAccount $ServiceAccount -Port $Port `
+            -ServiceAccountPassword $ServiceAccountPassword
         # SnapshotPath after service install so icacls can grant to service account
         try {
             Set-LMConfig -RegistryRoot $REG_ROOT -Name 'SnapshotPath' -Value $SnapshotPath

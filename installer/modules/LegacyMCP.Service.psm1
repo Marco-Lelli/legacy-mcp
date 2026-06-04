@@ -14,7 +14,8 @@ function Install-LMService {
         [string]$InstallPath,
         [string]$LogPath,
         [string]$ServiceAccount,
-        [int]$Port = 8000
+        [int]$Port = 8000,
+        [SecureString]$ServiceAccountPassword = $null
     )
     Assert-LMElevation -Context 'Service installation'
 
@@ -57,9 +58,15 @@ function Install-LMService {
         Write-LMWarn "Recommendation: use a gMSA account to avoid password management. See docs/minimum-permissions.md."
         $svcSecure   = $null
         $svcPassword = $null
+        $ownedSecure = $false
         try {
-            $svcSecure   = Read-Host "Password for $ServiceAccount" -AsSecureString
-            $svcBstr     = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($svcSecure)
+            if ($ServiceAccountPassword) {
+                $svcSecure = $ServiceAccountPassword
+            } else {
+                $svcSecure   = Read-Host "Password for $ServiceAccount" -AsSecureString
+                $ownedSecure = $true
+            }
+            $svcBstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($svcSecure)
             try {
                 $svcPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto($svcBstr)
             } finally {
@@ -70,7 +77,7 @@ function Install-LMService {
         } catch {
             throw "Failed to set service account credentials: $_"
         } finally {
-            if ($svcSecure)   { $svcSecure.Dispose() }
+            if ($ownedSecure -and $svcSecure) { $svcSecure.Dispose() }
             if ($svcPassword) { $svcPassword = $null }
         }
         Write-LMOK "Service account set to: $ServiceAccount"

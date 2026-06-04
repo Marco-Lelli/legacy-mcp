@@ -61,6 +61,17 @@ in the `installer\` subfolder.
 
 **Both options — run the installer:**
 
+Graphical wizard (recommended):
+
+```powershell
+.\Setup-LegacyMCP.ps1 -Gui
+```
+
+The wizard lets you select Profile A and confirms each step before execution.
+Do not run as Administrator — Profile A is user-scope.
+
+CLI:
+
 ```powershell
 .\Setup-LegacyMCP.ps1 -Profile A -Mode Install
 ```
