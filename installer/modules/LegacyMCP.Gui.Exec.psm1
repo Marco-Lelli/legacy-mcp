@@ -80,7 +80,8 @@ function Show-LMStepExecuting {
     $global:LMGui_BtnCancel.Enabled = $false
 
     # Set step total
-    $modeKey = "$($global:LMGui_State['Mode'])-$($global:LMGui_State['Profile'])"
+    $role    = $global:LMGui_State['Role']
+    $modeKey = "$($global:LMGui_State['Mode'])-$($global:LMGui_State['Profile'])$(if ($role -ne '') { "-$role" })"
     $global:LMGui_StepTotal = if ($global:LMGui_StepTotals.ContainsKey($modeKey)) { $global:LMGui_StepTotals[$modeKey] } else { 10 }
     $global:LMGui_StepCount = 0
     $global:LMGui_ExecSuccess = $false
@@ -235,6 +236,19 @@ function Start-LMExecution {
         $SERVICE_NAME = 'LegacyMCP'
         $MODE    = $ws['Mode']
         $PROFILE = $ws['Profile']
+        $ROLE    = $ws['Role']
+
+        # Safety net: no interactive prompts in GUI runspace.
+        # Config overwrite decision is driven by $ws['PreserveConfig'] in Invoke-LMInstallBCore.
+        $script:_wsPreserveConfig = [bool]$ws['PreserveConfig']
+        function global:Read-Host {
+            param([string]$Prompt = '', [switch]$AsSecureString)
+            if ($Prompt -match '[Oo]verwrite') {
+                if ($script:_wsPreserveConfig) { return 'N' } else { return 'Y' }
+            }
+            $Q.Enqueue("WARN:Read-Host called unexpectedly in GUI runspace: $Prompt")
+            return ''
+        }
 
         # --------------- Install B-core ---------------
         function Invoke-LMInstallBCore {
@@ -358,13 +372,12 @@ function Start-LMExecution {
             Write-LMStep 'Step 7 -- Configuration'
             $templatePath = Join-Path $rroot 'config\config.example-B.yaml'
             if (-not (Test-Path $templatePath)) { throw "Config template not found: $templatePath" }
-            if (Test-Path $ConfigPath) {
-                Write-LMWarn "config.yaml already exists at: $ConfigPath"
-                Write-LMWarn "Overwriting with default template. Existing workspace entries will be lost."
-                Write-LMWarn "Re-add your forests via Manage-Workspaces.ps1 after setup."
+            if ((Test-Path $ConfigPath) -and [bool]$ws['PreserveConfig']) {
+                Write-LMOK 'config.yaml preserved (existing configuration retained).'
+            } else {
+                Copy-Item $templatePath $ConfigPath -Force
+                Write-LMOK 'config.yaml created from template.'
             }
-            Copy-Item $templatePath $ConfigPath -Force
-            Write-LMOK 'config.yaml created from template.'
             Set-LMRegistry -Key $REG_ROOT -Name 'ConfigPath' -Value $ConfigPath
             Update-LMYamlSslFields -YamlPath $ConfigPath -SslCertFile $certResult.CertFile -SslKeyFile $certResult.KeyFile -VenvPython $venvPython
             Write-LMOK 'ssl_certfile and ssl_keyfile updated.'
@@ -644,9 +657,68 @@ function Start-LMExecution {
             Write-LMOK 'Profile A uninstalled. Remove the "legacymcp" entry from claude_desktop_config.json if present.'
         }
 
+        # --------------- Install B-core Client ---------------
+        function Invoke-LMInstallBCoreClient {
+            param($ws, $sdir, $rroot)
+            $ClientPath    = "$env:LOCALAPPDATA\LegacyMCP"
+            $ClientCertDir = "$env:LOCALAPPDATA\LegacyMCP\certs"
+
+            Write-LMStep "LegacyMCP Setup -- Profile B-core Client"
+
+            Write-LMStep 'Step 1 -- CA certificate'
+            foreach ($dir in @($ClientPath, $ClientCertDir)) {
+                if (-not (Test-Path $dir)) {
+                    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+                    Write-LMOK "Created: $dir"
+                }
+            }
+            $CaCertPath = $ws['CaCertPath']
+            if (-not (Test-Path $CaCertPath)) { throw "CA certificate not found: $CaCertPath" }
+            $localCertPath = Join-Path $ClientCertDir (Split-Path $CaCertPath -Leaf)
+            Copy-Item -Path $CaCertPath -Destination $localCertPath -Force
+            Write-LMOK "CA certificate copied to: $localCertPath"
+
+            Write-LMStep 'Step 2 -- API key'
+            $keyPath = Join-Path $ClientPath '.legacymcp-key'
+            $apiKey  = $ws['ClientApiKey']
+            if ([string]::IsNullOrWhiteSpace($apiKey)) { throw 'API key cannot be empty.' }
+            Protect-LMClientApiKey -ApiKey $apiKey -OutputPath $keyPath
+            $ws['ClientApiKey'] = $null
+
+            Write-LMStep 'Step 3 -- BAT entry point'
+            $ps1Source = $null
+            foreach ($candidate in @(
+                (Join-Path $sdir 'mcp-remote-live.ps1'),
+                (Join-Path $rroot 'client\mcp-remote-live.ps1'),
+                (Join-Path $sdir 'client\mcp-remote-live.ps1')
+            )) {
+                if (Test-Path $candidate) { $ps1Source = $candidate; break }
+            }
+            if (-not $ps1Source) { throw 'mcp-remote-live.ps1 not found in expected locations.' }
+            $ps1Dest = Join-Path $ClientPath 'mcp-remote-live.ps1'
+            Copy-Item -Path $ps1Source -Destination $ps1Dest -Force
+            Write-LMOK "mcp-remote-live.ps1 copied to: $ps1Dest"
+            $batPath = Join-Path $ClientPath 'mcp-remote-live.bat'
+            New-LMMcpRemoteBat -ServerUrl $ws['ServerUrl'] -CertPath $localCertPath -Ps1Path $ps1Dest -OutputPath $batPath
+
+            Write-LMStep 'Step 4 -- Claude Desktop configuration'
+            $claudeConfigPath = Get-LMClaudeConfigPath
+            Set-LMClaudeConfigProfileB -BatPath $batPath -ClaudeConfigPath $claudeConfigPath
+
+            Write-LMStep 'Setup complete'
+            Write-LMOK "Profile B-core Client installation successful."
+            Write-LMInfo "API key file:  $keyPath"
+            Write-LMInfo "BAT:           $batPath"
+            Write-LMInfo "CA cert:       $localCertPath"
+            Write-LMInfo "Claude config: $claudeConfigPath"
+            Write-LMInfo "Restart Claude Desktop to activate LegacyMCP."
+        }
+
         try {
-            if ($MODE -eq 'Install' -and $PROFILE -eq 'B-core') {
+            if ($MODE -eq 'Install' -and $PROFILE -eq 'B-core' -and $ROLE -eq 'Server') {
                 Invoke-LMInstallBCore -ws $ws -sdir $sdir -rroot $rroot -SvcName $SERVICE_NAME -Ver $INSTALLER_VERSION -Q $Q
+            } elseif ($MODE -eq 'Install' -and $PROFILE -eq 'B-core' -and $ROLE -eq 'Client') {
+                Invoke-LMInstallBCoreClient -ws $ws -sdir $sdir -rroot $rroot
             } elseif ($MODE -eq 'Install' -and $PROFILE -eq 'A') {
                 Invoke-LMInstallA -ws $ws -rroot $rroot -Ver $INSTALLER_VERSION
             } elseif ($MODE -eq 'Configure') {

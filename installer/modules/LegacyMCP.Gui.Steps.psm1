@@ -6,93 +6,129 @@ Import-Module (Join-Path $PSScriptRoot 'LegacyMCP.Gui.psm1') -Force -WarningActi
 function Show-LMStepMode {
     try {
     Clear-LMContent
-    Add-LMPageTitle 'Select operation mode'
+    Add-LMPageTitle 'Select Profile - Role'
+
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+
+    $hasBInstall = Test-Path 'HKLM:\SOFTWARE\LegacyMCP'
+    $hasAInstall = Test-Path 'HKCU:\SOFTWARE\LegacyMCP'
 
     $y = 65
-    $script:_rb0a = New-LMRadio 'Install  --  set up LegacyMCP for the first time' 30 $y $true 500
-    $global:LMGui_Content.Controls.Add($script:_rb0a)
-    $y += 26
 
-    $info1 = New-LMLabel 'Installs the Python package, creates the venv, and configures the service.' 50 $y 500
-    $info1.ForeColor = [System.Drawing.Color]::Gray
-    $global:LMGui_Content.Controls.Add($info1)
+    $ctxTxt = 'Running as standard user. B-core Server options are unavailable.'
+    if ($isAdmin) { $ctxTxt = 'Running as Administrator. Profile A options are unavailable.' }
+    $ctxLbl = New-LMLabel $ctxTxt 20 $y 560
+    $ctxLbl.ForeColor = [System.Drawing.Color]::FromArgb(180,80,0)
+    if ($isAdmin) { $ctxLbl.ForeColor = [System.Drawing.Color]::FromArgb(0,120,0) }
+    $global:LMGui_Content.Controls.Add($ctxLbl)
     $y += 28
 
-    $script:_rb0b = New-LMRadio 'Configure  --  change port, credentials or certificate' 30 $y $false 500
-    $global:LMGui_Content.Controls.Add($script:_rb0b)
-    $y += 26
-    $info2 = New-LMLabel 'Rotates API key or TLS certificate, updates port or snapshot path.' 50 $y 500
-    $info2.ForeColor = [System.Drawing.Color]::Gray
-    $global:LMGui_Content.Controls.Add($info2)
+    # Profile A -- Install
+    $script:_rb0_AI = New-LMRadio 'Profile A -- Install  (local machine, stdio, no auth)' 30 $y $false 500
+    $script:_rb0_AI.Enabled = -not $isAdmin
+    $global:LMGui_Content.Controls.Add($script:_rb0_AI)
+    $y += 20
+    $hAITxt = 'Installs LegacyMCP as a local process for Claude Desktop.'
+    if ($isAdmin) { $hAITxt = 'Run without admin rights.' }
+    $hAI = New-LMLabel $hAITxt 50 $y 480
+    $hAI.ForeColor = [System.Drawing.Color]::Gray
+    $global:LMGui_Content.Controls.Add($hAI)
+    $y += 24
+
+    # Profile A -- Uninstall
+    $script:_rb0_AU = New-LMRadio 'Profile A -- Uninstall' 30 $y $false 500
+    $script:_rb0_AU.Enabled = (-not $isAdmin) -and $hasAInstall
+    $global:LMGui_Content.Controls.Add($script:_rb0_AU)
+    $y += 20
+    $hAUTxt = 'Removes the local LegacyMCP installation.'
+    if     ($isAdmin)          { $hAUTxt = 'Run without admin rights.' }
+    elseif (-not $hasAInstall) { $hAUTxt = 'No Profile A installation found.' }
+    $hAU = New-LMLabel $hAUTxt 50 $y 480
+    $hAU.ForeColor = [System.Drawing.Color]::Gray
+    $global:LMGui_Content.Controls.Add($hAU)
     $y += 28
 
-    $rbUninstall  = New-LMRadio 'Uninstall  --  remove LegacyMCP from this machine' 30 $y $false 500
-    $global:LMGui_Content.Controls.Add($rbUninstall)
-    $y += 26
-    $info3 = New-LMLabel 'Stops the service, removes files and firewall rule. Registry preserved unless Purge.' 50 $y 500
-    $info3.ForeColor = [System.Drawing.Color]::Gray
-    $global:LMGui_Content.Controls.Add($info3)
+    $global:LMGui_Content.Controls.Add((New-LMSeparator $y)); $y += 12
 
-    $hasInstall = (Test-Path 'HKLM:\SOFTWARE\LegacyMCP') -or (Test-Path 'HKCU:\SOFTWARE\LegacyMCP')
-    if (-not $hasInstall) {
-        $script:_rb0b.Enabled = $false
-        $rbUninstall.Enabled  = $false
-        $hintNoInst = New-LMLabel 'No existing installation detected -- Configure and Uninstall unavailable.' 50 ($y+24) 480
-        $hintNoInst.ForeColor = [System.Drawing.Color]::FromArgb(180, 80, 0)
-        $global:LMGui_Content.Controls.Add($hintNoInst)
-    }
+    # B-core Server -- Install
+    $script:_rb0_BSI = New-LMRadio 'B-core Server -- Install  (shared LAN server, HTTPS + API key)' 30 $y $false 500
+    $script:_rb0_BSI.Enabled = $isAdmin
+    $global:LMGui_Content.Controls.Add($script:_rb0_BSI)
+    $y += 20
+    $hBSITxt = 'Run as Administrator.'
+    if ($isAdmin) { $hBSITxt = 'Installs the MCP server as a Windows service.' }
+    $hBSI = New-LMLabel $hBSITxt 50 $y 480
+    $hBSI.ForeColor = [System.Drawing.Color]::Gray
+    $global:LMGui_Content.Controls.Add($hBSI)
+    $y += 24
+
+    # B-core Server -- Configure
+    $script:_rb0_BSC = New-LMRadio 'B-core Server -- Configure  (port, credentials, certificate)' 30 $y $false 500
+    $script:_rb0_BSC.Enabled = $isAdmin -and $hasBInstall
+    $global:LMGui_Content.Controls.Add($script:_rb0_BSC)
+    $y += 20
+    $hBSCTxt = 'Rotates API key or TLS certificate, updates port or snapshot path.'
+    if     (-not $isAdmin)     { $hBSCTxt = 'Run as Administrator.' }
+    elseif (-not $hasBInstall) { $hBSCTxt = 'No B-core installation found.' }
+    $hBSC = New-LMLabel $hBSCTxt 50 $y 480
+    $hBSC.ForeColor = [System.Drawing.Color]::Gray
+    $global:LMGui_Content.Controls.Add($hBSC)
+    $y += 24
+
+    # B-core Server -- Uninstall
+    $script:_rb0_BSU = New-LMRadio 'B-core Server -- Uninstall' 30 $y $false 500
+    $script:_rb0_BSU.Enabled = $isAdmin -and $hasBInstall
+    $global:LMGui_Content.Controls.Add($script:_rb0_BSU)
+    $y += 20
+    $hBSUTxt = 'Stops the service, removes files and firewall rule.'
+    if     (-not $isAdmin)     { $hBSUTxt = 'Run as Administrator.' }
+    elseif (-not $hasBInstall) { $hBSUTxt = 'No B-core installation found.' }
+    $hBSU = New-LMLabel $hBSUTxt 50 $y 480
+    $hBSU.ForeColor = [System.Drawing.Color]::Gray
+    $global:LMGui_Content.Controls.Add($hBSU)
+    $y += 28
+
+    $global:LMGui_Content.Controls.Add((New-LMSeparator $y)); $y += 12
+
+    # B-core Client -- Install
+    $script:_rb0_BC = New-LMRadio 'B-core Client -- Install  (this PC connects to the LAN server)' 30 $y $false 500
+    $script:_rb0_BC.Enabled = -not $isAdmin
+    $global:LMGui_Content.Controls.Add($script:_rb0_BC)
+    $y += 20
+    $hBCTxt = 'Configures Claude Desktop to reach the remote LegacyMCP server.'
+    if ($isAdmin) { $hBCTxt = 'Run without admin rights.' }
+    $hBC = New-LMLabel $hBCTxt 50 $y 480
+    $hBC.ForeColor = [System.Drawing.Color]::Gray
+    $global:LMGui_Content.Controls.Add($hBC)
+
+    # Default: first enabled radio button
+    $allRbs = @($script:_rb0_AI, $script:_rb0_AU, $script:_rb0_BSI, $script:_rb0_BSC, $script:_rb0_BSU, $script:_rb0_BC)
+    $firstEnabled = $allRbs | Where-Object { $_.Enabled } | Select-Object -First 1
+    if ($firstEnabled) { $firstEnabled.Checked = $true }
 
     $global:LMGui_BtnBack.Enabled = $false
     $global:LMGui_BtnNext.Text    = 'Next >'
     $global:LMGui_BtnNext.Enabled = $true
 
     $global:LMGui_NextAction = {
-        $global:LMGui_State['Mode'] = if ($script:_rb0a.Checked)      { 'Install' } `
-                               elseif ($script:_rb0b.Checked)   { 'Configure' } `
-                               else                              { 'Uninstall' }
+        if     ($script:_rb0_AI.Checked)  { $global:LMGui_State['Profile'] = 'A';      $global:LMGui_State['Role'] = '';       $global:LMGui_State['Mode'] = 'Install'    }
+        elseif ($script:_rb0_AU.Checked)  { $global:LMGui_State['Profile'] = 'A';      $global:LMGui_State['Role'] = '';       $global:LMGui_State['Mode'] = 'Uninstall'  }
+        elseif ($script:_rb0_BSI.Checked) { $global:LMGui_State['Profile'] = 'B-core'; $global:LMGui_State['Role'] = 'Server'; $global:LMGui_State['Mode'] = 'Install'    }
+        elseif ($script:_rb0_BSC.Checked) { $global:LMGui_State['Profile'] = 'B-core'; $global:LMGui_State['Role'] = 'Server'; $global:LMGui_State['Mode'] = 'Configure'  }
+        elseif ($script:_rb0_BSU.Checked) { $global:LMGui_State['Profile'] = 'B-core'; $global:LMGui_State['Role'] = 'Server'; $global:LMGui_State['Mode'] = 'Uninstall'  }
+        elseif ($script:_rb0_BC.Checked)  { $global:LMGui_State['Profile'] = 'B-core'; $global:LMGui_State['Role'] = 'Client'; $global:LMGui_State['Mode'] = 'Install'    }
+        if ($global:LMGui_State['Profile'] -eq '') {
+            [System.Windows.Forms.MessageBox]::Show('No option is available in the current context.','LegacyMCP Setup','OK','Warning') | Out-Null
+            return
+        }
         & $global:LMGui_NavFn
     }
     } catch { Write-Warning "GUI: error building step screen: $_" }
 }
 
 # ---------------------------------------------------------------------------
-# Step 2 -- Profile
-# ---------------------------------------------------------------------------
-
-function Show-LMStepProfile {
-    try {
-    Clear-LMContent
-    Add-LMPageTitle 'Select deployment profile'
-
-    $y = 65
-    $script:_rb1a = New-LMRadio 'Profile A  --  local machine (stdio, no auth)' 30 $y $true 500
-    $global:LMGui_Content.Controls.Add($script:_rb1a)
-    $y += 22
-    $iA = New-LMLabel 'MCP server runs as a local process. No network exposure. For the consultant PC.' 50 $y 500
-    $iA.ForeColor = [System.Drawing.Color]::Gray
-    $global:LMGui_Content.Controls.Add($iA)
-    $y += 30
-
-    $rbB     = New-LMRadio 'Profile B-core  --  shared LAN server (HTTPS + API key)' 30 $y $false 500
-    $global:LMGui_Content.Controls.Add($rbB)
-    $y += 22
-    $iB = New-LMLabel 'MCP server runs as a Windows service. Accessible via mcp-remote. Requires Admin.' 50 $y 500
-    $iB.ForeColor = [System.Drawing.Color]::Gray
-    $global:LMGui_Content.Controls.Add($iB)
-
-    $global:LMGui_BtnBack.Enabled = $true
-    $global:LMGui_BtnNext.Text    = 'Next >'
-    $global:LMGui_BtnNext.Enabled = $true
-
-    $global:LMGui_NextAction = {
-        $global:LMGui_State['Profile'] = if ($script:_rb1a.Checked) { 'A' } else { 'B-core' }
-        & $global:LMGui_NavFn
-    }
-    } catch { Write-Warning "GUI: error building step screen: $_" }
-}
-
-# ---------------------------------------------------------------------------
-# Step 3A -- Parameters: Install, Profile B-core
+# Step 2 -- Parameters: Install, Profile B-core (Server)
 # ---------------------------------------------------------------------------
 
 function Show-LMStepParamsInstallB {
@@ -255,6 +291,18 @@ function Show-LMStepParamsInstallB {
         $script:_B_gbCert.Enabled = $false
     }
 
+    # Preserve config.yaml -- shown only when reinstalling over an existing config
+    $script:_B_cbPreserveConfig = $null
+    $configDefault = Join-Path $env:ProgramData 'LegacyMCP\config\config.yaml'
+    if (Test-Path $configDefault) {
+        $p.Controls.Add((New-LMSeparator $y)); $y += 10
+        $script:_B_cbPreserveConfig = New-LMCheckBox 'Preserve existing config.yaml  (recommended)' 20 $y $true 480
+        $p.Controls.Add($script:_B_cbPreserveConfig); $y += 22
+        $hintPc = New-LMLabel 'Uncheck to overwrite with default template. Workspace entries will be lost.' 40 $y 500
+        $hintPc.ForeColor = [System.Drawing.Color]::Gray
+        $p.Controls.Add($hintPc); $y += 26
+    }
+
     # DevInstall + Advanced
     $script:_B_cbDev = New-LMCheckBox 'Developer install  (-e from source tree)' 20 $y ($global:LMGui_State['DevInstall'] -eq $true) 280
     $p.Controls.Add($script:_B_cbDev)
@@ -360,6 +408,7 @@ function Show-LMStepParamsInstallB {
         } else {
             $global:LMGui_State['ServiceAccountPassword'] = $null
         }
+        $global:LMGui_State['PreserveConfig'] = ($script:_B_cbPreserveConfig -eq $null) -or $script:_B_cbPreserveConfig.Checked
         $global:LMGui_Content.AutoScroll = $false
         & $global:LMGui_NavFn
     }
@@ -419,7 +468,100 @@ function Show-LMStepParamsInstallA {
 }
 
 # ---------------------------------------------------------------------------
-# Step 3C -- Parameters: Configure, Profile B-core
+# Step: Parameters -- B-core Client Install
+# ---------------------------------------------------------------------------
+
+function Show-LMStepParamsClient {
+    try {
+    Clear-LMContent
+    Add-LMPageTitle 'Parameters > B-core Client'
+
+    $p = $global:LMGui_Content
+    $y = 65
+
+    $p.Controls.Add((New-LMLabel 'Server URL *' 20 $y))
+    $y += 20
+    $script:_CL_tbUrl = New-LMTextBox $global:LMGui_State['ServerUrl'] 20 $y 540
+    $p.Controls.Add($script:_CL_tbUrl)
+    $script:_CL_errUrl = New-LMErrorLabel 20 ($y + 22) 540
+    $p.Controls.Add($script:_CL_errUrl)
+    $hUrl = New-LMLabel 'Full HTTPS URL of the LegacyMCP server  (e.g. https://server.domain.local:8000/mcp)' 20 ($y + 40) 540
+    $hUrl.ForeColor = [System.Drawing.Color]::Gray
+    $p.Controls.Add($hUrl)
+    $y += 62
+
+    $p.Controls.Add((New-LMLabel 'CA Certificate *' 20 $y))
+    $y += 20
+    $script:_CL_tbCaCert = New-LMTextBox $global:LMGui_State['CaCertPath'] 20 $y 444
+    $p.Controls.Add($script:_CL_tbCaCert)
+    $script:_CL_btnBrowseCaCert = [System.Windows.Forms.Button]::new()
+    $script:_CL_btnBrowseCaCert.Text     = 'Browse...'
+    $script:_CL_btnBrowseCaCert.Location = [System.Drawing.Point]::new(472, $y - 1)
+    $script:_CL_btnBrowseCaCert.Size     = [System.Drawing.Size]::new(80, 24)
+    $script:_CL_btnBrowseCaCert.Font     = [System.Drawing.Font]::new('Tahoma', 7)
+    $script:_CL_btnBrowseCaCert.Add_Click({
+        $ofd = [System.Windows.Forms.OpenFileDialog]::new()
+        $ofd.Filter = 'Certificate|*.crt;*.pem|All files|*.*'
+        $ofd.Title  = 'Select CA certificate file'
+        if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $script:_CL_tbCaCert.Text = $ofd.FileName
+        }
+        $ofd.Dispose()
+    })
+    $p.Controls.Add($script:_CL_btnBrowseCaCert)
+    $script:_CL_errCert = New-LMErrorLabel 20 ($y + 22) 540
+    $p.Controls.Add($script:_CL_errCert)
+    $hCert = New-LMLabel 'Server certificate file provided by the server administrator.' 20 ($y + 40) 540
+    $hCert.ForeColor = [System.Drawing.Color]::Gray
+    $p.Controls.Add($hCert)
+    $y += 62
+
+    $p.Controls.Add((New-LMLabel 'API Key *' 20 $y))
+    $y += 20
+    # Plain-text in LMGui_State during wizard session (WinForms limitation; CLI uses SecureString). Cleared after use.
+    $script:_CL_tbApiKey = New-LMTextBox '' 20 $y 540 -Password
+    $p.Controls.Add($script:_CL_tbApiKey)
+    $script:_CL_errKey = New-LMErrorLabel 20 ($y + 22) 540
+    $p.Controls.Add($script:_CL_errKey)
+    $hKey = New-LMLabel 'API key provided by the server administrator.' 20 ($y + 40) 540
+    $hKey.ForeColor = [System.Drawing.Color]::Gray
+    $p.Controls.Add($hKey)
+
+    $global:LMGui_BtnBack.Enabled = $true
+    $global:LMGui_BtnNext.Text    = 'Next >'
+    $global:LMGui_BtnNext.Enabled = $true
+
+    $global:LMGui_NextAction = {
+        $ok = $true
+        $script:_CL_errUrl.Text  = ''
+        $script:_CL_errCert.Text = ''
+        $script:_CL_errKey.Text  = ''
+
+        if ([string]::IsNullOrWhiteSpace($script:_CL_tbUrl.Text)) {
+            $script:_CL_errUrl.Text = 'Server URL is required.'; $ok = $false
+        } elseif (-not $script:_CL_tbUrl.Text.Trim().StartsWith('https://')) {
+            $script:_CL_errUrl.Text = 'Server URL must start with https://.'; $ok = $false
+        }
+        if ([string]::IsNullOrWhiteSpace($script:_CL_tbCaCert.Text)) {
+            $script:_CL_errCert.Text = 'CA Certificate path is required.'; $ok = $false
+        } elseif (-not (Test-Path $script:_CL_tbCaCert.Text.Trim())) {
+            $script:_CL_errCert.Text = 'Certificate file not found.'; $ok = $false
+        }
+        if ([string]::IsNullOrWhiteSpace($script:_CL_tbApiKey.Text)) {
+            $script:_CL_errKey.Text = 'API Key is required.'; $ok = $false
+        }
+        if (-not $ok) { return }
+
+        $global:LMGui_State['ServerUrl']    = $script:_CL_tbUrl.Text.Trim()
+        $global:LMGui_State['CaCertPath']   = $script:_CL_tbCaCert.Text.Trim()
+        $global:LMGui_State['ClientApiKey'] = $script:_CL_tbApiKey.Text
+        & $global:LMGui_NavFn
+    }
+    } catch { Write-Warning "GUI: error building step screen: $_" }
+}
+
+# ---------------------------------------------------------------------------
+# Step: Parameters -- Configure, Profile B-core (Server)
 # ---------------------------------------------------------------------------
 
 function Show-LMStepParamsConfigure {
@@ -519,11 +661,21 @@ function Show-LMStepParamsUninstall {
     $lbWhat.Font     = [System.Drawing.Font]::new('Tahoma', 8)
     $p.Controls.Add($lbWhat); $y += 22
 
-    foreach ($item in @(
-        'Windows service (LegacyMCP)',
-        'Install directory  (venv + nssm.exe)',
-        'Firewall rule and EventLog source',
-        'Registry entries preserved unless Purge is selected')) {
+    $uninstProfile = $global:LMGui_State['Profile']
+    $uninstItems = if ($uninstProfile -eq 'A') {
+        @(
+            'Registry entries (HKCU)',
+            'Install directory and config  (only with Purge)'
+        )
+    } else {
+        @(
+            'Windows service (LegacyMCP)',
+            'Install directory  (venv + nssm.exe)',
+            'Firewall rule and EventLog source',
+            'Registry entries preserved unless Purge is selected'
+        )
+    }
+    foreach ($item in $uninstItems) {
         $li = New-LMLabel "    $([char]0x2022) $item" 20 $y 520
         $p.Controls.Add($li); $y += 18
     }
@@ -544,7 +696,8 @@ function Show-LMStepParamsUninstall {
     }
 
     $warnBox = [System.Windows.Forms.Label]::new()
-    $warnBox.Text      = "The service will be stopped automatically before uninstallation begins."
+    $warnBox.Text = 'The service will be stopped automatically before uninstallation begins.'
+    if ($global:LMGui_State['Profile'] -eq 'A') { $warnBox.Text = 'Registry entries and local files will be removed.' }
     $warnBox.Location  = [System.Drawing.Point]::new(20, $y + 8)
     $warnBox.Size      = [System.Drawing.Size]::new(540, 20)
     $warnBox.Font      = [System.Drawing.Font]::new('Tahoma', 8, [System.Drawing.FontStyle]::Bold)
@@ -572,9 +725,11 @@ function Show-LMStepSummary {
     try {
     Clear-LMContent
 
-    $mode    = $global:LMGui_State['Mode']
-    $profile = $global:LMGui_State['Profile']
-    Add-LMPageTitle "Summary > $mode > $profile"
+    $mode      = $global:LMGui_State['Mode']
+    $profile   = $global:LMGui_State['Profile']
+    $role      = $global:LMGui_State['Role']
+    $profLabel = if ($role -ne '') { "$profile $role" } else { $profile }
+    Add-LMPageTitle "Summary > $mode > $profLabel"
 
     $p = $global:LMGui_Content
     $y = 58
@@ -582,9 +737,9 @@ function Show-LMStepSummary {
     # Build summary rows
     $rows = [System.Collections.Generic.List[string[]]]::new()
     $rows.Add([string[]]@('Operation', $mode))
-    $rows.Add([string[]]@('Profile',   $profile))
+    $rows.Add([string[]]@('Profile',   $profLabel))
 
-    if ($mode -eq 'Install' -and $profile -eq 'B-core') {
+    if ($mode -eq 'Install' -and $profile -eq 'B-core' -and $role -eq 'Server') {
         $rows.Add([string[]]@('Service Account', $global:LMGui_State['ServiceAccount']))
         $keepCred = [bool]$global:LMGui_State['KeepCredentials']
         $portDisp = if ($global:LMGui_State['Port'] -ne '') { $global:LMGui_State['Port'] } else { '8000 (default)' }
@@ -602,6 +757,14 @@ function Show-LMStepSummary {
             $credDisp = if ($global:LMGui_State['KeepCredentials']) { 'Keep existing' } else { 'Regenerate' }
             $rows.Add([string[]]@('Credentials', $credDisp))
         }
+    } elseif ($mode -eq 'Install' -and $profile -eq 'B-core' -and $role -eq 'Client') {
+        $urlDisp    = $global:LMGui_State['ServerUrl']
+        $certDisp   = $global:LMGui_State['CaCertPath']
+        $keyPreview = $global:LMGui_State['ClientApiKey']
+        $keyDisp    = if ($keyPreview.Length -ge 8) { "$($keyPreview.Substring(0,8))..." } else { '(provided)' }
+        $rows.Add([string[]]@('Server URL',     $urlDisp))
+        $rows.Add([string[]]@('CA Certificate', $certDisp))
+        $rows.Add([string[]]@('API Key',        $keyDisp))
     } elseif ($mode -eq 'Install' -and $profile -eq 'A') {
         $dataDisp = if ($global:LMGui_State['DataPath'] -ne '') { $global:LMGui_State['DataPath'] } else { 'Default (Documents\LegacyMCP-Data)' }
         $rows.Add([string[]]@('Data folder', $dataDisp))
@@ -670,9 +833,12 @@ function Show-LMStepSummary {
 function Show-LMStepComplete {
     try {
     Clear-LMContent
-    $mode    = $global:LMGui_State['Mode']
-    $profile = $global:LMGui_State['Profile']
-    Add-LMPageTitle "Complete > $mode > $profile"
+    $mode      = $global:LMGui_State['Mode']
+    $profile   = $global:LMGui_State['Profile']
+    $role      = $global:LMGui_State['Role']
+    $profLabel = $profile
+    if ($role -ne '') { $profLabel = "$profile $role" }
+    Add-LMPageTitle "Complete > $mode > $profLabel"
 
     $p = $global:LMGui_Content
     $y = 65
@@ -686,7 +852,7 @@ function Show-LMStepComplete {
     $msgLbl.ForeColor = if ($global:LMGui_ExecSuccess) { [System.Drawing.Color]::FromArgb(0,120,0) } else { [System.Drawing.Color]::FromArgb(255,51,51) }
     $p.Controls.Add($msgLbl); $y += 34
 
-    if ($global:LMGui_ExecSuccess -and $mode -eq 'Install' -and $profile -eq 'B-core') {
+    if ($global:LMGui_ExecSuccess -and $mode -eq 'Install' -and $profile -eq 'B-core' -and $role -eq 'Server') {
         $portFin = if ($global:LMGui_State['Port'] -ne '') { $global:LMGui_State['Port'] } else { '8000' }
         $verFin  = $global:LMGui_State['INSTALLER_VERSION']
         $infos = @(
@@ -704,6 +870,10 @@ function Show-LMStepComplete {
             $p.Controls.Add($lbK); $p.Controls.Add($lbV); $y += 20
         }
     } elseif ($global:LMGui_ExecSuccess -and $mode -eq 'Install' -and $profile -eq 'A') {
+        $note = New-LMLabel 'Restart Claude Desktop to activate LegacyMCP.' 20 $y 540
+        $note.Font = [System.Drawing.Font]::new('Tahoma', 9, [System.Drawing.FontStyle]::Bold)
+        $p.Controls.Add($note)
+    } elseif ($global:LMGui_ExecSuccess -and $mode -eq 'Install' -and $profile -eq 'B-core' -and $role -eq 'Client') {
         $note = New-LMLabel 'Restart Claude Desktop to activate LegacyMCP.' 20 $y 540
         $note.Font = [System.Drawing.Font]::new('Tahoma', 9, [System.Drawing.FontStyle]::Bold)
         $p.Controls.Add($note)

@@ -1,6 +1,6 @@
 # LegacyMCP.Gui.psm1
 # WinForms wizard activated by Setup-LegacyMCP.ps1 -Gui.
-# Collects parameters across 6 steps and delegates execution to the
+# Collects parameters across 5 steps and delegates execution to the
 # same module functions used by the CLI -- no business logic here.
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -10,7 +10,7 @@ Add-Type -AssemblyName System.Drawing
 # Constants
 # ---------------------------------------------------------------------------
 
-$global:LMGui_Steps = @('Mode','Profile','Parameters','Summary','Executing','Complete')
+$global:LMGui_Steps = @('Profile-Role','Parameters','Summary','Executing','Complete')
 
 $global:LMGui_CL = @{
     SideTop  = [System.Drawing.Color]::FromArgb(  0,  0,  0)
@@ -31,11 +31,12 @@ $global:LMGui_CL = @{
 
 # Expected Write-LMStep calls per mode (for progress bar max)
 $global:LMGui_StepTotals = @{
-    'Install-B-core'  = 14
-    'Install-A'       = 9
-    'Configure-B-core'= 5
-    'Uninstall-B-core'= 7
-    'Uninstall-A'     = 4
+    'Install-B-core-Server'  = 14
+    'Install-B-core-Client'  = 6
+    'Install-A'              = 9
+    'Configure-B-core-Server'= 5
+    'Uninstall-B-core-Server'= 7
+    'Uninstall-A'            = 4
 }
 
 # ---------------------------------------------------------------------------
@@ -84,9 +85,12 @@ $global:LMGui_BackAction  = $null
 # Module-level RadioButton references for steps that read them from event closures.
 # Local variables captured by GetNewClosure() can lose their WinForms reference;
 # $script: variables are always accessible from module scope.
-$script:_rb0a = $null   # Step 0 (Mode):    Install
-$script:_rb0b = $null   # Step 0 (Mode):    Configure
-$script:_rb1a = $null   # Step 1 (Profile): A
+$script:_rb0_AI  = $null   # Step 0: Profile A Install
+$script:_rb0_AU  = $null   # Step 0: Profile A Uninstall
+$script:_rb0_BSI = $null   # Step 0: B-core Server Install
+$script:_rb0_BSC = $null   # Step 0: B-core Server Configure
+$script:_rb0_BSU = $null   # Step 0: B-core Server Uninstall
+$script:_rb0_BC  = $null   # Step 0: B-core Client Install
 
 # Module-private function references -- populated in Start-LMWizard
 $global:LMGui_NavFn  = $null
@@ -117,7 +121,8 @@ $script:_B_tbCertK    = $null
 $script:_B_errCert    = $null
 $script:_B_advLink    = $null
 $script:_B_advPanel   = $null
-$script:_B_rbKeep     = $null
+$script:_B_rbKeep           = $null
+$script:_B_cbPreserveConfig = $null
 
 # Step 3B -- Install A controls
 $script:_A_tbData     = $null
@@ -142,6 +147,15 @@ $script:_B_btnBrowseKey = $null
 
 # Step 3D -- Uninstall controls
 $script:_U_cbPurge    = $null
+
+# Step: B-core Client Install controls
+$script:_CL_tbUrl           = $null
+$script:_CL_tbCaCert        = $null
+$script:_CL_tbApiKey        = $null
+$script:_CL_errUrl          = $null
+$script:_CL_errCert         = $null
+$script:_CL_errKey          = $null
+$script:_CL_btnBrowseCaCert = $null
 
 # ---------------------------------------------------------------------------
 # Asset loading
@@ -311,15 +325,11 @@ function New-LMSeparator {
 }
 
 # ---------------------------------------------------------------------------
-# Step 1 -- Mode
+# Step 0 -- ProfileRole
 # ---------------------------------------------------------------------------
 
 function Navigate-LMForward {
     $next = $global:LMGui_CurrentStep + 1
-    if ($global:LMGui_State['Mode'] -eq 'Configure' -and $next -eq 1) {
-        $next = 2
-        $global:LMGui_State['Profile'] = 'B-core'  # Configure is always B-core Server
-    }
     Show-LMStep $next
 }
 
@@ -337,25 +347,25 @@ function Show-LMStep {
 
     switch ($Step) {
         0 { Show-LMStepMode }
-        1 { Show-LMStepProfile }
-        2 {
-            $mode    = $global:LMGui_State['Mode']
-            $profile = $global:LMGui_State['Profile']
-            if ($mode -eq 'Uninstall')                       { Show-LMStepParamsUninstall }
-            elseif ($mode -eq 'Configure')                   { Show-LMStepParamsConfigure }
-            elseif ($mode -eq 'Install' -and $profile -eq 'A') { Show-LMStepParamsInstallA }
-            else                                             { Show-LMStepParamsInstallB }
+        1 {
+            switch ("$($global:LMGui_State['Profile'])|$($global:LMGui_State['Role'])|$($global:LMGui_State['Mode'])") {
+                'A||Install'              { Show-LMStepParamsInstallA }
+                'A||Uninstall'            { Show-LMStepParamsUninstall }
+                'B-core|Server|Install'   { Show-LMStepParamsInstallB }
+                'B-core|Server|Configure' { Show-LMStepParamsConfigure }
+                'B-core|Server|Uninstall' { Show-LMStepParamsUninstall }
+                'B-core|Client|Install'   { Show-LMStepParamsClient }
+            }
         }
-        3 { Show-LMStepSummary }
-        4 { Show-LMStepExecuting }
-        5 { Show-LMStepComplete }
+        2 { Show-LMStepSummary }
+        3 { Show-LMStepExecuting }
+        4 { Show-LMStepComplete }
     }
 
-    if ($Step -gt 0 -and $Step -lt 4) {
+    if ($Step -gt 0 -and $Step -lt 3) {
         $global:LMGui_BtnBack.Enabled = $true
         $global:LMGui_BackAction = {
             $prev = $global:LMGui_CurrentStep - 1
-            if ($global:LMGui_State['Mode'] -eq 'Configure' -and $prev -eq 1) { $prev = 0 }
             & $global:LMGui_ShowFn $prev
         }
     }
@@ -540,13 +550,14 @@ function Start-LMWizard {
     $global:LMGui_RepoRoot   = $RepoRoot
     $global:LMGui_WizardOk   = $false
     $global:LMGui_State      = @{
-        Mode = ''; Profile = ''; ServiceAccount = ''; ServiceAccountPassword = $null
-        Port = '8000'; SnapshotPath = ''; Version = ''; DevInstall = $false
+        Mode = ''; Profile = ''; Role = ''; ServiceAccount = ''; ServiceAccountPassword = $null
+        Port = '8000'; SnapshotPath = ''; Version = ''; DevInstall = $false; PreserveConfig = $true
         InstallPath = ''; ConfigPath = ''; LogPath = ''; DataPath = ''
         ApiKeyMode = 'auto'; ApiKeyValue = ''; CertMode = 'auto'; CertFile = ''; CertKeyFile = ''
         KeepCredentials = $false; ExistingVersion = $null; Purge = $false
         CfgPort = ''; CfgSnapshotPath = ''; CfgApiKeyMode = 'none'; CfgApiKeyValue = ''
         CfgCertMode = 'none'; CfgCertFile = ''; CfgCertKeyFile = ''
+        ServerUrl = ''; CaCertPath = ''; ClientApiKey = ''
         INSTALLER_VERSION = $WizardVersion
     }
 
