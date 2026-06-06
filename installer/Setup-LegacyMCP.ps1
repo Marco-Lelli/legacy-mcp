@@ -131,6 +131,10 @@ if ($Purge -and $Mode -ne 'Uninstall') {
     Write-Error "Setup-LegacyMCP: -Purge can only be used with -Mode Uninstall"
     exit 1
 }
+if (($CertFile -and -not $CertKeyFile) -or (-not $CertFile -and $CertKeyFile)) {
+    Write-Error 'Setup-LegacyMCP: -CertFile and -CertKeyFile must be used together. Provide both or neither.'
+    exit 1
+}
 
 # ---------------------------------------------------------------------------
 # Elevation
