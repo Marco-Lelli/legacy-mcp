@@ -476,11 +476,11 @@ function Start-LMExecution {
             Write-LMStep 'Step 5 -- Configuration'
             $templatePath = Join-Path $rroot 'config\config.example-A.yaml'
             if (-not (Test-Path $templatePath)) { throw "Config template not found: $templatePath" }
-            if (-not (Test-Path $ConfigPath)) {
+            if ((Test-Path $ConfigPath) -and [bool]$ws['PreserveConfig']) {
+                Write-LMOK 'config.yaml preserved (existing configuration retained).'
+            } else {
                 Copy-Item $templatePath $ConfigPath -Force
                 Write-LMOK 'config.yaml created from template.'
-            } else {
-                Write-LMWarn "config.yaml already exists -- preserved."
             }
 
             Write-LMStep 'Step 6 -- Claude Desktop configuration'

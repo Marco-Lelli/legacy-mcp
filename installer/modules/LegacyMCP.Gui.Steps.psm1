@@ -442,6 +442,18 @@ function Show-LMStepParamsInstallA {
     $p.Controls.Add($script:_A_tbData)
     $y += 32
 
+    # Preserve config.yaml -- shown only when reinstalling over an existing config
+    $script:_A_cbPreserveConfig = $null
+    $configDefault = Join-Path $env:LOCALAPPDATA 'LegacyMCP\config\config.yaml'
+    if (Test-Path $configDefault) {
+        $p.Controls.Add((New-LMSeparator $y)); $y += 10
+        $script:_A_cbPreserveConfig = New-LMCheckBox 'Preserve existing config.yaml  (recommended)' 20 $y $true 480
+        $p.Controls.Add($script:_A_cbPreserveConfig); $y += 22
+        $hintPc = New-LMLabel 'Uncheck to overwrite with default template. Workspace entries will be lost.' 40 $y 500
+        $hintPc.ForeColor = [System.Drawing.Color]::Gray
+        $p.Controls.Add($hintPc); $y += 26
+    }
+
     # DevInstall checkbox
     $script:_A_cbDev = New-LMCheckBox 'Developer install  (-e from source tree)' 20 $y ($global:LMGui_State['DevInstall'] -eq $true) 280
     $p.Controls.Add($script:_A_cbDev)
@@ -467,9 +479,10 @@ function Show-LMStepParamsInstallA {
     $global:LMGui_BtnNext.Enabled = $true
 
     $global:LMGui_NextAction = {
-        $global:LMGui_State['DataPath']   = $script:_A_tbData.Text.Trim()
-        $global:LMGui_State['DevInstall'] = $script:_A_cbDev.Checked
-        $global:LMGui_State['Version']    = $script:_A_tbVer.Text.Trim()
+        $global:LMGui_State['DataPath']       = $script:_A_tbData.Text.Trim()
+        $global:LMGui_State['DevInstall']     = $script:_A_cbDev.Checked
+        $global:LMGui_State['Version']        = $script:_A_tbVer.Text.Trim()
+        $global:LMGui_State['PreserveConfig'] = ($script:_A_cbPreserveConfig -eq $null) -or $script:_A_cbPreserveConfig.Checked
         & $global:LMGui_NavFn
     }
     } catch { Write-Warning "GUI: error building step screen: $_" }
