@@ -193,12 +193,48 @@ if ($Profile -eq 'A') {
         $venvPython = Join-Path $VenvPath 'Scripts\python.exe'
 
         Write-LMStep 'Step 4 -- Package installation'
-        if (Test-Path (Join-Path $RepoRoot 'pyproject.toml')) {
-            Install-LMPackage -VenvPath $VenvPath -PackageOrPath $RepoRoot -Editable
+        $installMode = if ($DevInstall) { 'dev' } else { 'release' }
+        if ($DevInstall) {
+            if ($Version -ne '') {
+                Write-LMWarn '-Version has no effect in DevInstall mode. The local source tree is used.'
+            }
+            if (-not (Test-Path (Join-Path $RepoRoot 'pyproject.toml'))) {
+                Write-Error "Setup-LegacyMCP: -DevInstall requires a source tree (pyproject.toml not found at: $RepoRoot)"
+                exit 1
+            }
+            try {
+                Install-LMPackage -VenvPath $VenvPath -PackageOrPath $RepoRoot -Editable
+            } catch {
+                Write-Error "Setup-LegacyMCP: pip install failed (mode: dev): $_"
+                exit 1
+            }
         } else {
-            Write-LMInfo 'Source tree not found -- installing from PyPI.'
-            Install-LMPackage -VenvPath $VenvPath -PackageOrPath 'legacy-mcp'
+            $pipPackage = if ($Version -ne '') { "legacy-mcp==$Version" } else { 'legacy-mcp' }
+            try {
+                Install-LMPackage -VenvPath $VenvPath -PackageOrPath $pipPackage
+            } catch {
+                Write-Error "Setup-LegacyMCP: pip install failed (mode: release): $_"
+                exit 1
+            }
         }
+        $InstalledVersion = $null
+        if ($DevInstall) {
+            try {
+                $gitHash = & git -C $RepoRoot rev-parse --short HEAD 2>&1
+                if ($LASTEXITCODE -eq 0 -and $gitHash) {
+                    $InstalledVersion = "dev-$($gitHash.ToString().Trim())"
+                }
+            } catch {}
+            if (-not $InstalledVersion) { $InstalledVersion = 'dev-unknown' }
+        } else {
+            try {
+                $pipOut = & (Join-Path $VenvPath 'Scripts\python.exe') -m pip show legacy-mcp 2>&1
+                $verLine = $pipOut | Select-String '^Version:' | Select-Object -First 1
+                if ($verLine) { $InstalledVersion = ($verLine.Line -replace 'Version:\s*', '').Trim() }
+            } catch {}
+            if (-not $InstalledVersion) { $InstalledVersion = $INSTALLER_VERSION }
+        }
+        Write-LMInfo "Package installed (mode: $installMode, version: $InstalledVersion)."
 
         Write-LMStep 'Step 5 -- Configuration'
         $templatePath = Join-Path $RepoRoot 'config\config.example-A.yaml'
@@ -237,6 +273,7 @@ if ($Profile -eq 'A') {
             Set-LMRegistry -Key $REG_ROOT -Name 'Profile'     -Value 'A'
             Set-LMRegistry -Key $REG_ROOT -Name 'Transport'   -Value 'stdio'
             Set-LMRegistry -Key $REG_ROOT -Name 'Version'     -Value $INSTALLER_VERSION
+            Set-LMRegistry -Key $REG_ROOT -Name 'InstalledVersion' -Value $InstalledVersion
             Write-LMOK 'Registry entries written.'
         } catch {
             Write-LMWarn "Could not write registry entries: $_"

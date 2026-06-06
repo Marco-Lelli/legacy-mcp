@@ -434,6 +434,8 @@ function Start-LMExecution {
             $ConfigPath  = "$env:LOCALAPPDATA\LegacyMCP\config\config.yaml"
             $DataPath    = if ($ws['DataPath'] -ne '') { $ws['DataPath'] } else { "$env:USERPROFILE\Documents\LegacyMCP-Data" }
             $VenvPath    = Join-Path $InstallPath '.venv'
+            $DevInstall  = [bool]$ws['DevInstall']
+            $Version     = if ($ws['Version']) { $ws['Version'] } else { '' }
 
             Write-LMStep 'LegacyMCP Setup -- Profile A'
 
@@ -451,12 +453,25 @@ function Start-LMExecution {
             $venvPython = Join-Path $VenvPath 'Scripts\python.exe'
 
             Write-LMStep 'Step 4 -- Package installation'
-            if (Test-Path (Join-Path $rroot 'pyproject.toml')) {
+            $installMode = if ($DevInstall) { 'dev' } else { 'release' }
+            if ($DevInstall) {
+                if ($Version -ne '') { Write-LMWarn '-Version has no effect in DevInstall mode. The local source tree is used.' }
+                if (-not (Test-Path (Join-Path $rroot 'pyproject.toml'))) {
+                    throw '-DevInstall requires a source tree (pyproject.toml not found).'
+                }
                 Install-LMPackage -VenvPath $VenvPath -PackageOrPath $rroot -Editable
             } else {
-                Write-LMInfo 'Source tree not found -- installing from PyPI.'
-                Install-LMPackage -VenvPath $VenvPath -PackageOrPath 'legacy-mcp'
+                $pkg = if ($Version -ne '') { "legacy-mcp==$Version" } else { 'legacy-mcp' }
+                Install-LMPackage -VenvPath $VenvPath -PackageOrPath $pkg
             }
+            $InstalledVersion = 'dev-unknown'
+            if ($DevInstall) {
+                try { $h = & git -C $rroot rev-parse --short HEAD 2>&1; if ($LASTEXITCODE -eq 0) { $InstalledVersion = "dev-$($h.Trim())" } } catch {}
+            } else {
+                try { $po = & $venvPython -m pip show legacy-mcp 2>&1; $vl = $po | Select-String '^Version:'; if ($vl) { $InstalledVersion = ($vl.Line -replace 'Version:\s*','').Trim() } } catch {}
+                if ($InstalledVersion -eq 'dev-unknown') { $InstalledVersion = $Ver }
+            }
+            Write-LMInfo "Package installed (mode: $installMode, version: $InstalledVersion)."
 
             Write-LMStep 'Step 5 -- Configuration'
             $templatePath = Join-Path $rroot 'config\config.example-A.yaml'
@@ -485,6 +500,7 @@ function Start-LMExecution {
                 Set-LMRegistry -Key $REG_ROOT -Name 'Profile'     -Value 'A'
                 Set-LMRegistry -Key $REG_ROOT -Name 'Transport'   -Value 'stdio'
                 Set-LMRegistry -Key $REG_ROOT -Name 'Version'     -Value $Ver
+                Set-LMRegistry -Key $REG_ROOT -Name 'InstalledVersion' -Value $InstalledVersion
                 Write-LMOK 'Registry entries written.'
             } catch {
                 Write-LMWarn "Could not write registry entries: $_  (non-blocking for Profile A)"

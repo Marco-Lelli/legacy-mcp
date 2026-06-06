@@ -442,26 +442,34 @@ function Show-LMStepParamsInstallA {
     $p.Controls.Add($script:_A_tbData)
     $y += 32
 
-    # Version stub (disabled -- Profile A uses pyproject.toml detection, not -Version)
-    $lbVer = New-LMLabel 'Package version (task #117)' 20 $y 200
-    $lbVer.ForeColor = [System.Drawing.Color]::Gray
+    # DevInstall checkbox
+    $script:_A_cbDev = New-LMCheckBox 'Developer install  (-e from source tree)' 20 $y ($global:LMGui_State['DevInstall'] -eq $true) 280
+    $p.Controls.Add($script:_A_cbDev)
+    $y += 28
+
+    # Version
+    $lbVer = New-LMLabel 'Package version (optional, e.g. 0.2.3)' 20 $y 280
     $p.Controls.Add($lbVer)
     $y += 20
-    $tbVer = New-LMTextBox '' 20 $y 200
-    $tbVer.Enabled = $false
-    $p.Controls.Add($tbVer)
+    $script:_A_tbVer = New-LMTextBox $global:LMGui_State['Version'] 20 $y 200
+    $script:_A_tbVer.Enabled = -not ($global:LMGui_State['DevInstall'] -eq $true)
+    $p.Controls.Add($script:_A_tbVer)
     $y += 26
 
-    $noteVer = New-LMLabel 'Profile A auto-detects dev vs release from the source tree. Version pinning planned for a future release (#117).' 20 $y 540
-    $noteVer.ForeColor = [System.Drawing.Color]::Gray
-    $p.Controls.Add($noteVer)
+    # DevInstall toggles Version field enabled state
+    $script:_A_cbDev.Add_CheckedChanged({
+        $script:_A_tbVer.Enabled = -not $script:_A_cbDev.Checked
+        if ($script:_A_cbDev.Checked) { $script:_A_tbVer.Text = '' }
+    })
 
     $global:LMGui_BtnBack.Enabled = $true
     $global:LMGui_BtnNext.Text    = 'Next >'
     $global:LMGui_BtnNext.Enabled = $true
 
     $global:LMGui_NextAction = {
-        $global:LMGui_State['DataPath'] = $script:_A_tbData.Text.Trim()
+        $global:LMGui_State['DataPath']   = $script:_A_tbData.Text.Trim()
+        $global:LMGui_State['DevInstall'] = $script:_A_cbDev.Checked
+        $global:LMGui_State['Version']    = $script:_A_tbVer.Text.Trim()
         & $global:LMGui_NavFn
     }
     } catch { Write-Warning "GUI: error building step screen: $_" }
