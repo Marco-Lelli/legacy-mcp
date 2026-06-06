@@ -306,18 +306,61 @@ if ($Profile -eq 'A') {
         $ConfigPath  = if ($ConfigPath)  { $ConfigPath }  elseif ($cfg['ConfigPath'])  { $cfg['ConfigPath'] }  else { "$env:LOCALAPPDATA\LegacyMCP\config\config.yaml" }
         $VenvPath    = Join-Path $InstallPath '.venv'
 
-        try {
-            Remove-LMRegistry -Key $REG_ROOT
-            Write-LMOK 'Registry entries removed.'
-        } catch {
-            Write-LMWarn "Could not remove registry entries (non-blocking): $_"
+        Write-LMStep 'Step 1 -- Venv'
+        if ($Purge) {
+            Write-LMInfo 'Venv will be removed as part of Purge (Step 3), if not locked by a running process.'
+        } elseif (Test-Path $VenvPath) {
+            Write-LMInfo "Venv directory must be removed manually (DLL lock):"
+            Write-LMInfo "  $VenvPath"
+            Write-LMInfo 'Close Claude Desktop first, then run:'
+            Write-LMInfo "  Remove-Item -Recurse -Force '$VenvPath'"
+        } else {
+            Write-LMInfo "Venv directory not found (already removed): $VenvPath"
+        }
+
+        Write-LMStep 'Step 2 -- Registry'
+        Write-LMInfo 'Registry preserved (install state retained for reinstall/upgrade).'
+
+        Write-LMStep 'Step 3 -- Purge'
+        if ($Purge) {
+            $purgeDataPath = "$env:LOCALAPPDATA\LegacyMCP"
+            Write-LMWarn 'This will permanently delete:'
+            Write-LMWarn "  Registry: $REG_ROOT"
+            Write-LMWarn "  Data:     $purgeDataPath"
+            $confirm = Read-Host 'Type YES to confirm purge'
+            if ($confirm -eq 'YES') {
+                try {
+                    Remove-LMRegistry -Key $REG_ROOT
+                    Write-LMOK 'Registry entries removed.'
+                } catch {
+                    Write-LMWarn "Could not remove registry entries: $_"
+                }
+                if (Test-Path $purgeDataPath) {
+                    try {
+                        Remove-Item $purgeDataPath -Recurse -Force
+                        Write-LMOK "Removed: $purgeDataPath"
+                    } catch {
+                        Write-LMWarn "Could not remove '$purgeDataPath': $_"
+                        Write-LMInfo "Remove manually: $purgeDataPath"
+                    }
+                } else {
+                    Write-LMInfo "Data directory not found (already removed): $purgeDataPath"
+                }
+            } else {
+                Write-LMInfo 'Purge cancelled.'
+            }
+        } else {
+            Write-LMInfo 'Skipped (run with -Purge to remove registry and data).'
         }
 
         Write-LMStep 'Uninstall complete'
-        Write-LMOK  'Profile A registry entries removed.'
-        Write-LMInfo 'To complete uninstall, remove manually:'
-        Write-LMInfo "  Venv:   $VenvPath"
-        Write-LMInfo "  Config: $ConfigPath"
+        Write-LMOK  'Profile A uninstalled.'
+        if (-not $Purge) {
+            Write-LMInfo 'Registry and data files preserved.'
+            Write-LMInfo "  Config: $ConfigPath"
+            Write-LMInfo 'To remove all data and configuration:'
+            Write-LMInfo "  .\Setup-LegacyMCP.ps1 -Profile A -Mode Uninstall -Purge"
+        }
         Write-LMInfo 'Remove the "legacymcp" entry from claude_desktop_config.json if present.'
 
     } else {
