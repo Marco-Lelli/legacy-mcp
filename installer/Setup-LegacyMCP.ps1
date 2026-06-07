@@ -88,11 +88,20 @@ Import-Module (Join-Path $ModulesDir 'LegacyMCP.Gui.psm1')       -Force -Warning
 Import-Module (Join-Path $ModulesDir 'LegacyMCP.Gui.Steps.psm1') -Force -WarningAction SilentlyContinue
 Import-Module (Join-Path $ModulesDir 'LegacyMCP.Gui.Exec.psm1')  -Force -WarningAction SilentlyContinue
 
+$_logDir  = Join-Path $ScriptDir 'logs'
+if (-not (Test-Path $_logDir)) { New-Item -ItemType Directory -Path $_logDir | Out-Null }
+$_logFile = Join-Path $_logDir ("setup-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+Write-Host "Setup log: $_logFile"
+
 # ---------------------------------------------------------------------------
 # GUI wizard -- must run before all validation (wizard collects its own params)
 # ---------------------------------------------------------------------------
 
 if ($Gui) {
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    $header = "LegacyMCP Installer Log`r`nDate:    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`r`nUser:    $env:USERDOMAIN\$env:USERNAME`r`nMachine: $env:COMPUTERNAME`r`n$('=' * 60)`r`n"
+    [System.IO.File]::WriteAllText($_logFile, $header, $utf8NoBom)
+    $global:LMGui_LogFile = $_logFile
     $wizardResult = Start-LMWizard `
         -ModulesDir     $ModulesDir `
         -ScriptDir      $ScriptDir `
@@ -101,6 +110,8 @@ if ($Gui) {
         -WizardVersion  $INSTALLER_VERSION
     if ($wizardResult) { exit 0 } else { exit 1 }
 }
+
+Start-Transcript -Path $_logFile -Append | Out-Null
 
 if ([string]::IsNullOrEmpty($Profile)) {
     throw "-Profile is required. Specify: -Profile A, B-core, B-enterprise, or C. Use -Gui for the interactive wizard."
@@ -124,16 +135,13 @@ if ($Profile -like 'B*' -and $Role -eq 'Client' -and $Mode -eq 'Install') {
     if (-not $CaCertPath) { throw '-CaCertPath is required for Profile B Client installation.' }
 }
 if ($ApiKey -and $ApiKey.Length -lt 16) {
-    Write-Error "Setup-LegacyMCP: -ApiKey is too short (minimum 16 characters)"
-    exit 1
+    throw "Setup-LegacyMCP: -ApiKey is too short (minimum 16 characters)"
 }
 if ($Purge -and $Mode -ne 'Uninstall') {
-    Write-Error "Setup-LegacyMCP: -Purge can only be used with -Mode Uninstall"
-    exit 1
+    throw "Setup-LegacyMCP: -Purge can only be used with -Mode Uninstall"
 }
 if (($CertFile -and -not $CertKeyFile) -or (-not $CertFile -and $CertKeyFile)) {
-    Write-Error 'Setup-LegacyMCP: -CertFile and -CertKeyFile must be used together. Provide both or neither.'
-    exit 1
+    throw 'Setup-LegacyMCP: -CertFile and -CertKeyFile must be used together. Provide both or neither.'
 }
 
 # ---------------------------------------------------------------------------
@@ -158,6 +166,8 @@ if ($Profile -like 'B*' -and $Role -eq 'Client' -and (Test-LMElevation)) {
 
 $SERVICE_NAME = 'LegacyMCP'
 $REG_ROOT     = if ($Profile -eq 'A') { 'HKCU:\SOFTWARE\LegacyMCP' } else { 'HKLM:\SOFTWARE\LegacyMCP' }
+
+try {
 
 # ===========================================================================
 # PROFILE A
@@ -1152,4 +1162,8 @@ if ($Profile -eq 'A') {
 
 } else {
     throw "Profile $Profile is not yet fully implemented. Refer to docs\deployment-profiles.md."
+}
+
+} finally {
+    Stop-Transcript | Out-Null
 }

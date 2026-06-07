@@ -92,7 +92,8 @@ function Show-LMStepExecuting {
         -Queue $global:LMGui_Queue `
         -ModulesDir $global:LMGui_ModulesDir `
         -ScriptDir  $global:LMGui_ScriptDir `
-        -RepoRoot   $global:LMGui_RepoRoot
+        -RepoRoot   $global:LMGui_RepoRoot `
+        -LogFile    "$($global:LMGui_LogFile)"
     $global:LMGui_ExecPS    = $execData.PS
     $global:LMGui_ExecRS    = $execData.RS
     $global:LMGui_ExecAsync = $execData.Async
@@ -194,18 +195,20 @@ function Start-LMExecution {
         $Queue,
         [string]$ModulesDir,
         [string]$ScriptDir,
-        [string]$RepoRoot
+        [string]$RepoRoot,
+        [string]$LogFile = ''
     )
 
     $rs = [runspacefactory]::CreateRunspace()
     $rs.ApartmentState = [System.Threading.ApartmentState]::STA
     $rs.Open()
 
-    $rs.SessionStateProxy.SetVariable('_Q',     $Queue)
-    $rs.SessionStateProxy.SetVariable('_mdir',  $ModulesDir)
-    $rs.SessionStateProxy.SetVariable('_sdir',  $ScriptDir)
-    $rs.SessionStateProxy.SetVariable('_rroot', $RepoRoot)
-    $rs.SessionStateProxy.SetVariable('_ws',    $State)
+    $rs.SessionStateProxy.SetVariable('_Q',       $Queue)
+    $rs.SessionStateProxy.SetVariable('_mdir',    $ModulesDir)
+    $rs.SessionStateProxy.SetVariable('_sdir',    $ScriptDir)
+    $rs.SessionStateProxy.SetVariable('_rroot',   $RepoRoot)
+    $rs.SessionStateProxy.SetVariable('_ws',      $State)
+    $rs.SessionStateProxy.SetVariable('_logfile', $LogFile)
 
     $ps = [powershell]::Create()
     $ps.Runspace = $rs
@@ -225,12 +228,12 @@ function Start-LMExecution {
         Import-Module (Join-Path $mdir 'LegacyMCP.Client.psm1')  -Force
         Import-Module (Join-Path $mdir 'LegacyMCP.Gui.Exec.psm1') -Force -WarningAction SilentlyContinue
 
-        # Override Write-LM* to push to queue (must be after all module imports)
-        function global:Write-LMStep { param($Message) $Q.Enqueue("STEP:$Message") }
-        function global:Write-LMOK   { param($Message) $Q.Enqueue("OK:$Message") }
-        function global:Write-LMWarn { param($Message) $Q.Enqueue("WARN:$Message") }
-        function global:Write-LMInfo { param($Message) $Q.Enqueue("INFO:$Message") }
-        function global:Write-LMFail { param($Message) $Q.Enqueue("FAIL:$Message") }
+        # Override Write-LM* to push to queue and write to log file
+        function global:Write-LMStep { param($Message) $Q.Enqueue("STEP:$Message"); if ($_logfile) { try { [System.IO.File]::AppendAllText($_logfile, "==> $Message`r`n", [System.Text.Encoding]::UTF8) } catch {} } }
+        function global:Write-LMOK   { param($Message) $Q.Enqueue("OK:$Message");   if ($_logfile) { try { [System.IO.File]::AppendAllText($_logfile, "  [OK]   $Message`r`n", [System.Text.Encoding]::UTF8) } catch {} } }
+        function global:Write-LMWarn { param($Message) $Q.Enqueue("WARN:$Message"); if ($_logfile) { try { [System.IO.File]::AppendAllText($_logfile, "  [WARN] $Message`r`n", [System.Text.Encoding]::UTF8) } catch {} } }
+        function global:Write-LMInfo { param($Message) $Q.Enqueue("INFO:$Message"); if ($_logfile) { try { [System.IO.File]::AppendAllText($_logfile, "  [INFO] $Message`r`n", [System.Text.Encoding]::UTF8) } catch {} } }
+        function global:Write-LMFail { param($Message) $Q.Enqueue("FAIL:$Message"); if ($_logfile) { try { [System.IO.File]::AppendAllText($_logfile, "  [FAIL] $Message`r`n", [System.Text.Encoding]::UTF8) } catch {} } }
 
         $INSTALLER_VERSION = $ws['INSTALLER_VERSION']
         $SERVICE_NAME = 'LegacyMCP'
@@ -748,6 +751,7 @@ function Start-LMExecution {
         } catch {
             $Q.Enqueue("FAIL:$($_.Exception.Message)")
             $Q.Enqueue('DONE:error')
+            if ($_logfile) { try { [System.IO.File]::AppendAllText($_logfile, "  [FAIL] $($_.Exception.Message)`r`n", [System.Text.Encoding]::UTF8) } catch {} }
         }
 
     }) | Out-Null  # end AddScript
