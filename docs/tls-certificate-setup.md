@@ -22,7 +22,12 @@ Restart-Service LegacyMCP
 Then copy the new `server.crt` to the consultant machine (`%LOCALAPPDATA%\LegacyMCP\certs\`)
 and restart Claude Desktop.
 
-> A guided `-ReplaceCert` mode is planned for a future release of `Setup-LegacyMCP.ps1`.
+> To rotate the certificate via the installer, use `-RotateCert` in `-Mode Configure`:
+> ```powershell
+> .\Setup-LegacyMCP.ps1 -Profile B-core -Role Server -Mode Configure -RotateCert
+> ```
+> The new self-signed certificate is generated automatically, the service restarts, and
+> the new `server.crt` must be distributed to all consultant machines.
 
 The installer uses Python's `cryptography` library to generate a
 self-signed SHA-256 certificate. This is necessary because:
@@ -30,6 +35,17 @@ self-signed SHA-256 certificate. This is necessary because:
 - SHA-1 certificates are incompatible with modern uvicorn/OpenSSL
 
 ### Option B — Corporate CA certificate
+
+> **Recommended:** use `-CertFile` / `-CertKeyFile` in `-Mode Install` or
+> `-Mode Configure` instead of copying files manually:
+> ```powershell
+> .\Setup-LegacyMCP.ps1 -Profile B-core -Role Server -Mode Install `
+>     -ServiceAccount "DOMAIN\svc_legacymcp$" `
+>     -CertFile "C:\certs\server.crt" -CertKeyFile "C:\certs\server.key"
+> ```
+> The installer handles DPAPI-NG key encryption automatically.
+> Copying files manually bypasses this protection and leaves the private
+> key unencrypted on disk.
 
 If you have a CA-signed certificate in PEM format, replace it manually:
 
@@ -76,22 +92,16 @@ Copy it to the consultant machine via a secure channel.
 
 ---
 
-## Private Key Export
+## Private Key
 
-If you need to export the private key, use Python from the venv —
-`ExportRSAPrivateKey()` is not available on PowerShell 5.1 / .NET 4.x:
+Since v0.2.4, the server private key file (`server.key`) is encrypted with a
+randomly generated password. The password is stored in the Windows registry using
+DPAPI-NG (SID-scoped) and is never accessible in plaintext outside the service
+account context. This is by design (P7 — code integrity and credential protection).
 
-```python
-from cryptography.hazmat.primitives.serialization import (
-    Encoding, PrivateFormat, NoEncryption, load_pem_private_key
-)
-
-with open("certs/server.key", "rb") as f:
-    key = load_pem_private_key(f.read(), password=None)
-
-with open("certs/server_export.key", "wb") as f:
-    f.write(key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()))
-```
+The private key cannot be exported to plaintext outside the server machine. If you
+need to replace the TLS certificate, use `-RotateCert` to generate a new one, or
+import an external certificate using `-CertFile` / `-CertKeyFile` in `-Mode Configure`.
 
 ---
 

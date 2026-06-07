@@ -78,6 +78,27 @@ CLI:
 .\Setup-LegacyMCP.ps1 -Profile A -Mode Install
 ```
 
+**Advanced install options:**
+
+Use `-Version` to install a specific release from PyPI instead of the latest:
+
+```powershell
+.\Setup-LegacyMCP.ps1 -Profile A -Mode Install -Version 0.2.2
+```
+
+Useful when a newer version introduces a regression and you need to pin a
+known-good release. `-Version` and `-DevInstall` are mutually exclusive.
+
+Use `-DevInstall` to install from the local source tree in editable mode
+(only available when the full repository is present, not from a ZIP):
+
+```powershell
+.\Setup-LegacyMCP.ps1 -Profile A -Mode Install -DevInstall
+```
+
+This mode is for development and field testing where you may need to modify
+the server code and have the changes take effect immediately.
+
 The installer creates the virtual environment in `%LOCALAPPDATA%\LegacyMCP\.venv`,
 installs the package, and writes the configuration paths to the Windows registry
 under `HKCU:\SOFTWARE\LegacyMCP`. All paths are user-scope — no Administrator
@@ -243,6 +264,53 @@ workspace:
 ```
 
 6. Restart Claude Desktop.
+
+---
+
+## Installer Log
+
+Every execution of `Setup-LegacyMCP.ps1` — both CLI and GUI — produces a
+timestamped log file in `installer\logs\`:
+
+```
+installer\logs\setup-20260607-143022.log
+```
+
+The log captures the full installer output, including step results, warnings,
+and errors. Useful for diagnosing installation failures, especially on machines
+with endpoint protection that may quarantine files silently.
+
+---
+
+## Uninstall
+
+**Standard uninstall** — removes the virtual environment and deregisters Claude
+Desktop, but preserves configuration (`%LOCALAPPDATA%\LegacyMCP\config\`):
+
+```powershell
+.\Setup-LegacyMCP.ps1 -Profile A -Mode Uninstall
+```
+
+> **Note:** if Claude Desktop is open when you uninstall, the `.venv` folder
+> may be locked by the running process. The installer will report the venv as
+> requiring manual removal. Close Claude Desktop first for a clean uninstall.
+
+**Deep clean with `-Purge`** — removes the virtual environment, registry keys,
+and all data in `%LOCALAPPDATA%\LegacyMCP\` (config, logs, certs). Prompts for
+explicit confirmation before proceeding:
+
+```powershell
+.\Setup-LegacyMCP.ps1 -Profile A -Mode Uninstall -Purge
+```
+
+You will be asked to type `YES` to confirm. This action is irreversible.
+
+> **Limitation N-INST-1:** if both Profile A and Profile B-core Client are
+> installed on the same machine, `-Purge` for Profile A will also remove the
+> B-core Client configuration files, since they share the same
+> `%LOCALAPPDATA%\LegacyMCP\` path. Open Claude Desktop after purge to verify
+> the B-core Client entry is still functional. Re-run the B-core Client install
+> if needed.
 
 ---
 

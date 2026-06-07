@@ -35,7 +35,10 @@ legacy-mcp/
 │   │   ├── LegacyMCP.Service.psm1
 │   │   ├── LegacyMCP.Certs.psm1
 │   │   ├── LegacyMCP.Config.psm1
-│   │   └── LegacyMCP.Client.psm1
+│   │   ├── LegacyMCP.Client.psm1
+│   │   ├── LegacyMCP.Gui.psm1
+│   │   ├── LegacyMCP.Gui.Steps.psm1
+│   │   └── LegacyMCP.Gui.Exec.psm1
 │   └── tools/              # bundled binaries (nssm.exe)
 ├── src/legacy_mcp/         # MCP server — Python
 │   ├── server.py           # FastMCP entrypoint

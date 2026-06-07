@@ -2,6 +2,84 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.4] - 2026-06-07 "From Upset to Setup"
+
+### Added
+
+- **GUI wizard** (`-Gui`): interactive WinForms setup wizard for Profile A and
+  B-core; covers Install, Configure, and Uninstall. Implemented as three dedicated
+  modules (`LegacyMCP.Gui.psm1`, `LegacyMCP.Gui.Steps.psm1`, `LegacyMCP.Gui.Exec.psm1`)
+- **Per-run installer log**: every execution of `Setup-LegacyMCP.ps1` (CLI and GUI)
+  produces a timestamped log in `installer/logs/setup-YYYYMMDD-HHmmss.log`
+- **`-RotateApiKey`** (Configure mode, Profile B Server): generates and stores a new
+  API key; the new key is printed once in the console for client reconfiguration
+- **`-RotateCert`** (Configure mode, Profile B Server): generates a new self-signed
+  TLS certificate, updates the DPAPI-NG key blob in registry, restarts the service
+- **`-SnapshotPath`** (Configure mode, Profile B Server): change the snapshot
+  directory post-install; directory created automatically with correct ACLs
+- **`-Port`** (Configure mode, Profile B Server): change the listening port;
+  updates registry, config.yaml, and firewall rule; prompts for confirmation
+- **TLS private key DPAPI-NG encryption** (Profile B Server): the server private
+  key is now encrypted with a randomly generated password stored in the registry
+  via DPAPI-NG (SID-scoped). The key is never accessible in plaintext outside the
+  service account context
+- **`-Version`** (Profile A and B Server): install a specific version from PyPI
+  (e.g. `-Version 0.2.2`). Pins a known-good release when a newer version
+  introduces a regression
+- **`-DevInstall`** (Profile A): installs from the local source tree in editable
+  mode instead of PyPI. Mutually exclusive with `-Version`
+- **`-Purge`** (Uninstall, Profile A and B): deep removal — removes registry keys
+  and `%LOCALAPPDATA%\LegacyMCP\` (Profile A) or `%ProgramData%\LegacyMCP\`
+  (Profile B). Prompts for explicit confirmation ("Type YES"). Default uninstall
+  preserves configuration. Note N-INST-1: on a machine with both Profile A and
+  B-core Client installed, `-Purge` for Profile A also removes the B-core Client
+  configuration (shared path)
+- **`-PreserveConfig`** (GUI, Profile A Uninstall): keeps `config.yaml` when
+  uninstalling from the wizard
+- **`-ApiKey`** (Profile B Server Install): supply an externally managed API key
+  instead of generating one automatically
+- **`-CertFile` / `-CertKeyFile`** (Profile B Server): import an external
+  TLS certificate. Both parameters are mutually mandatory — providing only one
+  raises an error. The private key must be unencrypted; the installer encrypts
+  it automatically with DPAPI-NG
+- **Reinstall confirmation**: when reinstalling over a running service, the
+  installer stops the service with an explicit confirmation prompt before proceeding
+- **Python user-scope block**: installation aborts with an explicit error if Python
+  is installed in user-scope on Profile B Server (service account requires
+  system-scope Python)
+- **`-Mode Configure`** for Profile B Server: fully wired — port, snapshot path,
+  API key, certificate rotation, TLS key status display
+- **InstalledVersion in registry**: the installed version is stored in the
+  registry and shown in uninstall/configure log messages; removes the need for
+  a separate `version.txt`
+- **Keep/Regenerate flow**: the installer detects an existing installation from
+  registry and offers to keep or regenerate the API key and certificate on reinstall
+
+### Fixed
+
+- Profile A Uninstall/Purge behavior aligned with Profile B: standard uninstall
+  preserves configuration; `-Purge` performs deep clean with confirmation
+- `-CertFile` and `-CertKeyFile` are now validated as mutually mandatory at startup
+- Port alignment: the listening port is now consistent across registry, config.yaml,
+  and Windows Firewall rule
+- `Update-LMYamlSslFields`: robust UTF-8 encoding and YAML field validation
+- NSSM path: `nssm.exe` is now copied to `InstallPath` and the path stored in
+  the registry; resolves "NSSM not found" errors on reinstall
+- Error handling hardened across all six installer modules (Common, Python,
+  Service, Certs, Config, Client): explicit exit code checks, meaningful error
+  messages, P4-compliant failure propagation
+
+### Collector
+
+- Bumped to v1.6.5
+- PKI section always serialized as an array (fixes single-CA environments where
+  the collector returned an object instead of a one-element array)
+- PKI pipeline in Live Mode wrapped in `@()` for single-CA array consistency
+
+### CI/CD
+
+- GitHub Actions updated to Node.js 24-compatible action versions
+
 ## [0.2.3] - 2026-05-17 "Solid Ground"
 
 ### Changed

@@ -23,6 +23,9 @@ The following artifacts are signed in each release:
 - `installer/modules/LegacyMCP.Certs.psm1`
 - `installer/modules/LegacyMCP.Config.psm1`
 - `installer/modules/LegacyMCP.Client.psm1`
+- `installer/modules/LegacyMCP.Gui.psm1`
+- `installer/modules/LegacyMCP.Gui.Steps.psm1`
+- `installer/modules/LegacyMCP.Gui.Exec.psm1`
 - `installer/Manage-Workspaces.ps1`
 - `installer/mcp-remote-live.ps1`
 

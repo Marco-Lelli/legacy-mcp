@@ -208,6 +208,7 @@ Already know which profile you need?
 
 - [Deployment profiles](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/deployment-profiles.md)
 - [Architecture](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/architecture.md)
+- [Setup Reference — all parameters for Setup-LegacyMCP.ps1](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/setup-reference.md)
 - [TLS certificate setup](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/tls-certificate-setup.md)
 - [Design principles](https://github.com/Marco-Lelli/legacy-mcp/blob/master/PRINCIPLES.md)
 - [MCP Tools Reference](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/tools-reference.md)

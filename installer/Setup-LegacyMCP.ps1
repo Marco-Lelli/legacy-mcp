@@ -83,7 +83,7 @@ Import-Module (Join-Path $ModulesDir 'LegacyMCP.Service.psm1') -Force
 Import-Module (Join-Path $ModulesDir 'LegacyMCP.Certs.psm1')   -Force
 Import-Module (Join-Path $ModulesDir 'LegacyMCP.Config.psm1')  -Force
 Import-Module (Join-Path $ModulesDir 'LegacyMCP.Client.psm1')  -Force
-$INSTALLER_VERSION = '0.2.3'
+$INSTALLER_VERSION = '0.2.4'
 Import-Module (Join-Path $ModulesDir 'LegacyMCP.Gui.psm1')       -Force -WarningAction SilentlyContinue
 Import-Module (Join-Path $ModulesDir 'LegacyMCP.Gui.Steps.psm1') -Force -WarningAction SilentlyContinue
 Import-Module (Join-Path $ModulesDir 'LegacyMCP.Gui.Exec.psm1')  -Force -WarningAction SilentlyContinue
