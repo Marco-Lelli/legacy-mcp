@@ -186,16 +186,17 @@ async def test_middleware_401_has_no_www_authenticate_header():
     "/.well-known/oauth-protected-resource",
     "/.well-known/oauth-protected-resource/mcp",
     "/token",
-    "/register",
-    "/authorize",
 ])
 async def test_oauth_paths_bypass_auth_and_forward_to_app(path):
-    """Feature H + Bug G: /.well-known/* paths must bypass Bearer auth.
+    """Feature H + Bug G: /.well-known/* and /token bypass Bearer auth.
 
     The middleware must NOT apply auth checks and must NOT return 401.
     Instead it passes the request to the inner app (oauth.py router), which
     returns 200 for implemented paths or 404 for unknown ones.
     Verification that the correct HTTP status is returned lives in test_oauth.py.
+
+    SEC-H1: /register and /authorize are deliberately NOT in this list -- they
+    are now gated by Bearer auth (see the dedicated tests below).
     """
     inner = _RecordingApp()
     mw = BearerApiKeyMiddleware(inner, "my-key")
@@ -206,6 +207,66 @@ async def test_oauth_paths_bypass_auth_and_forward_to_app(path):
     # Inner app must be reached -- no 401 interception by the middleware.
     assert inner.called
     # Middleware sent nothing (inner app would handle the response in production).
+    assert capture.events == []
+
+
+# ---------------------------------------------------------------------------
+# SEC-H1: /register and /authorize must be gated by Bearer auth
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["/register", "/authorize"])
+async def test_oauth_register_authorize_reject_missing_token(path):
+    """SEC-H1: /register and /authorize without a token must return 401.
+
+    Previously these paths bypassed Bearer auth, letting an attacker without
+    the API key complete the OAuth handshake and obtain a token. They must now
+    be validated like any other non-discovery endpoint.
+    """
+    inner = _RecordingApp()
+    mw = BearerApiKeyMiddleware(inner, "my-key")
+    scope = {"type": "http", "method": "GET", "path": path, "headers": []}
+    capture = _CaptureSend()
+    await mw(scope, None, capture)
+
+    assert not inner.called
+    assert capture.events[0]["status"] == 401
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["/register", "/authorize"])
+async def test_oauth_register_authorize_reject_wrong_token(path):
+    """SEC-H1: /register and /authorize with a wrong token must return 401."""
+    inner = _RecordingApp()
+    mw = BearerApiKeyMiddleware(inner, "my-key")
+    scope = {"type": "http", "method": "GET", "path": path,
+             "headers": [(b"authorization", b"Bearer wrong")]}
+    capture = _CaptureSend()
+    await mw(scope, None, capture)
+
+    assert not inner.called
+    assert capture.events[0]["status"] == 401
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["/register", "/authorize"])
+async def test_oauth_register_authorize_allow_valid_token(path):
+    """SEC-H1: /register and /authorize with a valid token forward to the app.
+
+    mcp-remote injects the Authorization header (via --header in
+    mcp-remote-live.ps1) on every request including the OAuth handshake, so a
+    legitimate client passes through unchanged. The concrete 201/302 responses
+    are verified against the real oauth.py router in test_oauth.py.
+    """
+    inner = _RecordingApp()
+    mw = BearerApiKeyMiddleware(inner, "my-key")
+    scope = {"type": "http", "method": "GET", "path": path,
+             "headers": [(b"authorization", b"Bearer my-key")]}
+    capture = _CaptureSend()
+    await mw(scope, None, capture)
+
+    assert inner.called
     assert capture.events == []
 
 

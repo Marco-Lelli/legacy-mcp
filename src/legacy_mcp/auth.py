@@ -75,12 +75,22 @@ class BearerApiKeyMiddleware:
             await self._app(scope, receive, send)
             return
 
-        # OAuth paths bypass Bearer auth and are forwarded to the app directly.
-        # /.well-known/* -- discovery endpoints; oauth.py returns 200 for the
-        #   ones it implements, Starlette returns 404 for the rest.
-        # /token          -- has its own client_secret validation in oauth.py.
+        # OAuth paths that legitimately bypass Bearer auth:
+        # /.well-known/* -- discovery endpoints; only metadata (endpoint URLs),
+        #   no secret involved. oauth.py returns 200 for the ones it implements,
+        #   Starlette returns 404 for the rest.
+        # /token          -- reached only after the caller already passed Bearer
+        #   auth on /register (to obtain a derived client_secret) or /authorize
+        #   (to obtain a PKCE code); without one of those prior steps there is no
+        #   valid secret/code to exchange, so the chain is already broken upstream.
+        #
+        # SEC-H1 fix: /register and /authorize are NOT exempt. mcp-remote sends
+        # the Authorization: Bearer header (from mcp-remote-live.ps1 --header) on
+        # every request to the target server, including the OAuth handshake, so
+        # legitimate clients are unaffected. An attacker without the API key can
+        # no longer obtain a token by calling /register or /authorize first.
         path = scope.get("path", "")
-        if path.startswith("/.well-known/") or path in ("/token", "/register", "/authorize"):
+        if path.startswith("/.well-known/") or path == "/token":
             await self._app(scope, receive, send)
             return
 
