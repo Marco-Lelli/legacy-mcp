@@ -25,6 +25,13 @@ both in the collector (at source, via Select-Object -ExcludeProperty) and in
 loader.py (as a safety net). When adding a new module that uses Invoke-Command,
 both touch points are mandatory.
 
+Corollary: every Live Mode section must emit explicit field sets — via
+`[PSCustomObject]` with named properties or `Select-Object` of named
+properties — never raw pipeline objects passed through unmodified. This
+is the primary defense that keeps PS* artefact fields out of the output;
+the corollary above about stripping those fields at the two touch points
+is the safety net behind it, not the first line of defense.
+
 ## 3. Kerberos only — NTLM is not a fallback
 
 NTLM is deprecated and must not be used as a transport or fallback mechanism.
@@ -35,6 +42,13 @@ Live Mode authentication uses Kerberos exclusively. No exceptions.
 Every PowerShell block that can fail has a try/catch.
 Every network call, WinRM session, and AD query handles failures explicitly.
 Silent failures are not acceptable.
+
+Corollary: failure points involving secrets or authentication (API key
+decryption, TLS private keys, credential material) must fail safe — the
+server refuses to start rather than proceed unprotected. This is distinct
+from Principle 10, which governs soft degradation on AD data collection
+only. A failure to decrypt a credential is never treated the same as a
+failure to reach a Domain Controller.
 
 ## 5. Open boundary follows Webster's scope
 
