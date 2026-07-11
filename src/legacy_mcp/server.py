@@ -12,7 +12,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from legacy_mcp.config import load_config
-from legacy_mcp.config_registry import read_registry_config
+from legacy_mcp.config_registry import ApiKeyDecryptionError, read_registry_config
 from legacy_mcp.eventlog import writer as eventlog
 from legacy_mcp.workspace.workspace import Workspace
 from legacy_mcp import tools
@@ -255,7 +255,14 @@ def main() -> None:
     args = parser.parse_args()
 
     # Priority: CLI > Windows registry > built-in default.
-    registry = read_registry_config()
+    try:
+        registry = read_registry_config()
+    except ApiKeyDecryptionError as exc:
+        # SEC-H2 fail-safe: an ApiKey is configured but cannot be decrypted.
+        # Refuse to start rather than serve unauthenticated over the network.
+        eventlog.error(f"LegacyMCP startup aborted: {exc}")
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        sys.exit(1)
 
     config_path = args.config or registry.get("config_path") or "config/config.yaml"
     transport = args.transport or registry.get("transport") or "stdio"

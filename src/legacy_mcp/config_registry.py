@@ -20,6 +20,17 @@ _REGISTRY_KEY = r"SOFTWARE\LegacyMCP"
 _SERVICE_SUBKEY = r"SOFTWARE\LegacyMCP\Service"
 
 
+class ApiKeyDecryptionError(RuntimeError):
+    """Raised when ApiKey is present in the registry but cannot be decrypted.
+
+    SEC-H2 fix: fail-safe. When an ApiKey value exists in the registry (i.e. a
+    Profile B server was configured with authentication) but DPAPI-NG decryption
+    fails for any reason, the server must refuse to start rather than silently
+    fall back to running without authentication. This mirrors the explicit
+    RuntimeError raised for an undecryptable TLS key in server._run_with_tls().
+    """
+
+
 def read_registry_config() -> dict:
     """Read HKLM\\SOFTWARE\\LegacyMCP\\ and return a normalised config dict.
 
@@ -91,60 +102,59 @@ def read_registry_config() -> dict:
             # with 0x80070005 because MS-GKDI root key retrieval requires DC RPC.
             try:
                 encrypted_b64, _ = winreg.QueryValueEx(key, "ApiKey")
-                if encrypted_b64:
-                    ps_cmd = (
-                        "Import-Module SecretManagement.DpapiNG -ErrorAction Stop; "
-                        "$blob = $env:LEGACYMCP_BLOB; "
-                        "$secure = ConvertFrom-DpapiNGSecret -InputObject $blob; "
-                        "[Runtime.InteropServices.Marshal]::PtrToStringAuto("
-                        "[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))"
-                    )
-                    os.environ['LEGACYMCP_BLOB'] = encrypted_b64
-                    try:
-                        proc = subprocess.run(
-                            [_PS_EXE, "-NoProfile", "-NonInteractive",
-                             "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
-                            capture_output=True,
-                            timeout=10,
-                            check=False,
-                        )
-                        api_key = proc.stdout.decode("utf-8", errors="replace").strip()
-                        if proc.returncode != 0:
-                            print(
-                                "[LegacyMCP] Warning: DPAPI-NG: SecretManagement.DpapiNG module not available",
-                                file=sys.stderr,
-                            )
-                        elif not api_key:
-                            print(
-                                "[LegacyMCP] Warning: DPAPI-NG: decryption returned empty result",
-                                file=sys.stderr,
-                            )
-                        else:
-                            result["api_key"] = api_key
-                    except FileNotFoundError:
-                        print(
-                            "[LegacyMCP] Warning: DPAPI-NG: powershell.exe not found at expected path",
-                            file=sys.stderr,
-                        )
-                    except subprocess.TimeoutExpired:
-                        print(
-                            "[LegacyMCP] Warning: DPAPI-NG: decryption timed out after 10s",
-                            file=sys.stderr,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        print(
-                            f"[LegacyMCP] Warning: DPAPI-NG: decryption failed: "
-                            f"{type(exc).__name__}: {exc}",
-                            file=sys.stderr,
-                        )
-                    finally:
-                        os.environ.pop('LEGACYMCP_BLOB', None)
             except OSError:
-                pass  # key absent -- Profile A or not yet configured
+                encrypted_b64 = None  # key absent -- Profile A or not yet configured
 
+            if encrypted_b64:
+                # SEC-H2 fix: an ApiKey is configured, so decryption failure must
+                # be fatal (fail-safe), not a silent fall-through to no-auth.
+                # Collect the outcome here and raise after the finally so the
+                # env-var cleanup always runs first.
+                decryption_error: str | None = None
+                api_key = ""
+                ps_cmd = (
+                    "Import-Module SecretManagement.DpapiNG -ErrorAction Stop; "
+                    "$blob = $env:LEGACYMCP_BLOB; "
+                    "$secure = ConvertFrom-DpapiNGSecret -InputObject $blob; "
+                    "[Runtime.InteropServices.Marshal]::PtrToStringAuto("
+                    "[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))"
+                )
+                os.environ['LEGACYMCP_BLOB'] = encrypted_b64
+                try:
+                    proc = subprocess.run(
+                        [_PS_EXE, "-NoProfile", "-NonInteractive",
+                         "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+                        capture_output=True,
+                        timeout=10,
+                        check=False,
+                    )
+                    api_key = proc.stdout.decode("utf-8", errors="replace").strip()
+                    if proc.returncode != 0:
+                        decryption_error = (
+                            "SecretManagement.DpapiNG module not available"
+                        )
+                    elif not api_key:
+                        decryption_error = "decryption returned empty result"
+                except FileNotFoundError:
+                    decryption_error = "powershell.exe not found at expected path"
+                except subprocess.TimeoutExpired:
+                    decryption_error = "decryption timed out after 10s"
+                except Exception as exc:  # noqa: BLE001
+                    decryption_error = f"{type(exc).__name__}: {exc}"
+                finally:
+                    os.environ.pop('LEGACYMCP_BLOB', None)
+
+                if decryption_error is not None:
+                    raise ApiKeyDecryptionError(
+                        f"DPAPI-NG: ApiKey is present in the registry but could "
+                        f"not be decrypted: {decryption_error}"
+                    )
+                result["api_key"] = api_key
+
+    except ApiKeyDecryptionError:
+        raise  # fail-safe: propagate to main() so the server refuses to start
     except Exception as exc:  # noqa: BLE001
-        import sys as _sys
-        print(f"[LegacyMCP] Warning: failed to read registry: {exc}", file=_sys.stderr)
+        print(f"[LegacyMCP] Warning: failed to read registry: {exc}", file=sys.stderr)
         return {}
 
     return result

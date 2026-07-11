@@ -355,9 +355,14 @@ def test_apikey_decrypted_via_subprocess():
     assert result["api_key"] == "my-secret-key"
 
 
+# SEC-H2 fail-safe: when an ApiKey is present in the registry but cannot be
+# decrypted, read_registry_config must raise ApiKeyDecryptionError so the server
+# refuses to start, instead of silently returning without api_key (fail-open).
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
-def test_apikey_powershell_not_found(capsys):
-    """FileNotFoundError is handled and api_key is absent from result."""
+def test_apikey_powershell_not_found():
+    """SEC-H2: FileNotFoundError during decryption raises ApiKeyDecryptionError."""
     import importlib
     import legacy_mcp.config_registry as m
 
@@ -367,16 +372,14 @@ def test_apikey_powershell_not_found(capsys):
     with patch.dict("sys.modules", {"winreg": mock_winreg}):
         importlib.reload(m)
         with patch.object(m.subprocess, "run", side_effect=FileNotFoundError):
-            result = m.read_registry_config()
-
-    assert "api_key" not in result
-    captured = capsys.readouterr()
-    assert "powershell.exe not found at expected path" in captured.err
+            with pytest.raises(m.ApiKeyDecryptionError,
+                               match="powershell.exe not found at expected path"):
+                m.read_registry_config()
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
-def test_apikey_subprocess_timeout(capsys):
-    """TimeoutExpired is handled and api_key is absent from result."""
+def test_apikey_subprocess_timeout():
+    """SEC-H2: TimeoutExpired during decryption raises ApiKeyDecryptionError."""
     import importlib
     import legacy_mcp.config_registry as m
 
@@ -389,16 +392,13 @@ def test_apikey_subprocess_timeout(capsys):
             m.subprocess, "run",
             side_effect=subprocess.TimeoutExpired(cmd=["powershell.exe"], timeout=10),
         ):
-            result = m.read_registry_config()
-
-    assert "api_key" not in result
-    captured = capsys.readouterr()
-    assert "timed out after 10s" in captured.err
+            with pytest.raises(m.ApiKeyDecryptionError, match="timed out after 10s"):
+                m.read_registry_config()
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
-def test_apikey_empty_output(capsys):
-    """Empty stdout (returncode 0) falls back gracefully without api_key."""
+def test_apikey_empty_output():
+    """SEC-H2: empty stdout (returncode 0) raises ApiKeyDecryptionError."""
     import importlib
     import legacy_mcp.config_registry as m
 
@@ -408,16 +408,14 @@ def test_apikey_empty_output(capsys):
     with patch.dict("sys.modules", {"winreg": mock_winreg}):
         importlib.reload(m)
         with patch.object(m.subprocess, "run", return_value=_make_proc(0, b"")):
-            result = m.read_registry_config()
-
-    assert "api_key" not in result
-    captured = capsys.readouterr()
-    assert "decryption returned empty result" in captured.err
+            with pytest.raises(m.ApiKeyDecryptionError,
+                               match="decryption returned empty result"):
+                m.read_registry_config()
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
-def test_apikey_nonzero_returncode(capsys):
-    """Non-zero returncode (e.g. module not installed) falls back gracefully."""
+def test_apikey_nonzero_returncode():
+    """SEC-H2: non-zero returncode (module not installed) raises ApiKeyDecryptionError."""
     import importlib
     import legacy_mcp.config_registry as m
 
@@ -427,8 +425,28 @@ def test_apikey_nonzero_returncode(capsys):
     with patch.dict("sys.modules", {"winreg": mock_winreg}):
         importlib.reload(m)
         with patch.object(m.subprocess, "run", return_value=_make_proc(1, b"")):
+            with pytest.raises(m.ApiKeyDecryptionError,
+                               match="SecretManagement.DpapiNG module not available"):
+                m.read_registry_config()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
+def test_apikey_absent_no_exception():
+    """SEC-H2: when no ApiKey value exists in the registry, no exception is
+    raised (Profile A / not-yet-configured is intentional absence, not a
+    decryption failure)."""
+    import importlib
+    import legacy_mcp.config_registry as m
+
+    values = {"ConfigPath": (r"C:\LegacyMCP\config\config.yaml", 1)}
+    mock_winreg = _make_winreg_mock(values=values)
+
+    with patch.dict("sys.modules", {"winreg": mock_winreg}):
+        importlib.reload(m)
+        # subprocess.run must never be called when ApiKey is absent.
+        with patch.object(m.subprocess, "run",
+                          side_effect=AssertionError("subprocess must not run")):
             result = m.read_registry_config()
 
     assert "api_key" not in result
-    captured = capsys.readouterr()
-    assert "SecretManagement.DpapiNG module not available" in captured.err
+    assert result["config_path"] == r"C:\LegacyMCP\config\config.yaml"

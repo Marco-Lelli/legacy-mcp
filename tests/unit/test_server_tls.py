@@ -201,3 +201,28 @@ def test_get_key_password_empty_stdout_raises():
         with patch("subprocess.run", return_value=_make_proc(0, "")):
             with pytest.raises(RuntimeError, match="Failed to decrypt"):
                 srv._get_key_password()
+
+
+# ---------------------------------------------------------------------------
+# SEC-H2: main() fail-safe on undecryptable ApiKey
+# ---------------------------------------------------------------------------
+
+def test_main_aborts_when_apikey_cannot_be_decrypted():
+    """SEC-H2: if read_registry_config raises ApiKeyDecryptionError, main() must
+    exit(1) and never start the server (fail-safe, not fail-open)."""
+    import legacy_mcp.server as srv
+    from legacy_mcp.config_registry import ApiKeyDecryptionError
+
+    with (
+        patch("sys.argv", ["legacy-mcp"]),
+        patch.object(srv, "read_registry_config",
+                     side_effect=ApiKeyDecryptionError("ApiKey present but undecryptable")),
+        patch.object(srv, "create_server") as mock_create,
+        patch.object(srv.eventlog, "error") as mock_err,
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            srv.main()
+
+    assert exc_info.value.code == 1
+    mock_create.assert_not_called()          # server never built
+    mock_err.assert_called_once()            # failure logged to EventLog
