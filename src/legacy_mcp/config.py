@@ -39,12 +39,22 @@ def load_config(path: str | Path) -> dict[str, Any]:
     return config
 
 
+# Only non-sensitive deployment keys may be overridden via LEGACYMCP_* env
+# vars (SEC-M2). Anything else with the prefix -- credentials such as
+# LEGACYMCP_AD_PASSWORD, or the DPAPI blob -- must never enter the config
+# dict, where it could surface in a future dump or log.
+_ENV_OVERRIDE_ALLOWLIST = frozenset({"profile", "transport", "port", "host"})
+
+
 def _apply_env_overrides(config: dict[str, Any]) -> None:
     prefix = "LEGACYMCP_"
     for key, value in os.environ.items():
-        if key.startswith(prefix):
-            config_key = key[len(prefix):].lower()
-            config[config_key] = value
+        if not key.startswith(prefix):
+            continue
+        config_key = key[len(prefix):].lower()
+        if config_key not in _ENV_OVERRIDE_ALLOWLIST:
+            continue
+        config[config_key] = value
 
 
 def _validate(config: dict[str, Any]) -> None:

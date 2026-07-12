@@ -125,6 +125,58 @@ def test_create_server_defaults_without_server_block(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Environment variable overrides (SEC-M2 allowlist)
+# ---------------------------------------------------------------------------
+
+
+def test_env_override_allowlisted_key_applied(
+    valid_offline_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LEGACYMCP_PORT is in the allowlist and overrides config['port']."""
+    monkeypatch.setenv("LEGACYMCP_PORT", "9000")
+    config = load_config(valid_offline_config)
+    assert config["port"] == "9000"
+
+
+def test_env_override_profile_applied(
+    valid_offline_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LEGACYMCP_PROFILE overrides the profile and drives the effective mode."""
+    monkeypatch.setenv("LEGACYMCP_PROFILE", "B-core")
+    config = load_config(valid_offline_config)
+    assert config["profile"] == "B-core"
+    assert config["mode"] == "live"
+
+
+def test_env_override_non_allowlisted_key_ignored(
+    valid_offline_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LEGACYMCP_AD_PASSWORD must never enter the config dict."""
+    monkeypatch.setenv("LEGACYMCP_AD_PASSWORD", "secret")
+    config = load_config(valid_offline_config)
+    assert "ad_password" not in config
+
+
+def test_env_override_blob_ignored(
+    valid_offline_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LEGACYMCP_BLOB (DPAPI blob, handled separately) never enters config."""
+    monkeypatch.setenv("LEGACYMCP_BLOB", "AQAAANCMnd8=")
+    config = load_config(valid_offline_config)
+    assert "blob" not in config
+
+
+def test_env_override_arbitrary_key_ignored(
+    valid_offline_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unknown LEGACYMCP_-prefixed variables are silently ignored."""
+    monkeypatch.setenv("LEGACYMCP_WORKSPACE", "{}")
+    config = load_config(valid_offline_config)
+    assert isinstance(config["workspace"], dict)
+    assert config["workspace"] != "{}"
+
+
+# ---------------------------------------------------------------------------
 # Deployment profile tests
 # ---------------------------------------------------------------------------
 
