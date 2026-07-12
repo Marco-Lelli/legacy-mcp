@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from legacy_mcp.modes.live import LiveConnector
+from legacy_mcp.modes.live import LiveConnector, _validate_dc_fqdn
 from legacy_mcp.workspace.workspace import ForestConfig, ForestRelation, Workspace
 
 
@@ -205,6 +205,59 @@ class TestCredentialsPropagation:
         }
         workspace = Workspace.from_config(cfg)
         assert workspace.forests[0].credentials == "env"
+
+
+# ---------------------------------------------------------------------------
+# _validate_dc_fqdn — SEC-M1 defense-in-depth validation
+# ---------------------------------------------------------------------------
+
+class TestValidateDcFqdn:
+
+    def test_valid_fqdn_passes(self) -> None:
+        _validate_dc_fqdn("DC01.example.local")
+
+    def test_valid_short_hostname_passes(self) -> None:
+        _validate_dc_fqdn("dc01")
+
+    def test_valid_fqdn_with_hyphens_and_digits_passes(self) -> None:
+        _validate_dc_fqdn("eu-dc-02.corp.contoso.com")
+
+    def test_powershell_injection_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Invalid DC hostname"):
+            _validate_dc_fqdn("DC01.example.local; Remove-Item C:\\")
+
+    def test_subexpression_injection_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Invalid DC hostname"):
+            _validate_dc_fqdn("$(Get-Process)")
+
+    def test_backtick_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Invalid DC hostname"):
+            _validate_dc_fqdn("dc01`nWrite-Host x")
+
+    def test_empty_string_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Invalid DC hostname"):
+            _validate_dc_fqdn("")
+
+    def test_none_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Invalid DC hostname"):
+            _validate_dc_fqdn(None)  # type: ignore[arg-type]
+
+    def test_too_long_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Invalid DC hostname"):
+            _validate_dc_fqdn("a" * 254)
+
+    def test_spaces_raise_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Invalid DC hostname"):
+            _validate_dc_fqdn("dc01 .example.local")
+
+    def test_run_ps_on_rejects_bad_fqdn_before_subprocess(
+        self, connector: LiveConnector
+    ) -> None:
+        # The ValueError must be raised before any subprocess is spawned.
+        with patch("legacy_mcp.modes.live.subprocess.run") as mock_run:
+            with pytest.raises(ValueError, match="Invalid DC hostname"):
+                connector._run_ps_on("dc01; Remove-Item C:\\", "some script")
+        mock_run.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

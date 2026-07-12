@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from base64 import b64encode
 from typing import Any, TYPE_CHECKING
@@ -11,6 +12,29 @@ if TYPE_CHECKING:
     from legacy_mcp.workspace.workspace import ForestConfig
 
 from legacy_mcp.eventlog import writer as eventlog
+
+
+# RFC 1123 hostname/FQDN: letters, digits, hyphens, dots. No other
+# characters are valid in a DNS name, and none of them are needed to
+# reach a Domain Controller by hostname.
+_FQDN_PATTERN = re.compile(r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,62}(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,62})?)*)?$")
+
+
+def _validate_dc_fqdn(dc_fqdn: str) -> None:
+    """Validate dc_fqdn before it is interpolated into a PowerShell command.
+
+    Raises ValueError if dc_fqdn is not a plausible RFC 1123 hostname/FQDN.
+    Defense in depth (P6, P9): dc_fqdn originates from config.yaml, which
+    is normally trusted, but is validated here regardless before it
+    reaches a subprocess command string.
+    """
+    if not dc_fqdn or len(dc_fqdn) > 253:
+        raise ValueError(f"Invalid DC hostname: '{dc_fqdn}'")
+    if not _FQDN_PATTERN.match(dc_fqdn):
+        raise ValueError(
+            f"Invalid DC hostname '{dc_fqdn}': must be a valid FQDN "
+            f"(letters, digits, hyphens, dots only)"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -934,6 +958,7 @@ class LiveConnector:
         Raises RuntimeError on non-zero exit code. Returns [] on empty output
         (Principle 10).
         """
+        _validate_dc_fqdn(dc_fqdn)
         wrapped = (
             f"Invoke-Command -ComputerName {dc_fqdn} "
             f"-UseSSL -Authentication Kerberos "
