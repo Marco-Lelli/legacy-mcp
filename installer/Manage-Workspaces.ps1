@@ -14,7 +14,7 @@
 .EXAMPLE
     .\Manage-Workspaces.ps1 -List
     .\Manage-Workspaces.ps1 -Add -Name contoso.local -File "C:\Data\contoso.json"
-    .\Manage-Workspaces.ps1 -Add -Name house.local -DC dc01.house.local
+    .\Manage-Workspaces.ps1 -Add -Name contoso.local -DC dc01.contoso.local
     .\Manage-Workspaces.ps1 -Remove -Name contoso.local
     .\Manage-Workspaces.ps1 -Validate
     .\Manage-Workspaces.ps1 -Validate -Name contoso.local

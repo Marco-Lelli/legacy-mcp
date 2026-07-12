@@ -171,7 +171,7 @@ Add an offline forest:
   .\Manage-Workspaces.ps1 -Add -Name contoso.local -File "C:\Data\contoso.json"
 
 Add a live forest:
-  .\Manage-Workspaces.ps1 -Add -Name house.local -DC dc01.house.local
+  .\Manage-Workspaces.ps1 -Add -Name contoso.local -DC dc01.contoso.local
 
 Remove a forest (JSON file is preserved):
   .\Manage-Workspaces.ps1 -Remove -Name contoso.local

@@ -53,8 +53,9 @@ Get-ChildItem Cert:\LocalMachine\My | Where-Object {$_.Thumbprint -eq "YOUR_THUM
 ```
 
 **TLS 1.2 enabled (required on Windows Server 2012 R2)**
-Windows Server 2012 R2 does not enable TLS 1.2 by default. Python 3.11+
-requires TLS 1.2. Enable it via registry on each affected DC and reboot:
+Windows Server 2012 R2 does not enable TLS 1.2 by default. The WinRM HTTPS
+listener used for Live Mode requires TLS 1.2. Enable it via registry on
+each affected DC and reboot:
 ```powershell
 $base = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2"
 New-Item "$base\Server" -Force | Out-Null
@@ -79,8 +80,10 @@ on port 5986.
 
 **Service account**
 The installer configures a gMSA (recommended) or a dedicated domain account
-with Domain Admin rights and WinRM access to the target DCs. With a gMSA,
-Windows manages credentials automatically — no passwords stored anywhere.
+with the seven minimum delegations documented in
+[Minimum Permissions](minimum-permissions.md) and WinRM access to the
+target DCs. With a gMSA, Windows manages credentials automatically — no
+passwords stored anywhere.
 
 ---
 
@@ -317,3 +320,14 @@ openssl rsa -in encrypted.key -out unencrypted.key
 - Verify WinRM HTTPS is enabled on the DC: `Test-WSMan -ComputerName DC01 -UseSSL`
 - Verify the service account has "Allow log on as a service" right
 - See [architecture.md](architecture.md) for Kerberos authentication requirements
+
+**Service does not start / stops immediately after starting:**
+- Check the EventLog for event ID 3000: `Get-EventLog -LogName LegacyMCP -Newest 20`
+- This is a fail-safe: if an API key is present in the registry but cannot be
+  decrypted, the server refuses to start rather than run without
+  authentication. Most common cause: the `SecretManagement.DpapiNG` PowerShell
+  module is missing on this machine, but a corrupted blob or a service
+  account mismatch (the key was encrypted for a different account/SID) can
+  also trigger it
+- Fix: install the missing module, or if the blob is corrupted, re-run
+  `-Mode Configure -RotateApiKey` to generate a new key

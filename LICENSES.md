@@ -40,7 +40,6 @@ All are installed via pip and not bundled in the repository.
 | attrs                     | 25.4.0    | MIT                              | https://www.attrs.org/en/stable/changelog.html                       |
 | certifi                   | 2026.2.25 | Mozilla Public License 2.0 (MPL 2.0) | https://github.com/certifi/python-certifi                        |
 | cffi                      | 2.0.0     | MIT                              | https://cffi.readthedocs.io/en/latest/whatsnew.html                  |
-| charset-normalizer        | 3.4.5     | MIT                              | https://github.com/jawah/charset_normalizer                          |
 | click                     | 8.3.1     | BSD-3-Clause                     | https://github.com/pallets/click/                                    |
 | colorama                  | 0.4.6     | BSD License                      | https://github.com/tartley/colorama                                  |
 | cryptography              | 46.0.5    | Apache-2.0 OR BSD-3-Clause       | https://github.com/pyca/cryptography                                 |
@@ -52,29 +51,20 @@ All are installed via pip and not bundled in the repository.
 | jsonschema                | 4.26.0    | MIT                              | https://github.com/python-jsonschema/jsonschema                      |
 | jsonschema-specifications | 2025.9.1  | MIT                              | https://github.com/python-jsonschema/jsonschema-specifications       |
 | mcp                       | 1.26.0    | MIT License                      | https://modelcontextprotocol.io                                      |
-| packaging                 | 26.0      | Apache-2.0 OR BSD-2-Clause       | https://github.com/pypa/packaging                                    |
 | pycparser                 | 3.0       | BSD-3-Clause                     | https://github.com/eliben/pycparser                                  |
 | pydantic                  | 2.12.5    | MIT                              | https://github.com/pydantic/pydantic                                 |
 | pydantic-settings         | 2.13.1    | MIT                              | https://github.com/pydantic/pydantic-settings                        |
 | pydantic_core             | 2.41.5    | MIT                              | https://github.com/pydantic/pydantic-core                            |
-| pyspnego                  | 0.12.1    | MIT                              | https://github.com/jborean93/pyspnego                                |
 | python-dotenv             | 1.2.2     | BSD-3-Clause                     | https://github.com/theskumar/python-dotenv                           |
 | python-multipart          | 0.0.22    | Apache-2.0                       | https://github.com/Kludex/python-multipart                           |
 | pywin32                   | 311       | Python Software Foundation License | https://github.com/mhammond/pywin32                                |
-| pywinrm                   | 0.5.0     | MIT License                      | http://github.com/diyan/pywinrm/                                     |
 | referencing               | 0.37.0    | MIT                              | https://github.com/python-jsonschema/referencing                     |
-| requests                  | 2.32.5    | Apache Software License          | https://requests.readthedocs.io                                      |
-| requests_ntlm             | 1.3.0     | ISC License                      | https://github.com/requests/requests-ntlm                            |
 | rpds-py                   | 0.30.0    | MIT                              | https://github.com/crate-py/rpds                                     |
 | sse-starlette             | 3.3.2     | BSD-3-Clause                     | https://github.com/sysid/sse-starlette                               |
-| sspilib                   | 0.5.0     | MIT                              | https://github.com/jborean93/sspilib                                 |
 | starlette                 | 0.52.1    | BSD-3-Clause                     | https://github.com/Kludex/starlette                                  |
 | typing-inspection         | 0.4.2     | MIT                              | https://github.com/pydantic/typing-inspection                        |
 | typing_extensions         | 4.15.0    | PSF-2.0                          | https://github.com/python/typing_extensions                          |
-| urllib3                   | 2.6.3     | MIT                              | https://github.com/urllib3/urllib3                                   |
 | uvicorn                   | 0.41.0    | BSD-3-Clause                     | https://uvicorn.dev/                                                 |
-| winkerberos               | 0.13.0    | Apache Software License          | https://github.com/mongodb-labs/winkerberos                          |
-| xmltodict                 | 1.0.4     | MIT                              | https://github.com/martinblech/xmltodict                             |
 
 ---
 

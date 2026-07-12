@@ -22,7 +22,7 @@ first and describe what you want to add.
 
 ## How to contribute
 
-1. **Fork** the repository and create a branch from `main`.
+1. **Fork** the repository and create a branch from `master`.
 2. **Make your changes** — one logical change per pull request.
 3. **Run the tests** before submitting:
 ```bash

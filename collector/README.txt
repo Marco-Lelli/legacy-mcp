@@ -82,26 +82,29 @@ REQUIREMENTS
 REQUIRED RIGHTS
 ---------------
 
-  Minimum -- single domain inventory:
-    Domain Admin (or delegated read access to all AD objects in the domain)
+  Minimum -- POLP baseline (recommended):
+    A delegated account (or gMSA) with the minimum set of permissions
+    documented in docs/minimum-permissions.md. The matrix is certified
+    in the field at 21/22 PASS (T18 fails by design on Windows Server
+    2012 R2). Apply it with Set-LegacyMCPPermissions.ps1 and verify
+    with Test-LegacyMCPPermissions.ps1 (both in installer/).
 
-    Note: without Domain Admin, some sections may return incomplete data.
-    Users with unusual ACLs may not be enumerable. NTP and EventLog registry
-    queries require at minimum remote registry access on each DC, which
-    typically requires Domain Admin.
+    Note: NTP and EventLog registry queries and some less common ACLs
+    are covered by the delegated permissions in the matrix; if any
+    delegation is missing, the affected sections return incomplete
+    data rather than failing the whole collection.
 
-  Recommended -- full forest inventory:
-    Enterprise Admin
-
-    Enterprise Admin rights are required to enumerate all domains in the forest
-    and to query forest-wide configuration (forest-level optional features,
-    cross-domain privileged group memberships, trust relationships between
-    domains in different trees).
+  Fallback -- full forest inventory or when delegation is not practical:
+    Domain Admin, or Enterprise Admin for a full forest inventory
+    (multiple domains, forest-level optional features, cross-domain
+    privileged group memberships, trust relationships between domains
+    in different trees). Not the minimum requirement -- use only when
+    the POLP baseline cannot be applied.
 
   gMSA (Group Managed Service Account):
     If running LegacyMCP as a Windows service in Live Mode, a gMSA is the
-    recommended account type. The gMSA must be a member of Domain Admins
-    (or equivalent delegated group) on each domain in scope.
+    recommended account type. The gMSA needs the POLP baseline above (or
+    Domain Admin as fallback) on each domain in scope.
 
 
 PARAMETERS

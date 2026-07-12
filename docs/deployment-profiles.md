@@ -215,7 +215,7 @@ the type of data it contains.
 
 The LegacyMCP Core layer includes the `ad-core` module, covering the full AD
 inventory as defined by Carl Webster's ADDS_Inventory.ps1 — queryable via natural
-language through 38 MCP tools.
+language through 43 MCP tools.
 
 ### Enterprise modules
 
@@ -286,5 +286,5 @@ It is loadable in any offline workspace regardless of the profile that produced 
 | `forest.relation` | per forest | `standalone`, `source`, `dest`, `trusted`, `snapshot` | `standalone` | — |
 | `forest.file` | per forest | file path | — | Required in offline mode |
 | `forest.dc` | per forest | hostname / FQDN | — | Required in live mode |
-| `forest.credentials` | per forest | `gmsa`, `env` | `gmsa` | `env` reads LEGACYMCP_AD_USER / LEGACYMCP_AD_PASSWORD |
+| `forest.credentials` | per forest | `gmsa` | `gmsa` | Live Mode always authenticates as the process identity via Kerberos |
 | `forest.timeout_seconds` | per forest | integer | `30` | WinRM operation timeout |

@@ -29,7 +29,7 @@ LegacyMCP is designed with security as a core principle:
 - The MCP server must never run on a Domain Controller
 - Authentication uses Bearer API key over HTTPS (Profile B)
 - NTLM is explicitly unsupported — Kerberos only for Live Mode
-- API keys are stored using Windows DPAPI
+- API keys are stored using Windows DPAPI-NG (SID-scoped)
 - Live Mode is designed to run with a minimum-privilege delegated account
 
 ## Least Privilege (POLP)
@@ -69,6 +69,6 @@ authentication — not STDIO over the network.
 will point to Microsoft Entra ID, outside LegacyMCP's control surface.
 
 **Recommended action for operators already deployed on Profile B-core**:
-re-run `Setup-LegacyMCPClient.ps1` to refresh `mcp-remote-live.ps1`
-with the pinned mcp-remote version, or manually update the version in
-your existing `mcp-remote-live.ps1`.
+re-run `Setup-LegacyMCP.ps1 -Profile B-core -Role Client -Mode Install`
+to refresh `mcp-remote-live.ps1` with the pinned mcp-remote version, or
+manually update the version in your existing `mcp-remote-live.ps1`.

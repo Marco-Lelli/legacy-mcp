@@ -39,7 +39,7 @@ For step-by-step installation guides see:
 
 | Profile / Role | Elevation |
 |---|---|
-| Profile A (Install, Configure, Uninstall) | Must run as **normal user** — not Administrator |
+| Profile A (Install, Uninstall) | Must run as **normal user** — not Administrator |
 | Profile B Server | Must run as **Administrator** |
 | Profile B Client | Must run as **normal user** — not Administrator |
 
@@ -105,6 +105,7 @@ Use `-Mode Configure` to update settings on an existing installation without rei
 | `-Port <int>` | Change the listening port. Updates registry, `config.yaml`, and Windows Firewall rule. Prompts for confirmation. Service restarts automatically |
 | `-RotateApiKey` | Generate a new API key. The new key is printed once in the console — copy it immediately. All clients must be updated. Service must restart after this change |
 | `-RotateCert` | Generate a new self-signed TLS certificate. DPAPI-NG key blob in registry is updated. Service restarts automatically. Distribute the new `server.crt` to all clients |
+| `-CertFile <path>` / `-CertKeyFile <path>` | Use a corporate CA certificate instead of a self-signed one. Recommended over copying files manually. Must be passed together — see [TLS Certificate Setup](tls-certificate-setup.md) |
 
 ---
 
@@ -114,7 +115,7 @@ Use `-Mode Configure` to update settings on an existing installation without rei
 |------|-------------|
 | `Install` | Full installation: venv, package, config, service (Profile B), Claude Desktop config (Profile A) |
 | `Configure` | Update settings on an existing installation. Supports `-Port`, `-SnapshotPath`, `-RotateApiKey`, `-RotateCert` for Profile B Server |
-| `Repair` | Re-run installation steps that may have failed (venv, service registration) without changing configuration |
+| `Repair` | **Not yet implemented.** Accepted by the parameter's `ValidateSet` but every profile/role branch currently throws "Mode 'Repair' is not yet implemented" — roadmap item, not yet usable |
 | `Uninstall` | Remove the installation. Default behavior preserves configuration. Add `-Purge` for complete removal |
 
 ---

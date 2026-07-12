@@ -20,12 +20,12 @@
 #
 # USAGE:
 #   .\Remove-LegacyMCPPermissions.ps1 -ServiceAccountName svc_legacymcp `
-#       -Domain house.local -DCHostName PUPP.house.local
+#       -Domain contoso.local -DCHostName dc01.contoso.local
 #
 # PARAMETERS:
 #   -ServiceAccountName   SAM account name of the service account (e.g. svc_legacymcp)
-#   -Domain               DNS domain name (e.g. house.local)
-#   -DCHostName           FQDN of the primary DC (e.g. PUPP.house.local).
+#   -Domain               DNS domain name (e.g. contoso.local)
+#   -DCHostName           FQDN of the primary DC (e.g. dc01.contoso.local).
 #                         AD revocations (groups, LDAP ACLs) replicate automatically
 #                         to all DCs in the forest.
 #                         WMI revocations are applied individually to every DC.

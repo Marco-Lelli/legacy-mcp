@@ -23,6 +23,10 @@ config/config-*.yaml
 # Claude Code local settings (only local overrides, not project config)
 .claude/settings.local.json
 
+# Internal session workflow (Italian, references private status/ST-*.md)
+.claude/commands/
+.claude/skills/
+
 # IDE
 .vscode/
 .idea/

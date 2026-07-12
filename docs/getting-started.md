@@ -25,7 +25,12 @@ for a shared server inside the client network.
 - **PowerShell 5.1+** — required to run the collector on any domain-joined Windows machine with RSAT; not needed on the analysis machine itself
 - **Claude Desktop with Pro plan** — required to use MCP tools ([claude.ai](https://claude.ai))
 - **Node.js 18+** — Profile B-core only; required on the consultant machine to run mcp-remote
-- **Domain Admin or Enterprise Admin rights** on the target AD environment — required to run the collector
+
+> **Least privilege option:** the collector and Live Mode can run with a
+> delegated account following the POLP model — minimum required permissions
+> are documented in [minimum-permissions.md](minimum-permissions.md).
+> Certified in the field: 21/22 PASS (T18 fail by design on
+> Windows Server 2012 R2).
 
 ---
 

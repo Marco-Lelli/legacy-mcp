@@ -28,6 +28,9 @@ The following artifacts are signed in each release:
 - `installer/modules/LegacyMCP.Gui.Exec.psm1`
 - `installer/Manage-Workspaces.ps1`
 - `installer/mcp-remote-live.ps1`
+- `installer/Set-LegacyMCPPermissions.ps1`
+- `installer/Remove-LegacyMCPPermissions.ps1`
+- `installer/Test-LegacyMCPPermissions.ps1`
 
 Signing is applied to all PowerShell scripts distributed in release packages.
 The Python server (`src/`) is not signed — it is distributed as source code

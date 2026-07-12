@@ -34,8 +34,9 @@ kept outside the public repository.
 - Authenticode signature verification before execution — ensuring the
   script has not been modified after signing
 - Behaviour with insufficient permissions — graceful degradation when the
-  running account lacks Domain Admin or remote registry rights; no
-  credential exposure in error output
+  running account lacks the POLP baseline delegations (see
+  [minimum-permissions.md](minimum-permissions.md)) or remote registry
+  rights; no credential exposure in error output
 
 ### JSON Files
 

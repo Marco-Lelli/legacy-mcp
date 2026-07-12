@@ -12,7 +12,7 @@ workspace:
       relation: standalone
       module: ad-core
       dc: dc01.contoso.local      # target Domain Controller
-      credentials: gmsa           # gmsa | env (LEGACYMCP_AD_USER / LEGACYMCP_AD_PASSWORD)
+      credentials: gmsa           # gmsa -- Live Mode always authenticates as the process identity via Kerberos
 
     # Per-forest override: module or snapshot that does not support live
     # - name: contoso.local-pki

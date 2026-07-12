@@ -295,8 +295,8 @@ on server restart.
 
 ### Active Directory authentication
 - Preferred: gMSA (Group Managed Service Account)
-- Alternative: domain account with explicit credentials via environment
-  variables `LEGACYMCP_AD_USER` / `LEGACYMCP_AD_PASSWORD`
+- Live Mode authenticates as the process identity via Kerberos —
+  no explicit credentials are read by the server
 
 ### Windows Service
 - LegacyMCP can be installed as a Windows service via the installer

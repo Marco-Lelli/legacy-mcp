@@ -158,23 +158,28 @@ Claude Desktop reads MCP server definitions from a JSON config file.
 
 > Use the path that matches how Claude Desktop was installed on your machine.
 
-The installer writes `claude_desktop_config.json` automatically at the end of
-installation. If it cannot write the file (e.g. Claude Desktop is running),
-it prints the entry to add manually:
+The installer writes the complete `claude_desktop_config.json` entry
+automatically at the end of installation — including the explicit
+`--config` argument pointing at your `config.yaml` — so no manual step is
+required in the normal case. If it cannot write the file (e.g. Claude
+Desktop is running), it prints the entry to add manually:
 
 ```json
 {
   "mcpServers": {
     "legacymcp": {
       "command": "C:\\Users\\<username>\\AppData\\Local\\LegacyMCP\\.venv\\Scripts\\python.exe",
-      "args": ["-m", "legacy_mcp.server"]
+      "args": ["-m", "legacy_mcp.server", "--config", "C:\\Users\\<username>\\AppData\\Local\\LegacyMCP\\config\\config.yaml"]
     }
   }
 }
 ```
 
-Replace `<username>` with your Windows username, or use the exact path printed
-by the installer. Use double backslashes in JSON.
+Replace `<username>` with your Windows username, or use the exact paths printed
+by the installer. Use double backslashes in JSON. The `--config` argument is
+required — the server reads its configuration only from the path it is given
+or from the machine-wide (HKLM) registry, neither of which applies on a
+freshly installed Profile A machine.
 
 **Restart Claude Desktop** after saving the file.
 

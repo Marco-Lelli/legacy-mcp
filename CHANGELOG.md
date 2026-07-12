@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Security
+- `/register` and `/authorize` OAuth stub endpoints now require Bearer
+  validation like every other endpoint; previously an unauthenticated
+  network client could complete dynamic registration or PKCE
+  authorization and receive the real API key as `access_token` (SEC-H1)
+- Server now fails safe when the API key is present in the registry but
+  cannot be DPAPI-NG decrypted (module missing, timeout, wrong SID
+  scope): logs to EventLog (event ID 3000) and refuses to start,
+  instead of starting without authentication (SEC-H2)
+- `dc_fqdn` is now validated (RFC 1123 hostname/FQDN pattern) before
+  being interpolated into a PowerShell `Invoke-Command` string in Live
+  Mode (SEC-M1)
+- `LEGACYMCP_*` environment variable overrides are now restricted to an
+  explicit allowlist (`profile`, `transport`, `port`, `host`); any other
+  `LEGACYMCP_`-prefixed variable is silently ignored (SEC-M2)
+- DPAPI-NG blob is now passed to the PowerShell decryption subprocess
+  via stdin instead of an environment variable (SEC-L1)
+- OAuth nonce store is now swept of expired entries on emission as well
+  as on verification, bounding growth deterministically (SEC-L2)
+
+### Fixed
+- Profile A Claude Desktop entry now passes `--config` explicitly with
+  the absolute path to `config.yaml`; without it, a genuinely clean
+  Profile A install (no residual HKLM key from a prior version) failed
+  to start with "Config file not found" (fix #121)
+
+### Tests
+- Stale-account test fixtures made time-relative instead of hardcoded
+  dates (CQ-1)
+
 ## [0.2.4] - 2026-06-07 "From Upset to Setup"
 
 ### Added

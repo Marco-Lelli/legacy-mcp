@@ -72,6 +72,8 @@ SQLite is never exposed to the caller — it is an internal implementation detai
 src/legacy_mcp/
 ├── server.py           MCP server entrypoint
 ├── config.py           YAML config loader + validation
+├── config_registry.py  Windows registry read/write — install config,
+│                        DPAPI-NG decryption of the API key (Profile B)
 ├── auth.py             ASGI middleware — API key validation (Profile B)
 ├── oauth.py            OAuth 2.0 stub — discovery, PKCE, client_credentials
 ├── workspace/          Scope and connector management
