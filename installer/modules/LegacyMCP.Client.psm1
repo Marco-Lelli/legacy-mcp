@@ -43,7 +43,14 @@ function Set-LMClaudeConfigProfileA {
         [Parameter(Mandatory)]
         [string]$PythonExe,
         [Parameter(Mandatory)]
-        [string]$ClaudeConfigPath
+        [string]$ClaudeConfigPath,
+        # Fix #121: absolute path to config.yaml, passed as --config to the
+        # server. The Python server reads only HKLM; Profile A writes HKCU,
+        # so without an explicit --config a clean install cannot resolve
+        # its configuration. Same value the installer writes to
+        # HKCU\SOFTWARE\LegacyMCP\ConfigPath -- single source of truth.
+        [Parameter(Mandatory)]
+        [string]$ConfigPath
     )
 
     $configDir = Split-Path $ClaudeConfigPath -Parent
@@ -80,7 +87,7 @@ function Set-LMClaudeConfigProfileA {
 
     $profileAEntry = [ordered]@{
         command = $PythonExe
-        args    = @('-m', 'legacy_mcp.server')
+        args    = @('-m', 'legacy_mcp.server', '--config', $ConfigPath)
     }
 
     $mcpServers = $config.PSObject.Properties['mcpServers'].Value
@@ -101,7 +108,9 @@ function Set-LMClaudeConfigProfileA {
         # P4: fallback to printed template if write fails
         Write-LMFail "Failed to write claude_desktop_config.json: $_"
         Write-LMInfo 'Add this entry manually under "mcpServers" in claude_desktop_config.json:'
-        Write-LMInfo "  ""legacymcp"": { ""command"": ""$PythonExe"", ""args"": [""-m"", ""legacy_mcp.server""] }"
+        $escapedPython = $PythonExe -replace '\\', '\\'
+        $escapedConfig = $ConfigPath -replace '\\', '\\'
+        Write-LMInfo "  ""legacymcp"": { ""command"": ""$escapedPython"", ""args"": [""-m"", ""legacy_mcp.server"", ""--config"", ""$escapedConfig""] }"
     }
 }
 

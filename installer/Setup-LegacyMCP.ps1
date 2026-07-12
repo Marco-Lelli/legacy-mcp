@@ -273,11 +273,16 @@ if ($Profile -eq 'A') {
         Write-LMStep 'Step 6 -- Claude Desktop configuration'
         $claudeConfigPath = Get-LMClaudeConfigPath
         try {
-            Set-LMClaudeConfigProfileA -PythonExe $venvPython -ClaudeConfigPath $claudeConfigPath
+            # Fix #121: pass --config explicitly. The server reads only HKLM,
+            # Profile A registry lives in HKCU -- without --config a clean
+            # install cannot locate config.yaml.
+            Set-LMClaudeConfigProfileA -PythonExe $venvPython -ClaudeConfigPath $claudeConfigPath -ConfigPath $ConfigPath
         } catch {
             Write-LMWarn "Could not write claude_desktop_config.json: $_"
             Write-LMInfo "Add this entry manually under ""mcpServers"" in: $claudeConfigPath"
-            Write-LMInfo "  ""legacymcp"": { ""command"": ""$venvPython"", ""args"": [""-m"", ""legacy_mcp.server""] }"
+            $escapedPython = $venvPython -replace '\\', '\\'
+            $escapedConfig = $ConfigPath -replace '\\', '\\'
+            Write-LMInfo "  ""legacymcp"": { ""command"": ""$escapedPython"", ""args"": [""-m"", ""legacy_mcp.server"", ""--config"", ""$escapedConfig""] }"
         }
 
         Write-LMStep 'Step 7 -- Registry'

@@ -489,7 +489,9 @@ function Start-LMExecution {
             Write-LMStep 'Step 6 -- Claude Desktop configuration'
             $claudeConfigPath = Get-LMClaudeConfigPath
             try {
-                Set-LMClaudeConfigProfileA -PythonExe $venvPython -ClaudeConfigPath $claudeConfigPath
+                # Fix #121: pass --config explicitly (server reads only HKLM,
+                # Profile A registry lives in HKCU).
+                Set-LMClaudeConfigProfileA -PythonExe $venvPython -ClaudeConfigPath $claudeConfigPath -ConfigPath $ConfigPath
                 Write-LMOK "Claude Desktop config updated: $claudeConfigPath"
             } catch {
                 Write-LMWarn "Could not write claude_desktop_config.json: $_"
