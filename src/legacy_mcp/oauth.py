@@ -39,6 +39,13 @@ _NONCE_STORE: dict[str, float] = {}
 
 def _make_derived_token(api_key: str) -> str:
     """Generate a single-use derived token. Never exposes api_key."""
+    # SEC-L2: sweep expired nonces on issue as well as on verify, so tokens
+    # that are issued but never verified cannot accumulate indefinitely.
+    now = time.time()
+    expired = [n for n, exp in _NONCE_STORE.items() if exp < now]
+    for n in expired:
+        del _NONCE_STORE[n]
+
     nonce = secrets.token_hex(16)
     expiry = int(time.time()) + _TOKEN_TTL_SECONDS
     _NONCE_STORE[nonce] = float(expiry)

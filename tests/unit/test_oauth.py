@@ -441,6 +441,33 @@ def test_derived_token_tampered():
     assert not _verify_derived_token(tampered, _API_KEY)
 
 
+def test_nonce_sweep_on_issue():
+    """SEC-L2: issuing a new token sweeps expired nonces from _NONCE_STORE
+    without requiring any intermediate verification."""
+    _NONCE_STORE.clear()
+    first = _make_derived_token(_API_KEY)
+    first_nonce = first.split("|")[1]
+    assert first_nonce in _NONCE_STORE
+
+    _NONCE_STORE[first_nonce] = 0.0  # force-expire: Unix epoch is in the past
+
+    second = _make_derived_token(_API_KEY)
+    second_nonce = second.split("|")[1]
+
+    assert first_nonce not in _NONCE_STORE   # swept during issue of `second`
+    assert second_nonce in _NONCE_STORE      # fresh nonce stored normally
+    assert _verify_derived_token(second, _API_KEY)  # behaviour unchanged
+
+
+def test_nonce_sweep_on_issue_keeps_valid_nonces():
+    """SEC-L2: the issue-time sweep removes only expired nonces -- live ones
+    issued earlier remain verifiable."""
+    _NONCE_STORE.clear()
+    first = _make_derived_token(_API_KEY)
+    _make_derived_token(_API_KEY)  # triggers a sweep with `first` still valid
+    assert _verify_derived_token(first, _API_KEY)
+
+
 @pytest.mark.anyio
 async def test_pending_codes_cap():
     """After 100 pending codes exist, adding a new one evicts 10 oldest entries."""
