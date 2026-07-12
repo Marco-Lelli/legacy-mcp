@@ -355,6 +355,40 @@ def test_apikey_decrypted_via_subprocess():
     assert result["api_key"] == "my-secret-key"
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
+def test_apikey_blob_passed_via_stdin_not_env():
+    """SEC-L1: the encrypted blob reaches PowerShell as subprocess stdin, and
+    LEGACYMCP_BLOB is never present in os.environ -- not even while the
+    subprocess is running."""
+    import importlib
+    import os
+    import legacy_mcp.config_registry as m
+
+    values = {"ApiKey": ("AQIDBA==", 1)}
+    mock_winreg = _make_winreg_mock(values=values)
+    captured: dict = {}
+
+    def _fake_run(*args, **kwargs):
+        captured["cmd"] = args[0] if args else kwargs.get("args", [])
+        captured["kwargs"] = kwargs
+        captured["env_during_call"] = "LEGACYMCP_BLOB" in os.environ
+        return _make_proc(0, b"my-secret-key\n")
+
+    with patch.dict("sys.modules", {"winreg": mock_winreg}):
+        importlib.reload(m)
+        with patch.object(m.subprocess, "run", side_effect=_fake_run):
+            result = m.read_registry_config()
+
+    assert result["api_key"] == "my-secret-key"
+    assert captured["kwargs"]["input"] == b"AQIDBA=="
+    assert captured["env_during_call"] is False
+    assert "LEGACYMCP_BLOB" not in os.environ
+    # The PS command must read from stdin, not from an environment variable.
+    ps_cmd = " ".join(str(part) for part in captured["cmd"])
+    assert "$env:LEGACYMCP_BLOB" not in ps_cmd
+    assert "[Console]::In.ReadToEnd()" in ps_cmd
+
+
 # SEC-H2 fail-safe: when an ApiKey is present in the registry but cannot be
 # decrypted, read_registry_config must raise ApiKeyDecryptionError so the server
 # refuses to start, instead of silently returning without api_key (fail-open).

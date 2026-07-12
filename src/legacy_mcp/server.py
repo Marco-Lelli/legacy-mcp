@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -137,22 +136,22 @@ def _get_key_password() -> bytes | None:
     logger.debug("_get_key_password: blob_len=%d", len(blob))
 
     _ps_exe = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+    # SEC-L1: the blob is passed to PowerShell via stdin, never via an
+    # environment variable, so it is not visible to child processes or
+    # environment enumeration.
     ps_cmd = (
         "Import-Module SecretManagement.DpapiNG -ErrorAction Stop; "
-        "$blob = $env:LEGACYMCP_BLOB; "
+        "$blob = [Console]::In.ReadToEnd().Trim(); "
         "$secure = ConvertFrom-DpapiNGSecret -InputObject $blob; "
         "[Runtime.InteropServices.Marshal]::PtrToStringAuto("
         "[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))"
     )
-    os.environ["LEGACYMCP_BLOB"] = blob
-    try:
-        result = subprocess.run(
-            [_ps_exe, "-NoProfile", "-NonInteractive",
-             "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
-            capture_output=True, text=True, timeout=10,
-        )
-    finally:
-        os.environ.pop("LEGACYMCP_BLOB", None)
+    result = subprocess.run(
+        [_ps_exe, "-NoProfile", "-NonInteractive",
+         "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+        input=blob,
+        capture_output=True, text=True, timeout=10,
+    )
 
     if result.stderr.strip():
         logger.debug("_get_key_password: subprocess stderr=%s", result.stderr.strip())

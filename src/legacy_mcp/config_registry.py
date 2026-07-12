@@ -10,7 +10,6 @@ Priority applied by the caller: CLI > registry > default.
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 
@@ -108,22 +107,23 @@ def read_registry_config() -> dict:
             if encrypted_b64:
                 # SEC-H2 fix: an ApiKey is configured, so decryption failure must
                 # be fatal (fail-safe), not a silent fall-through to no-auth.
-                # Collect the outcome here and raise after the finally so the
-                # env-var cleanup always runs first.
+                # SEC-L1: the blob is passed to PowerShell via stdin, never via
+                # an environment variable, so it is not visible to child
+                # processes or environment enumeration.
                 decryption_error: str | None = None
                 api_key = ""
                 ps_cmd = (
                     "Import-Module SecretManagement.DpapiNG -ErrorAction Stop; "
-                    "$blob = $env:LEGACYMCP_BLOB; "
+                    "$blob = [Console]::In.ReadToEnd().Trim(); "
                     "$secure = ConvertFrom-DpapiNGSecret -InputObject $blob; "
                     "[Runtime.InteropServices.Marshal]::PtrToStringAuto("
                     "[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))"
                 )
-                os.environ['LEGACYMCP_BLOB'] = encrypted_b64
                 try:
                     proc = subprocess.run(
                         [_PS_EXE, "-NoProfile", "-NonInteractive",
                          "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+                        input=encrypted_b64.encode("utf-8"),
                         capture_output=True,
                         timeout=10,
                         check=False,
@@ -141,8 +141,6 @@ def read_registry_config() -> dict:
                     decryption_error = "decryption timed out after 10s"
                 except Exception as exc:  # noqa: BLE001
                     decryption_error = f"{type(exc).__name__}: {exc}"
-                finally:
-                    os.environ.pop('LEGACYMCP_BLOB', None)
 
                 if decryption_error is not None:
                     raise ApiKeyDecryptionError(

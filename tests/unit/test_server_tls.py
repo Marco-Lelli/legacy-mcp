@@ -176,6 +176,39 @@ def test_get_key_password_present_returns_bytes():
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
+def test_get_key_password_blob_passed_via_stdin_not_env():
+    """SEC-L1: KeyPasswordBlob reaches PowerShell as subprocess stdin, and
+    LEGACYMCP_BLOB is never present in os.environ -- not even while the
+    subprocess is running."""
+    import importlib
+    import os
+    import legacy_mcp.server as srv
+
+    mock_winreg = _make_winreg_mock(blob="AQIDBAencryptedblob==")
+    captured: dict = {}
+
+    def _fake_run(*args, **kwargs):
+        captured["cmd"] = args[0] if args else kwargs.get("args", [])
+        captured["kwargs"] = kwargs
+        captured["env_during_call"] = "LEGACYMCP_BLOB" in os.environ
+        return _make_proc(0, "my-key-password\n")
+
+    with patch.dict("sys.modules", {"winreg": mock_winreg}):
+        importlib.reload(srv)
+        with patch("subprocess.run", side_effect=_fake_run):
+            result = srv._get_key_password()
+
+    assert result == b"my-key-password"
+    assert captured["kwargs"]["input"] == "AQIDBAencryptedblob=="
+    assert captured["env_during_call"] is False
+    assert "LEGACYMCP_BLOB" not in os.environ
+    # The PS command must read from stdin, not from an environment variable.
+    ps_cmd = " ".join(str(part) for part in captured["cmd"])
+    assert "$env:LEGACYMCP_BLOB" not in ps_cmd
+    assert "[Console]::In.ReadToEnd()" in ps_cmd
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
 def test_get_key_password_subprocess_fails_raises():
     """Non-zero returncode from PowerShell raises RuntimeError."""
     import importlib
