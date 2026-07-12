@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -15,6 +17,19 @@ from legacy_mcp.tools import computers as computers_module
 
 FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "contoso-sample.json"
 
+# stale_only checks LastLogonDate against "now" at test execution time, so the
+# fixture's stale/non-stale machines must be dated relative to now rather than
+# to fixed calendar dates (see CQ-1, audit-security-efficiency-principles).
+_STALE_LAST_LOGON = (datetime.now(timezone.utc) - timedelta(days=120)).strftime("%Y-%m-%dT%H:%M:%S")
+_RECENT_LAST_LOGON = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
+
+_STALE_ONLY_OVERRIDES = {
+    "WS-LONDON-001": _STALE_LAST_LOGON,
+    "WS-OLD-001": _STALE_LAST_LOGON,
+    "WS-MILAN-001": _RECENT_LAST_LOGON,
+    "SRV-APPSERVER01": _RECENT_LAST_LOGON,
+}
+
 
 class _MockMCP:
     """Minimal FastMCP stand-in that captures registered tool functions."""
@@ -27,11 +42,20 @@ class _MockMCP:
 
 
 @pytest.fixture(scope="module")
-def workspace() -> Workspace:
+def workspace(tmp_path_factory: pytest.TempPathFactory) -> Workspace:
+    data = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    for computer in data.get("computers", []):
+        override = _STALE_ONLY_OVERRIDES.get(computer.get("Name"))
+        if override is not None:
+            computer["LastLogonDate"] = override
+
+    patched_path = tmp_path_factory.mktemp("fixtures") / "contoso-sample.json"
+    patched_path.write_text(json.dumps(data), encoding="utf-8")
+
     forest = ForestConfig(
         name="contoso.local",
         relation=ForestRelation.STANDALONE,
-        file=str(FIXTURE_PATH),
+        file=str(patched_path),
     )
     ws = Workspace(mode=WorkspaceMode.OFFLINE, forests=[forest])
     ws._init_connectors()
@@ -61,9 +85,8 @@ class TestGetComputerSummary:
         assert summary["disabled"] == 0
 
     def test_stale_at_least_two(self, tools: _MockMCP) -> None:
-        # WS-LONDON-001 (2025-11-20) and WS-OLD-001 (2025-08-15) are always
-        # stale regardless of when this test runs — both are well over 90 days
-        # in the past relative to any plausible test execution date.
+        # WS-LONDON-001 and WS-OLD-001 are patched to 120 days before "now"
+        # at test run time (see _STALE_ONLY_OVERRIDES) -- always over 90 days.
         summary = tools.get_computer_summary()
         assert summary["stale_90d"] >= 2
 
@@ -150,7 +173,8 @@ class TestGetComputersStaleOnly:
         assert "WS-OLD-001" in names
 
     def test_stale_only_excludes_recent_machines(self, tools: _MockMCP) -> None:
-        # Machines that logged on in early March 2026 are not stale yet.
+        # WS-MILAN-001 and SRV-APPSERVER01 are patched to 30 days before
+        # "now" at test run time -- not stale yet.
         result = tools.get_computers(stale_only=True)
         names = [c["Name"] for c in result]
         assert "WS-MILAN-001" not in names

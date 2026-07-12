@@ -3,6 +3,8 @@ and get_user_by_name MCP tools."""
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,19 @@ from legacy_mcp.tools.users import _get_primary_group_id, _is_true
 
 FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "contoso-sample.json"
 
+# stale_only checks LastLogonDate against "now" at test execution time, so the
+# fixture's stale/non-stale accounts must be dated relative to now rather than
+# to fixed calendar dates (see CQ-1, audit-security-efficiency-principles).
+_STALE_LAST_LOGON = (datetime.now(timezone.utc) - timedelta(days=120)).strftime("%Y-%m-%dT%H:%M:%S")
+_RECENT_LAST_LOGON = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
+
+_STALE_ONLY_OVERRIDES = {
+    "r.greco": _STALE_LAST_LOGON,
+    "f.esposito": _STALE_LAST_LOGON,
+    "a.rossi": _RECENT_LAST_LOGON,
+    "adm.rossi": _RECENT_LAST_LOGON,
+}
+
 
 class _MockMCP:
     """Minimal FastMCP stand-in that captures registered tool functions."""
@@ -29,11 +44,20 @@ class _MockMCP:
 
 
 @pytest.fixture(scope="module")
-def workspace() -> Workspace:
+def workspace(tmp_path_factory: pytest.TempPathFactory) -> Workspace:
+    data = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    for user in data.get("users", []):
+        override = _STALE_ONLY_OVERRIDES.get(user.get("SamAccountName"))
+        if override is not None:
+            user["LastLogonDate"] = override
+
+    patched_path = tmp_path_factory.mktemp("fixtures") / "contoso-sample.json"
+    patched_path.write_text(json.dumps(data), encoding="utf-8")
+
     forest = ForestConfig(
         name="contoso.local",
         relation=ForestRelation.STANDALONE,
-        file=str(FIXTURE_PATH),
+        file=str(patched_path),
     )
     ws = Workspace(mode=WorkspaceMode.OFFLINE, forests=[forest])
     ws._init_connectors()
@@ -172,15 +196,16 @@ class TestGetUsersStaleOnly:
         assert "krbtgt" in names
 
     def test_stale_only_contains_long_inactive_accounts(self, tools: _MockMCP) -> None:
-        # r.greco (2025-09-30) and f.esposito (2025-11-15) are well over
-        # 90 days inactive from any plausible test execution date.
+        # r.greco and f.esposito are patched to 120 days before "now" at
+        # test run time (see _STALE_ONLY_OVERRIDES) -- always over 90 days.
         result = tools.get_users(stale_only=True)
         names = [u["SamAccountName"] for u in result["items"]]
         assert "r.greco" in names
         assert "f.esposito" in names
 
     def test_stale_only_excludes_recently_active_accounts(self, tools: _MockMCP) -> None:
-        # Users who logged on in early March 2026 are not stale yet.
+        # a.rossi and adm.rossi are patched to 30 days before "now" at
+        # test run time -- not stale yet.
         result = tools.get_users(stale_only=True)
         names = [u["SamAccountName"] for u in result["items"]]
         assert "a.rossi" not in names
