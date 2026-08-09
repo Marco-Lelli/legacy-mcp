@@ -3,7 +3,7 @@
 
 <#
 .SYNOPSIS
-    LegacyMCP Offline Data Collector v1.6.5 - exports AD data to a structured JSON file.
+    LegacyMCP Offline Data Collector v1.7.0 - exports AD data to a structured JSON file.
 
 .DESCRIPTION
     Collects Active Directory data across all sections covered by LegacyMCP Core
@@ -11,8 +11,17 @@
     Read-only. No changes are made to the AD environment.
 
     The output JSON includes a _metadata block as the first key, containing
-    module, version, forest, collected_at (UTC ISO 8601), collector_version,
-    collected_by, and collection_summary (section counts and log file path).
+    module, version, forest, domain (DNS root of the domain hosting the
+    target DC -- see -Server, distinct from forest in cross-forest trust
+    scenarios), collected_at (UTC ISO 8601), collector_version, collected_by,
+    elevated (whether the PowerShell session ran elevated; null when it could
+    not be determined), and collection_summary (section counts and log file
+    path).
+
+    Run PowerShell as Administrator. In some AD environments a non-elevated
+    session cannot read userAccountControl, which silently empties Enabled,
+    PasswordNeverExpires and the delegation flags even when the account has
+    adequate AD permissions.
     This block is required by LegacyMCP for temporal comparisons and audit
     tracing in Profile B-enterprise.
 
@@ -68,6 +77,12 @@ param(
 )
 
 # Import collector modules
+# Logging.psm1 first: every other module may call Write-SafeCollectorLog.
+# Membership.psm1 next: Groups.psm1 and Users.psm1 call its helpers.
+$modulePath = Join-Path $PSScriptRoot "modules\Logging.psm1"
+Import-Module $modulePath -Force
+$modulePath = Join-Path $PSScriptRoot "modules\Membership.psm1"
+Import-Module $modulePath -Force
 $modulePath = Join-Path $PSScriptRoot "modules\DomainControllers.psm1"
 Import-Module $modulePath -Force
 $modulePath = Join-Path $PSScriptRoot "modules\Forest.psm1"
@@ -117,7 +132,14 @@ if ($Credential) { $commonParams["Credential"] = $Credential }
 # stream. Increments session counters for INFO, WARN, and ERROR levels.
 # VERBOSE entries are written to file only when -Verbose is active.
 # ---------------------------------------------------------------------------
-function Write-CollectorLog {
+# Declared global on purpose. Functions inside the .psm1 modules resolve
+# unqualified commands in their module scope and then in the GLOBAL scope,
+# never in this script's scope. Without "global:", every module-side call
+# fails with CommandNotFoundException whenever the collector is launched as
+# ".\Collect-ADData.ps1" from an open session rather than with -File --
+# which is how it is actually launched in the field. That cost the entire
+# Users section on AUSL Romagna (2026-08-06).
+function global:Write-CollectorLog {
     param(
         [string]$Level,
         [string]$Section,
@@ -154,6 +176,31 @@ function Write-CollectorLog {
 }
 
 # ---------------------------------------------------------------------------
+# Test-CollectorElevation
+# Returns $true (elevated), $false (not elevated), or $null (undeterminable).
+#
+# Deliberate copy of Test-LMElevation (installer/modules/LegacyMCP.Common.psm1,
+# same three lines, same API). The collector ships as a standalone artifact and
+# must keep working when distributed without the installer modules, so it
+# cannot import them. Two copies across two independent deliverables: if the
+# check ever changes, both must change.
+#
+# Returns $null rather than throwing when the .NET security types are not
+# available: a diagnostic hint must never abort a collection (P10). $null is
+# distinct from $false, so "cannot tell" is never reported as "not elevated"
+# -- note that in PowerShell ($null -eq $false) is False, which is what keeps
+# the two branches apart.
+# ---------------------------------------------------------------------------
+function Test-CollectorElevation {
+    try {
+        $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+        return [bool]$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        return $null
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Invoke-Section
 # Executes a data-collection scriptblock with timing and error handling.
 # On success: logs VERBOSE with duration, returns the result.
@@ -178,22 +225,50 @@ function Invoke-Section([string]$Name, [scriptblock]$Block) {
 
 # ---------------------------------------------------------------------------
 # Resolve output paths
-# A lightweight Get-ADForest call provides the forest name before collection
-# starts so that OutputPath and LogPath can be resolved for the session header.
-# The full Forest section runs again during collection -- this is acceptable.
+# A lightweight Get-ADDomain call identifies the collection target (domain and
+# its forest) before collection starts, so that OutputPath and LogPath can be
+# resolved for the session header. The resolved forest name is then handed to
+# the Forest and FSMO sections, so they cannot disagree with the metadata.
 # ---------------------------------------------------------------------------
 $startTime = Get-Date
 
-$forestNameEarly = try { (Get-ADForest @commonParams).Name } catch { "unknown" }
 $dcNameEarly = if ($Server) {
     $Server
 } else {
     try { (Get-ADDomainController -Discover @commonParams).HostName } catch { "auto" }
 }
 
+# Resolve the collection TARGET -- both the domain and the forest it belongs to.
+#
+# Get-ADForest without -Identity binds to its "Current" parameter set, which
+# returns the forest of the LocalComputer/LoggedOnUser and ignores -Server for
+# the purpose of choosing WHICH forest to describe. In a cross-forest
+# collection that is the wrong forest: the field JSON reported
+# "auslromagna.it" (the caller) while collecting "ausl.fo.it" (the target).
+#
+# Get-ADDomain honours -Server and exposes .Forest, so the target forest is
+# derived from the target domain instead of from the caller's identity.
+#
+# No fallback here by design (P4). The previous $env:COMPUTERNAME fallback was
+# dead code: the collector runs on a member server or workstation (P11), never
+# on a DC, so Get-ADDomain -Server <that machine> could never succeed. Failing
+# explicitly beats naming the output file after the wrong domain.
+$collectDomainEarly = $null
+$collectForestEarly = $null
+try {
+    $targetDomain       = Get-ADDomain @commonParams
+    $collectDomainEarly = $targetDomain.DNSRoot
+    $collectForestEarly = $targetDomain.Forest
+} catch {
+    $targetDesc = if ($Server) { "-Server $Server" } else { "the caller's own domain (no -Server given)" }
+    throw ("Unable to determine the collection target domain from $targetDesc : $_" +
+           " -- cannot name the output file or the metadata reliably." +
+           " Check -Server, connectivity to the DC, and the credentials in use.")
+}
+
 if (-not $OutputPath) {
     $OutputPath = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) `
-        "$($forestNameEarly)_ad-data.json"
+        "$($collectDomainEarly)_ad-data.json"
 }
 $OutputPath     = [System.IO.Path]::GetFullPath($OutputPath)
 $script:LogPath = [System.IO.Path]::ChangeExtension($OutputPath, ".log")
@@ -204,14 +279,58 @@ $script:LogPath = [System.IO.Path]::ChangeExtension($OutputPath, ".log")
 $sep = "=" * 80
 @(
     $sep,
-    "LegacyMCP Collector v1.6.5 -- collection started",
-    "Forest : $forestNameEarly",
+    "LegacyMCP Collector v1.7.0 -- collection started",
+    "Forest : $collectForestEarly",
+    "Domain : $collectDomainEarly",
     "DC     : $dcNameEarly",
     "Output : $OutputPath",
     "Log    : $($script:LogPath)",
     "Start  : $(Get-Date $startTime -Format 'yyyy-MM-dd HH:mm:ss')",
     $sep
 ) | Out-File -FilePath $script:LogPath -Encoding UTF8
+
+Write-CollectorLog -Level INFO -Section "Startup" -Message "Forest (of target domain): $collectForestEarly"
+Write-CollectorLog -Level INFO -Section "Startup" -Message "Domain (target DC): $collectDomainEarly"
+
+# ---------------------------------------------------------------------------
+# Elevation pre-flight (task #137)
+# Field-confirmed on two independent tools (this collector and Carl Webster's
+# script): a non-elevated PowerShell session can prevent reading
+# userAccountControl in some AD environments, even with adequate AD rights.
+# The result is silent data loss, so warn up front instead of leaving the
+# operator to discover it hours later from an aggregated warning in the log.
+#
+# Warning only, never blocking: the other sections are unaffected and a
+# non-elevated collection is still useful.
+#
+# Emitted here, after $script:LogPath exists, so the warning reaches the log
+# file as well as the console. The two-call pattern (Write-Host banner +
+# Write-CollectorLog) matches the one already used for the output-file rename
+# warning further down.
+# ---------------------------------------------------------------------------
+$isElevated = Test-CollectorElevation
+
+if ($isElevated -eq $false) {
+    $sepWarn = "-" * 80
+    Write-Host ""
+    Write-Host $sepWarn -ForegroundColor Yellow
+    Write-Host "  [WARN] This PowerShell session is NOT elevated." -ForegroundColor Yellow
+    Write-Host "         In some AD environments this prevents reading userAccountControl" -ForegroundColor Yellow
+    Write-Host "         and the properties derived from it (Enabled, PasswordNeverExpires," -ForegroundColor Yellow
+    Write-Host "         TrustedForDelegation...), causing silent data loss even when the" -ForegroundColor Yellow
+    Write-Host "         account has adequate AD permissions." -ForegroundColor Yellow
+    Write-Host "         If the collection reports many null values on those fields, re-run" -ForegroundColor Yellow
+    Write-Host "         PowerShell as Administrator." -ForegroundColor Yellow
+    Write-Host $sepWarn -ForegroundColor Yellow
+    Write-Host ""
+    Write-CollectorLog -Level WARN -Section "Startup" `
+        -Message "Session NOT elevated -- userAccountControl and derived properties (Enabled, PasswordNeverExpires, TrustedForDelegation) may be unreadable in some AD environments. Re-run as Administrator if those fields come back null."
+} elseif ($null -eq $isElevated) {
+    Write-CollectorLog -Level WARN -Section "Startup" `
+        -Message "Could not determine whether the session is elevated -- continuing. If userAccountControl comes back null, try re-running as Administrator."
+} else {
+    Write-CollectorLog -Level INFO -Section "Startup" -Message "Session elevated: yes"
+}
 
 $data = [ordered]@{}
 
@@ -221,7 +340,7 @@ $data = [ordered]@{}
 
 # --- Forest ---
 $data["forest"] = Invoke-Section "Forest" {
-    Get-ForestData -CommonParams $commonParams
+    Get-ForestData -CommonParams $commonParams -ForestName $collectForestEarly
 }
 if ($null -ne $data["forest"]) {
     Write-CollectorLog -Level INFO -Section "Forest" -Message "collected: $($data['forest'].Name)"
@@ -280,7 +399,7 @@ if ($null -ne $data["dcs"]) {
 
 # --- FSMO Roles ---
 $data["fsmo_roles"] = Invoke-Section "FSMO Roles" {
-    $fsmoForest = Get-FSMOForestData -CommonParams $commonParams
+    $fsmoForest = Get-FSMOForestData -CommonParams $commonParams -ForestName $collectForestEarly
     $fsmoDomain = Get-FSMODomainData -CommonParams $commonParams
     $fsmoForest + $fsmoDomain
 }
@@ -551,19 +670,27 @@ try {
 
 # Build metadata and export object.
 try {
+    # Both sources are now anchored to the target domain: the forest section
+    # resolves via Get-ADDomain(.Forest) + Get-ADForest -Identity, and the
+    # early value comes from the same place. They must agree.
     $forestName = if ($data["forest"] -and $data["forest"].Name) {
         $data["forest"].Name
     } else {
-        $forestNameEarly
+        $collectForestEarly
     }
 
     $metadata = [ordered]@{
         module             = "ad-core"
         version            = "1.0"
         forest             = $forestName
+        domain             = $collectDomainEarly
         collected_at       = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        collector_version  = "1.6.5"
+        collector_version  = "1.7.0"
         collected_by       = "$env:USERDOMAIN\$env:USERNAME"
+        # true / false / null (undeterminable). Kept so that a collection with
+        # many null userAccountControl values can still be explained months
+        # later without guessing (task #137).
+        elevated           = $isElevated
         collection_summary = [ordered]@{
             sections_ok    = $script:sectionsOK
             sections_warn  = $script:sectionsWarn

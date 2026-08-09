@@ -1,11 +1,33 @@
 # Forest.psm1 — AD Forest data collection helpers
 # Called by Collect-ADData.ps1
+#
+# Get-ADForest must ALWAYS be called with -Identity here. Without it the cmdlet
+# binds to its "Current" parameter set and returns the forest of the
+# LocalComputer/LoggedOnUser -- the caller's forest -- regardless of -Server.
+# In a cross-forest collection that is the wrong forest entirely: the field
+# JSON described "auslromagna.it" (caller) while collecting "ausl.fo.it"
+# (target). The target forest is derived from the target domain, which does
+# honour -Server, via Get-ADDomain(.Forest).
+
+# Resolve the DNS name of the forest the TARGET domain belongs to.
+function Resolve-TargetForestName {
+    param([hashtable]$CommonParams = @{})
+    return (Get-ADDomain @CommonParams).Forest
+}
 
 function Get-ForestData {
     [CmdletBinding()]
-    param([hashtable]$CommonParams = @{})
+    param(
+        [hashtable]$CommonParams = @{},
+        # Supplied by Collect-ADData.ps1, which has already resolved it, so the
+        # metadata and this section cannot disagree. Resolved locally when the
+        # module is used standalone.
+        [string]$ForestName
+    )
 
-    $forest    = Get-ADForest @CommonParams
+    if (-not $ForestName) { $ForestName = Resolve-TargetForestName -CommonParams $CommonParams }
+
+    $forest    = Get-ADForest -Identity $ForestName @CommonParams
     $rootDSE   = Get-ADRootDSE @CommonParams
     $schemaObj = Get-ADObject $rootDSE.schemaNamingContext `
         -Properties objectVersion @CommonParams
@@ -57,13 +79,22 @@ function Get-OptionalFeaturesData {
 
 function Get-FSMOForestData {
     [CmdletBinding()]
-    param([hashtable]$CommonParams = @{})
+    param(
+        [hashtable]$CommonParams = @{},
+        [string]$ForestName
+    )
 
-    $forest = Get-ADForest @CommonParams
+    # Same defect as Get-ForestData: without -Identity this reported the FSMO
+    # role holders of the CALLER's forest, leaving fsmo_roles contradicting the
+    # forest section in the same JSON.
+    if (-not $ForestName) { $ForestName = Resolve-TargetForestName -CommonParams $CommonParams }
+
+    $forest = Get-ADForest -Identity $ForestName @CommonParams
     [ordered]@{
         SchemaMaster       = $forest.SchemaMaster
         DomainNamingMaster = $forest.DomainNamingMaster
     }
 }
 
-Export-ModuleMember -Function Get-ForestData, Get-OptionalFeaturesData, Get-FSMOForestData
+Export-ModuleMember -Function Get-ForestData, Get-OptionalFeaturesData, `
+    Get-FSMOForestData, Resolve-TargetForestName

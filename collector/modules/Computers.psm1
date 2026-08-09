@@ -11,16 +11,19 @@ function Get-ComputersData {
     [CmdletBinding()]
     param(
         [hashtable]$CommonParams = @{},
-        [int]$Limit = 10000
+        [int]$Limit = 0            # 0 = no limit (default). >0 for test/debug use only.
     )
 
-    Get-ADComputer -Filter * -Properties OperatingSystem, OperatingSystemVersion,
+    $computers = Get-ADComputer -Filter * -Properties OperatingSystem, OperatingSystemVersion,
         Enabled, LastLogonDate, PasswordLastSet, Description,
         ServicePrincipalNames, isCriticalSystemObject,
         TrustedForDelegation, TrustedToAuthForDelegation,
-        "msDS-AllowedToDelegateTo" @CommonParams |
-        Select-Object -First $Limit |
-        ForEach-Object {
+        "msDS-AllowedToDelegateTo" @CommonParams
+
+    # Apply the limit ONLY when explicitly requested (>0).
+    if ($Limit -gt 0) { $computers = $computers | Select-Object -First $Limit }
+
+    $computers | ForEach-Object {
             $isCNO = $_.ServicePrincipalNames -like "*MSClusterVirtualServer*"
             $isVCO = (-not $isCNO) -and $_.isCriticalSystemObject
 

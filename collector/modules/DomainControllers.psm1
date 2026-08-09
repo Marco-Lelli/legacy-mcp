@@ -4,7 +4,15 @@ function Get-DCData {
     [CmdletBinding()]
     param([hashtable]$CommonParams = @{})
 
-    Get-ADDomainController -Filter * @CommonParams | ForEach-Object {
+    # Materialized before the loop, like every other function in this module.
+    # The body does two network round-trips per DC (Invoke-Command and
+    # Test-Connection), so streaming Get-ADDomainController straight into it
+    # would hold the ADWS enumeration cursor open for the whole run -- the
+    # same pattern that cost the Group Members section on AUSL Romagna
+    # (task #134). Low risk with 8 DCs, but the mine is identical.
+    $allDCs = @(Get-ADDomainController -Filter * @CommonParams)
+
+    $allDCs | ForEach-Object {
         $dc = $_
 
         # Server Core detection via registry -- Remote Management Users sufficient

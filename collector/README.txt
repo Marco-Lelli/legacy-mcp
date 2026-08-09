@@ -1,7 +1,7 @@
 ================================================================================
   Collect-ADData.ps1
   LegacyMCP Offline Collector - Active Directory Data Export
-  Version 1.6.5 - May 2026
+  Version 1.7.0 - August 2026
   Marco Lelli, Impresoft 4ward
 ================================================================================
 
@@ -451,6 +451,43 @@ NOTES
 
 VERSION HISTORY
 ---------------
+
+  v1.7.0 - August 2026
+    - Collect-ADData.ps1: -Limit default changed from a silent cap
+      (5,000 users / 10,000 computers) to unlimited (0). The cap is
+      now opt-in only, for test/debug use.
+    - Collect-ADData.ps1: forest and domain name resolution anchored
+      explicitly to the target server (-Server) instead of the calling
+      machine's own identity. Fixes wrong output filenames and an
+      entirely wrong "forest" section / fsmo_roles in cross-forest
+      scenarios (multi-domain migrations, trust relationships).
+    - Collect-ADData.ps1: added a non-blocking elevation check. A
+      warning is shown -- and recorded in the log and in
+      _metadata.elevated -- when the session is not running as
+      Administrator. Some AD environments silently return a null
+      userAccountControl without elevation, which affects Enabled,
+      PasswordNeverExpires, and the delegation fields below.
+    - Users.psm1: Enabled, PasswordNeverExpires, TrustedForDelegation,
+      TrustedToAuthForDelegation now report explicit null (with an
+      aggregate warning) instead of a fabricated value when
+      userAccountControl cannot be read for a user.
+    - Forest.psm1: FSMO role data resolved from the target domain
+      instead of the calling machine's own forest.
+    - New Membership.psm1 module: group membership is now resolved
+      member-by-member instead of failing an entire group when a
+      single member cannot be resolved (previously affected
+      Administrators, Backup Operators, and other groups with even
+      one broken reference). Applies to Groups, Privileged Groups,
+      Privileged Accounts, and Group Members sections. Unresolvable
+      members are recorded as placeholder rows
+      (MemberObjectClass = "unresolved") instead of disappearing.
+    - New Logging.psm1 module: shared fallback logging path
+      (Write-SafeCollectorLog) so warnings from shared modules are
+      never silently lost regardless of how the collector is invoked.
+    - DomainControllers.psm1, Groups.psm1: large collections (DCs,
+      groups) are now fully read before processing, avoiding an AD
+      Web Services timeout on environments with very large group
+      counts.
 
   v1.6.5 - May 2026
     - Collect-ADData.ps1: pki section now always serialized as JSON array.

@@ -54,19 +54,57 @@ function Write-Step  { param([string]$Msg); Write-Host "`n$Msg" -ForegroundColor
 # ---------------------------------------------------------------------------
 # Resolve config path
 # ---------------------------------------------------------------------------
+
+# Reads ConfigPath from a single registry hive. Returns $null if the hive
+# key or the value is absent; propagates any other error (P4 -- unexpected
+# failures are never swallowed).
+function Get-ConfigPathFromHive {
+    param([string]$Hive)
+    if (-not (Test-Path $Hive)) { return $null }
+    try {
+        $props = Get-ItemProperty -Path $Hive -ErrorAction Stop
+    } catch {
+        throw "Unexpected error reading registry key '$Hive': $_"
+    }
+    $prop = $props.PSObject.Properties['ConfigPath']
+    if ($null -eq $prop -or [string]::IsNullOrWhiteSpace($prop.Value)) { return $null }
+    return $prop.Value
+}
+
 function Resolve-ConfigPath {
     param([string]$Path)
+
     # 1. Already absolute -- use directly
     if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
-    # 2. Registry override (Profile B -- path set by installer)
-    try {
-        $regVal = Get-ItemProperty -Path 'HKLM:\SOFTWARE\LegacyMCP' -Name 'ConfigPath' -ErrorAction Stop
-        if ($regVal.ConfigPath) { return $regVal.ConfigPath }
-    } catch {
-        # Key absent -- continue to fallback
+
+    # 2. Registry lookup -- check both hives explicitly. Profile B (Server/
+    # Client) writes ConfigPath under HKLM, Profile A writes it under HKCU.
+    # Same pattern already used in LegacyMCP.Gui.Steps.psm1 (Show-LMStepMode).
+    $hklmValue = Get-ConfigPathFromHive -Hive 'HKLM:\SOFTWARE\LegacyMCP'
+    $hkcuValue = Get-ConfigPathFromHive -Hive 'HKCU:\SOFTWARE\LegacyMCP'
+
+    $foundIn = @()
+    if ($hklmValue) { $foundIn += 'HKLM' }
+    if ($hkcuValue) { $foundIn += 'HKCU' }
+
+    if ($foundIn.Count -eq 1) {
+        if ($foundIn[0] -eq 'HKLM') { return $hklmValue }
+        return $hkcuValue
     }
-    # 3. Fallback: relative to the script's own directory
-    return Join-Path $PSScriptRoot $Path
+
+    if ($foundIn.Count -eq 2) {
+        throw "Two LegacyMCP installations detected on this machine " + `
+            "(HKLM:\SOFTWARE\LegacyMCP\ConfigPath = '$hklmValue', " + `
+            "HKCU:\SOFTWARE\LegacyMCP\ConfigPath = '$hkcuValue'). " + `
+            "Cannot determine which config.yaml to use. " + `
+            "Re-run with -Config <absolute path> to disambiguate."
+    }
+
+    # No fallback to a guessed path (P4). Both hives absent is a setup problem.
+    throw "No LegacyMCP installation found in the registry " + `
+        "(neither HKLM:\SOFTWARE\LegacyMCP nor HKCU:\SOFTWARE\LegacyMCP " + `
+        "has a ConfigPath value). Run Setup-LegacyMCP.ps1 first, or " + `
+        "re-run with -Config <absolute path>."
 }
 
 $ConfigFile = Resolve-ConfigPath $Config
@@ -159,7 +197,19 @@ function ConvertFrom-ForestsText {
     }
 
     if ($null -ne $current) { $forests += $current }
-    return $forests
+    # Comma operator, not @(): PowerShell's return/output stream always
+    # enumerates an array onto the pipeline, so "return $forests" (or even
+    # "return @($forests)") collapses to the bare element whenever $forests
+    # holds exactly one item -- @() around the RETURNED value does not
+    # survive the enumeration, only wrapping with ,$x does (verified
+    # empirically before this fix; same technique already used today in
+    # Membership.psm1 for the identical problem). This also fixes a more
+    # severe pre-existing bug: on zero forests, a bare "return $forests"
+    # (an empty array) collapses to $null, and $null.Count throws
+    # PropertyNotFoundStrict under Set-StrictMode -Version Latest (active in
+    # this script) -- so a config.yaml with no forests configured crashed
+    # this function outright instead of returning an empty result.
+    return ,$forests
 }
 
 # Get forests using module or fallback
@@ -170,14 +220,18 @@ function Get-Forests {
         try {
             $yaml = ConvertFrom-Yaml $raw
             $list = $yaml.workspace.forests
-            if (-not $list) { return @() }
+            # ,@() here too: Get-Forests is itself a pass-through hop between
+            # ConvertFrom-ForestsText and its callers -- fixing the inner
+            # function alone is not enough, this boundary can re-collapse
+            # the array on its own (verified empirically).
+            if (-not $list) { return ,@() }
             $result = @()
             foreach ($f in $list) {
                 $ht = @{}
                 foreach ($k in $f.Keys) { $ht[$k] = $f[$k] }
                 $result += $ht
             }
-            return $result
+            return ,$result
         } catch {
             # Fall through to text parser
         }
@@ -187,7 +241,7 @@ function Get-Forests {
     if ($forests.Count -eq 0 -and $raw.Trim().Length -gt 0) {
         Write-Warning "config.yaml parsed but no forests found -- check indentation (expected 4-space for forest entries, 6-space for properties)"
     }
-    return $forests
+    return ,$forests
 }
 
 # ---------------------------------------------------------------------------
@@ -618,7 +672,10 @@ function Invoke-Validate {
 
     # Filter to single forest if -Name provided
     if ($Name) {
-        $forests = $forests | Where-Object { $_['name'] -eq $Name }
+        # @() wrap: Where-Object on zero input assigns $null, not an empty
+        # array (same pipe-collapse fix as Invoke-RepairMetadata) -- .Count
+        # below would throw PropertyNotFoundStrict under Set-StrictMode.
+        $forests = @($forests | Where-Object { $_['name'] -eq $Name })
         if ($forests.Count -eq 0) {
             Write-Err "Forest '$Name' not found in config.yaml."
             exit 1
@@ -787,18 +844,25 @@ function Invoke-RepairMetadata {
 
     # Filter to single forest if -Name provided
     if ($Name) {
-        $allForests = $allForests | Where-Object { $_['name'] -eq $Name }
+        # @() wrap: Where-Object on zero input assigns $null, not an empty
+        # array (verified empirically) -- .Count below would throw
+        # PropertyNotFoundStrict under Set-StrictMode without it. Different
+        # mechanism from the return-collapse fix in Get-Forests (#127):
+        # that one is about a single-element array collapsing on return,
+        # this one is about a pipeline producing zero output.
+        $allForests = @($allForests | Where-Object { $_['name'] -eq $Name })
         if ($allForests.Count -eq 0) {
             Write-Err "Forest '$Name' not found in config.yaml."
             exit 1
         }
     }
 
-    # Only offline forests have JSON files to repair
-    $offlineForests = $allForests | Where-Object {
+    # Only offline forests have JSON files to repair.
+    # @() wrap: same zero-output pipeline collapse as above.
+    $offlineForests = @($allForests | Where-Object {
         $mode = if ($_.ContainsKey('mode')) { $_['mode'] } elseif ($_.ContainsKey('dc')) { 'live' } else { 'offline' }
         $mode -eq 'offline' -and $_.ContainsKey('file') -and $_['file']
-    }
+    })
 
     if ($offlineForests.Count -eq 0) {
         Write-Info 'No offline forests with file paths found. Nothing to repair.'

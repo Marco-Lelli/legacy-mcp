@@ -1,4 +1,26 @@
-"""Live Mode connector — executes PowerShell on Domain Controllers via subprocess."""
+"""Live Mode connector — executes PowerShell on Domain Controllers via subprocess.
+
+No elevation pre-flight here, deliberately (task #137)
+------------------------------------------------------
+The collector (Collect-ADData.ps1) warns when it runs in a non-elevated
+PowerShell session, because a non-elevated interactive session can fail to
+read userAccountControl in some AD environments, silently emptying Enabled
+and the delegation flags.
+
+That check is intentionally NOT mirrored here, and its absence is not an
+oversight. Live Mode does not run as an interactive session that a human
+could elevate: it runs as the MCP server process (a Windows service under a
+gMSA or service account in Profile B), and the scripts below are then shipped
+to the Domain Controller by _run_ps_on() and executed there under that
+identity via Kerberos. What governs attribute visibility here is the AD
+permissions granted to the service account (see docs/minimum-permissions.md),
+not a local UAC elevation state -- there is no "Run as Administrator" for a
+service to be told about, and no operator at a console to warn.
+
+If userAccountControl comes back null in Live Mode, the cause is the service
+account's directory permissions, not elevation. The aggregated warning in the
+"users" section below reports that case on its own.
+"""
 
 from __future__ import annotations
 
@@ -38,6 +60,177 @@ def _validate_dc_fqdn(dc_fqdn: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Shared PowerShell membership helpers (task #134)
+# ---------------------------------------------------------------------------
+# Mirror of collector/modules/Membership.psm1, kept aligned with it (P2).
+#
+# Each entry in _SCRIPTS is executed as a self-contained script block via
+# Invoke-Command, so there is no session-level place to import a module into.
+# Defining the helpers once as this Python constant and prepending it to the
+# three sections that need them keeps a single copy of the algorithm here,
+# instead of three inline duplicates (P8).
+#
+# Differences from the collector module, both intentional:
+#   - no @CommonParams splatting: these scripts already execute ON the DC
+#   - Write-Warning instead of Write-CollectorLog, which does not exist here
+# The well-known privileged groups whose membership is expanded. Single
+# Live-Mode-side source, interpolated into every section that needs it, so the
+# list cannot drift between sections. The collector keeps its own single copy
+# in Membership.psm1 (Get-PrivilegedGroupNames): the scripts here are strings
+# executed on the DC and cannot import a PowerShell module, so two sources
+# total -- one per mode -- is the floor.
+_PS_PRIVILEGED_GROUPS = (
+    "$privilegedGroupNames = @('Domain Admins','Enterprise Admins','Schema Admins',"
+    "'Administrators','Account Operators','Backup Operators',"
+    "'Print Operators','Server Operators')\n"
+)
+
+# ---------------------------------------------------------------------------
+# Target domain / forest resolution (P2 alignment with the collector fix)
+# ---------------------------------------------------------------------------
+# Get-ADDomain and Get-ADForest both default to their "Current" parameter set
+# when called bare. That set resolves to the LocalComputer/LoggedOnUser
+# identity, NOT to the directory being queried -- the same defect fixed in the
+# collector (Collect-ADData.ps1 / Forest.psm1). Left bare, a cross-forest
+# collection describes the CALLER's forest while collecting the target's data.
+#
+# The fix is NOT the collector's one transposed literally. The collector runs
+# on the consultant's machine and anchors the lookup with -Server <target DC>.
+# Live Mode is architecturally different: every script here is shipped to the
+# DC by _run_ps_on() via "Invoke-Command -ComputerName <DC>", so it executes
+# ON the target DC itself. There is no -Server to pass -- the server IS the
+# executing machine. "-Current LocalComputer" is therefore the correct anchor
+# here, and it is exact by construction rather than by convention.
+#
+# Verified: all seven sections that need this run through run_ps() or
+# collect_dc_inventory(), never through run_ps_local() -- so "LocalComputer"
+# is always a Domain Controller of the target domain, never the MCP host.
+#
+# Resolved once, in one place, and prepended to every section that needs it:
+# seven independent lookups would be seven chances to drift apart again.
+_PS_TARGET_RESOLUTION = (
+    "function Get-TargetDomain {\n"
+    "  return Get-ADDomain -Current LocalComputer\n"
+    "}\n"
+    # Same chain as the collector: target domain -> .Forest -> -Identity.
+    # -Identity is what keeps Get-ADForest off its "Current" parameter set.
+    "function Get-TargetForest {\n"
+    "  $d = Get-TargetDomain\n"
+    "  return Get-ADForest -Identity $d.Forest\n"
+    "}\n"
+    # Get-ADDefaultDomainPasswordPolicy has the same two parameter sets as
+    # Get-ADDomain: bare, it binds to "Current" and resolves to the logged-on
+    # user's domain (its own documented Example 5 says exactly that), so in a
+    # cross-forest collection it would return the CALLER's password policy.
+    # Lower impact than the forest/domain fields, identical mechanism.
+    "function Get-TargetPasswordPolicy {\n"
+    "  return Get-ADDefaultDomainPasswordPolicy -Current LocalComputer\n"
+    "}\n"
+)
+
+_PS_MEMBERSHIP_HELPERS = (
+    "function Get-SafePropertyValues {\n"
+    "  param($InputObject, [string]$Name)\n"
+    "  $values = @()\n"
+    "  $prop = $InputObject.PSObject.Properties[$Name]\n"
+    "  if ($prop -and $null -ne $prop.Value) { $values = @($prop.Value) }\n"
+    "  return ,$values\n"
+    "}\n"
+    # Match on the type NAME, not the type itself: no hard dependency on the
+    # AD assembly being loadable, and it still works under test doubles.
+    "function Test-ADObjectNotFound {\n"
+    "  param($ErrorRecord)\n"
+    "  $typeName = ''\n"
+    "  if ($ErrorRecord.Exception) { $typeName = $ErrorRecord.Exception.GetType().FullName }\n"
+    "  if ($typeName -like '*IdentityNotFound*') { return $true }\n"
+    "  if ($typeName -like '*ObjectNotFound*')   { return $true }\n"
+    "  if ($ErrorRecord.CategoryInfo -and $ErrorRecord.CategoryInfo.Category -eq 'ObjectNotFound') { return $true }\n"
+    "  return $false\n"
+    "}\n"
+    # Raw 'member' read: not subject to the ADWS MaxGroupOrMemberEntries cap
+    # (default 5000) that makes Get-ADGroupMember fail with "The size limit
+    # for this request was exceeded". Ranging is handled by the AD module.
+    "function Get-RawGroupMemberDNs {\n"
+    "  param([string]$GroupDN)\n"
+    "  $obj = Get-ADObject -Identity $GroupDN -Properties member\n"
+    "  $dns = Get-SafePropertyValues -InputObject $obj -Name 'member'\n"
+    # Truncation sentinel (P4), same as the collector. Ranging is handled by
+    # the AD module and was verified in the field, so this is not expected to
+    # fire -- but a count landing exactly on a known LDAP policy boundary is
+    # worth one line rather than a silent assumption. A group of exactly that
+    # size is a harmless false positive.
+    "  if ($dns.Count -eq 1000 -or $dns.Count -eq 1500 -or $dns.Count -eq 5000) {\n"
+    "    Write-Warning \"Membership of '$GroupDN' = $($dns.Count) members, exactly on a known LDAP boundary -- verify it is not truncated\"\n"
+    "  }\n"
+    "  return ,$dns\n"
+    "}\n"
+    # Returns $null for an unresolvable DN (orphaned SID, tombstoned object,
+    # foreign principal); any other error propagates to the caller (P4).
+    "function Resolve-ADMemberByDN {\n"
+    "  param([string]$DN)\n"
+    "  try { $obj = Get-ADObject -Identity $DN -Properties objectClass,name,sAMAccountName }\n"
+    "  catch { if (Test-ADObjectNotFound -ErrorRecord $_) { return $null } ; throw }\n"
+    "  if ($null -eq $obj) { return $null }\n"
+    "  $oc = ''\n"
+    "  $ocv = Get-SafePropertyValues -InputObject $obj -Name 'objectClass'\n"
+    "  if ($ocv.Count -gt 0) { $oc = [string]$ocv[-1] }\n"
+    "  $nm = ''\n"
+    "  $nmv = Get-SafePropertyValues -InputObject $obj -Name 'name'\n"
+    "  if ($nmv.Count -gt 0) { $nm = [string]$nmv[0] }\n"
+    "  $sam = $null\n"
+    "  $samv = Get-SafePropertyValues -InputObject $obj -Name 'sAMAccountName'\n"
+    "  if ($samv.Count -gt 0) { $sam = [string]$samv[0] }\n"
+    "  $en = $null\n"
+    "  if ($oc -eq 'user') {\n"
+    "    try { $en = (Get-ADUser -Identity $DN -Properties Enabled).Enabled }\n"
+    "    catch { if (-not (Test-ADObjectNotFound -ErrorRecord $_)) { throw } }\n"
+    "  } elseif ($oc -eq 'computer') {\n"
+    "    try { $en = (Get-ADComputer -Identity $DN -Properties Enabled).Enabled }\n"
+    "    catch { if (-not (Test-ADObjectNotFound -ErrorRecord $_)) { throw } }\n"
+    "  }\n"
+    "  return [PSCustomObject]@{ DistinguishedName = $DN; SamAccountName = $sam;\n"
+    "    Name = $nm; ObjectClass = $oc; Enabled = $en }\n"
+    "}\n"
+    # $Visited / $Collected / $Unresolved are mutated in place, so the cycle
+    # guard and both de-duplications span the whole descent. The raw DN of an
+    # unresolvable member is kept, not just counted: the caller turns it into
+    # an explicit placeholder.
+    "function Expand-ADGroupMembership {\n"
+    "  param([string]$GroupDN, [hashtable]$Visited, $Collected, $Unresolved, [hashtable]$Counters)\n"
+    "  if ($Visited.ContainsKey($GroupDN)) { $Counters['Cycles']++; return }\n"
+    "  $Visited[$GroupDN] = $true\n"
+    "  foreach ($dn in (Get-RawGroupMemberDNs -GroupDN $GroupDN)) {\n"
+    "    $m = Resolve-ADMemberByDN -DN $dn\n"
+    "    if ($null -eq $m) {\n"
+    "      if (-not $Unresolved.Contains($dn)) { $Unresolved[$dn] = $true }\n"
+    "      continue\n"
+    "    }\n"
+    "    if ($m.ObjectClass -eq 'group') {\n"
+    "      Expand-ADGroupMembership -GroupDN $m.DistinguishedName -Visited $Visited"
+    " -Collected $Collected -Unresolved $Unresolved -Counters $Counters\n"
+    "    } elseif (-not $Collected.Contains($m.DistinguishedName)) {\n"
+    "      $Collected[$m.DistinguishedName] = $m\n"
+    "    }\n"
+    "  }\n"
+    "}\n"
+    # Returns an object, not a bare array: the previous ",@(...)" contract made
+    # @(Get-GroupMembersRecursive ...).Count silently return 1. Properties
+    # cannot unroll through the pipeline.
+    "function Get-GroupMembersRecursive {\n"
+    "  param([string]$GroupDN)\n"
+    "  $visited = @{}\n"
+    "  $collected = [ordered]@{}\n"
+    "  $unresolved = [ordered]@{}\n"
+    "  $counters = @{ Cycles = 0 }\n"
+    "  Expand-ADGroupMembership -GroupDN $GroupDN -Visited $visited"
+    " -Collected $collected -Unresolved $unresolved -Counters $counters\n"
+    "  return [PSCustomObject]@{ Resolved = @($collected.Values);"
+    " Unresolved = @($unresolved.Keys); Cycles = $counters['Cycles'] }\n"
+    "}\n"
+)
+
+
+# ---------------------------------------------------------------------------
 # PowerShell script library
 # ---------------------------------------------------------------------------
 # Keyed by section name (matches KNOWN_SECTIONS in storage/loader.py).
@@ -49,7 +242,8 @@ _SCRIPTS: dict[str, str] = {
     # (requires separate RootDSE lookup; not available on Get-ADForest).
     # ------------------------------------------------------------------
     "forest": (
-        "$forest = Get-ADForest\n"
+        _PS_TARGET_RESOLUTION +
+        "$forest = Get-TargetForest\n"
         "$rootDSE = Get-ADRootDSE\n"
         "$schemaVersion = (Get-ADObject $rootDSE.schemaNamingContext"
         " -Properties objectVersion).objectVersion\n"
@@ -80,7 +274,8 @@ _SCRIPTS: dict[str, str] = {
     # domains — adds ChildDomains (joined) and Forest.
     # ------------------------------------------------------------------
     "domains": (
-        "$domain = Get-ADDomain\n"
+        _PS_TARGET_RESOLUTION +
+        "$domain = Get-TargetDomain\n"
         "$rootDSE = Get-ADRootDSE\n"
         "$domainObj = Get-ADObject $rootDSE.defaultNamingContext"
         " -Properties 'ms-DS-MachineAccountQuota'\n"
@@ -105,7 +300,14 @@ _SCRIPTS: dict[str, str] = {
     # Test-Connection issues one ICMP ping per DC (same as collector).
     # ------------------------------------------------------------------
     "dcs": (
-        "Get-ADDomainController -Filter * | ForEach-Object {\n"
+        # Materialized before the loop: the body does a network round-trip per
+        # DC (Test-Connection), so streaming Get-ADDomainController straight
+        # into it holds the ADWS enumeration cursor open for the whole run.
+        # Past MaxEnumContextExpiration (default 30 min) the server drops it
+        # with "invalid enumeration context". Same fix already applied to
+        # DomainControllers.psm1 in the collector.
+        "$allDCs = @(Get-ADDomainController -Filter *)\n"
+        "$allDCs | ForEach-Object {\n"
         "  $dc = $_\n"
         "  $isServerCore = $null\n"
         "  try {\n"
@@ -133,49 +335,96 @@ _SCRIPTS: dict[str, str] = {
         "} | ConvertTo-Json -Depth 5"
     ),
     # ------------------------------------------------------------------
-    # users — adds 11 fields; capped at 5000 (same limit as collector).
+    # users — adds 11 fields. No cap: full inventory, every call
+    # (Principle 4 — no implicit, silent truncation). Pagination for MCP
+    # callers is handled downstream by the get_users tool (limit/offset).
     # ------------------------------------------------------------------
     "users": (
-        "Get-ADUser -Filter * -Properties Enabled,PasswordNeverExpires,LockedOut,"
+        "$cannotChangePasswordNullCount = 0\n"
+        "$uacNullCount = 0\n"
+        "$results = Get-ADUser -Filter * -Properties Enabled,PasswordNeverExpires,LockedOut,"
         "LastLogonDate,PasswordLastSet,Description,mail,adminCount,SIDHistory,"
         "TrustedForDelegation,TrustedToAuthForDelegation,'msDS-AllowedToDelegateTo',"
         "userAccountControl,homeDirectory,homeDrive,primaryGroupID,CannotChangePassword |\n"
-        "  Select-Object -First 5000 |\n"
         "  ForEach-Object {\n"
+        # Derived from userAccountControl bits, not from the constructed property --
+        # returns $null on most objects when userAccountControl is also requested
+        # explicitly in a mass Get-ADUser -Filter * pull (task #131, field-confirmed
+        # on AUSL Romagna, 11105 users). If userAccountControl itself is $null (seen
+        # structurally on a whole domain in a later field test, cause not yet
+        # determined -- see task #133), the 4 derived fields stay $null explicitly
+        # instead of defaulting to a plausible-looking but fabricated boolean.
+        "    if ($_.userAccountControl -ne $null) {\n"
+        "      $uac = [int]$_.userAccountControl\n"
+        "      $enabled = (-not [bool]($uac -band 0x2))\n"
+        "      $passwordNeverExpires = [bool]($uac -band 0x10000)\n"
+        "      $trustedForDelegation = [bool]($uac -band 0x80000)\n"
+        "      $trustedToAuthForDelegation = [bool]($uac -band 0x1000000)\n"
+        "    } else {\n"
+        "      $uacNullCount++\n"
+        "      $enabled = $null\n"
+        "      $passwordNeverExpires = $null\n"
+        "      $trustedForDelegation = $null\n"
+        "      $trustedToAuthForDelegation = $null\n"
+        "    }\n"
         "    [PSCustomObject]@{\n"
         "      SamAccountName             = $_.SamAccountName\n"
         "      DisplayName                = $_.DisplayName\n"
         "      UserPrincipalName          = $_.UserPrincipalName\n"
         "      DistinguishedName          = $_.DistinguishedName\n"
         "      Mail                       = $_.mail\n"
-        "      Enabled                    = $_.Enabled\n"
-        "      PasswordNeverExpires       = $_.PasswordNeverExpires\n"
+        "      Enabled                    = $enabled\n"
+        "      PasswordNeverExpires       = $passwordNeverExpires\n"
         "      LockedOut                  = $_.LockedOut\n"
         "      LastLogonDate              = $_.LastLogonDate\n"
         "      PasswordLastSet            = $_.PasswordLastSet\n"
         "      Description                = $_.Description\n"
         "      AdminCount                 = $_.adminCount\n"
         "      SIDHistory                 = @($_.SIDHistory | ForEach-Object { $_.Value })\n"
-        "      TrustedForDelegation       = $_.TrustedForDelegation\n"
-        "      TrustedToAuthForDelegation = $_.TrustedToAuthForDelegation\n"
+        "      TrustedForDelegation       = $trustedForDelegation\n"
+        "      TrustedToAuthForDelegation = $trustedToAuthForDelegation\n"
         "      AllowedToDelegateTo        = ($_.'msDS-AllowedToDelegateTo') -join ', '\n"
         "      PasswordNotRequired        = [bool]($_.userAccountControl -band 0x20)\n"
         "      HomeDrive                  = $_.homeDrive\n"
         "      HomeDirectory              = $_.homeDirectory\n"
         "      PrimaryGroupID             = $_.primaryGroupID\n"
-        "      CannotChangePassword       = if ($_.CannotChangePassword -ne $null) { [bool]$_.CannotChangePassword } else { $false }\n"
+        "      CannotChangePassword       = if ($_.CannotChangePassword -ne $null) { [bool]$_.CannotChangePassword } else {\n"
+        "        $cannotChangePasswordNullCount++\n"
+        "        $false\n"
+        "      }\n"
         "    }\n"
-        "  } | ConvertTo-Json -Depth 3"
+        "  }\n"
+        # Single aggregated warning after the full pipeline, not one per user --
+        # avoids thousands of synchronous writes on environments where the field
+        # is null at scale (same failure mode as CannotChangePassword itself).
+        "if ($cannotChangePasswordNullCount -gt 0) {\n"
+        "  Write-Warning \"CannotChangePassword was null for $cannotChangePasswordNullCount users out of $(@($results).Count) collected - fallback to false applied for all - see task #133\"\n"
+        "}\n"
+        "if ($uacNullCount -gt 0) {\n"
+        "  Write-Warning \"userAccountControl not available for $uacNullCount users out of $(@($results).Count) collected - Enabled/PasswordNeverExpires/TrustedForDelegation/TrustedToAuthForDelegation set to null for these users, not calculable - cause to be investigated separately (permissions/DC)\"\n"
+        "}\n"
+        "@($results) | ConvertTo-Json -Depth 3"
     ),
     # ------------------------------------------------------------------
     # groups — adds SamAccountName, DistinguishedName, AdminCount.
-    # MemberCount uses Get-ADGroupMember | Measure-Object to handle
-    # groups larger than the LDAP page boundary (returns -1 on error).
+    # MemberCount is the length of the raw 'member' attribute: Get-ADGroupMember
+    # was capped by the ADWS MaxGroupOrMemberEntries limit (default 5000) and
+    # returned -1 for every group above it (task #134). -1 still means a real
+    # retrieval failure, not an empty group.
     # ------------------------------------------------------------------
     "groups": (
-        "Get-ADGroup -Filter * -Properties adminCount | ForEach-Object {\n"
+        _PS_MEMBERSHIP_HELPERS +
+        # Materialized before the loop: streaming Get-ADGroup into a slow
+        # ForEach-Object holds the ADWS enumeration cursor open past
+        # MaxEnumContextExpiration (default 30 min) and the server drops it
+        # with "invalid enumeration context". Same fix as the collector.
+        "$allGroups = @(Get-ADGroup -Filter * -Properties adminCount)\n"
+        "$allGroups | ForEach-Object {\n"
         "  $count = try {\n"
-        "    (Get-ADGroupMember -Identity $_.DistinguishedName | Measure-Object).Count\n"
+        # Assign then count: Get-RawGroupMemberDNs returns ",$dns" to keep the
+        # array intact, so wrapping the call in @() would always count 1.
+        "    $memberDNs = Get-RawGroupMemberDNs -GroupDN $_.DistinguishedName\n"
+        "    $memberDNs.Count\n"
         "  } catch { -1 }\n"
         "  [PSCustomObject]@{\n"
         "    Name              = $_.Name\n"
@@ -223,7 +472,12 @@ _SCRIPTS: dict[str, str] = {
     # sites — adds Subnets via per-site Get-ADReplicationSubnet lookup.
     # ------------------------------------------------------------------
     "sites": (
-        "Get-ADReplicationSite -Filter * | ForEach-Object {\n"
+        # Materialized before the loop: the body issues a secondary AD query
+        # per site (Get-ADReplicationSubnet). Site counts are small in
+        # practice, so this is preventive rather than a live risk -- but it is
+        # the same known pattern, and a known mine is not worth leaving armed.
+        "$allSites = @(Get-ADReplicationSite -Filter *)\n"
+        "$allSites | ForEach-Object {\n"
         "  $subnets = try {\n"
         "    (Get-ADReplicationSubnet -Filter \"Site -eq '$($_.DistinguishedName)'\").Name"
         " -join ', '\n"
@@ -260,7 +514,10 @@ _SCRIPTS: dict[str, str] = {
     # Get-ADFineGrainedPasswordPolicySubject (empty string on error).
     # ------------------------------------------------------------------
     "fgpp": (
-        "Get-ADFineGrainedPasswordPolicy -Filter * | ForEach-Object {\n"
+        # Materialized before the loop, same reasoning as "sites": a secondary
+        # AD query per policy (Get-ADFineGrainedPasswordPolicySubject).
+        "$allPsos = @(Get-ADFineGrainedPasswordPolicy -Filter *)\n"
+        "$allPsos | ForEach-Object {\n"
         "  $pso = $_\n"
         "  $appliesTo = try {\n"
         "    (Get-ADFineGrainedPasswordPolicySubject $pso).Name -join ', '\n"
@@ -338,8 +595,9 @@ _SCRIPTS: dict[str, str] = {
     # Scalar section (single dict, not a list).
     # ------------------------------------------------------------------
     "fsmo_roles": (
-        "$forest = Get-ADForest\n"
-        "$domain = Get-ADDomain\n"
+        _PS_TARGET_RESOLUTION +
+        "$forest = Get-TargetForest\n"
+        "$domain = Get-TargetDomain\n"
         "[PSCustomObject]@{\n"
         "  SchemaMaster         = $forest.SchemaMaster\n"
         "  DomainNamingMaster   = $forest.DomainNamingMaster\n"
@@ -353,8 +611,9 @@ _SCRIPTS: dict[str, str] = {
     # Scalar section (single dict, not a list).
     # ------------------------------------------------------------------
     "default_password_policy": (
-        "$p = Get-ADDefaultDomainPasswordPolicy\n"
-        "$domain = (Get-ADDomain).DNSRoot\n"
+        _PS_TARGET_RESOLUTION +
+        "$p = Get-TargetPasswordPolicy\n"
+        "$domain = (Get-TargetDomain).DNSRoot\n"
         "[PSCustomObject]@{\n"
         "  Domain                      = $domain\n"
         "  MinPasswordLength           = $p.MinPasswordLength\n"
@@ -374,6 +633,7 @@ _SCRIPTS: dict[str, str] = {
     # CN=DFSR-GlobalSettings, then NtFrs registry fallback (Principle 9).
     # ------------------------------------------------------------------
     "sysvol": (
+        _PS_TARGET_RESOLUTION +
         "$dcFqdn = ($env:COMPUTERNAME + '.' + $env:USERDNSDOMAIN).ToLower()\n"
         "$SysvolStateMap = @{ 0='Uninitialized'; 1='Initialized'; 2='Initial Sync';"
         " 3='Auto Recovery'; 4='Normal'; 5='In Error' }\n"
@@ -388,7 +648,7 @@ _SCRIPTS: dict[str, str] = {
         "    [PSCustomObject]@{ DC=$dcFqdn; Mechanism='DFSR'; State=$stateStr; Status='OK' }"
         " | ConvertTo-Json -Depth 3\n"
         "  } else {\n"
-        "    $domainDN = (Get-ADDomain).DistinguishedName\n"
+        "    $domainDN = (Get-TargetDomain).DistinguishedName\n"
         "    $dfsrGlobalDN = 'CN=DFSR-GlobalSettings,CN=System,' + $domainDN\n"
         "    $dfsrGlobal = $null\n"
         "    try {\n"
@@ -448,21 +708,44 @@ _SCRIPTS: dict[str, str] = {
     # De-duplicated by SamAccountName across all groups.
     # ------------------------------------------------------------------
     "privileged_accounts": (
+        _PS_MEMBERSHIP_HELPERS +
+        _PS_PRIVILEGED_GROUPS +
         "$seen = @{}\n"
-        "$groups = @('Domain Admins','Enterprise Admins','Schema Admins',"
-        "'Administrators','Account Operators','Backup Operators',"
-        "'Print Operators','Server Operators')\n"
+        "$groups = @($privilegedGroupNames)\n"
+        "$unresolvable = 0\n"
+        "$failed = @()\n"
         "$results = foreach ($g in $groups) {\n"
         "  try {\n"
-        "    Get-ADGroupMember -Identity $g -Recursive |\n"
-        "      Where-Object { $_.objectClass -eq 'user' } |\n"
+        "    $groupObj = Get-ADGroup -Identity $g\n"
+        "    $expansion = Get-GroupMembersRecursive -GroupDN $groupObj.DistinguishedName\n"
+        "    $unresolvable += $expansion.Unresolved.Count\n"
+        "    $expansion.Resolved |\n"
+        "      Where-Object { $_.ObjectClass -eq 'user' } |\n"
         "      ForEach-Object {\n"
         "        if (-not $seen[$_.SamAccountName]) {\n"
         "          $seen[$_.SamAccountName] = $true\n"
         "          [PSCustomObject]@{ SamAccountName = $_.SamAccountName; Group = $g }\n"
         "        }\n"
         "      }\n"
-        "  } catch { }\n"
+        # Per-group warning naming the failed group AND the reason, as the
+        # collector does. The aggregate below lists the names but not why each
+        # one failed.
+        "  } catch {\n"
+        "    $failed += $g\n"
+        "    Write-Warning \"Group '$g' not enumerated: $_\"\n"
+        "  }\n"
+        "}\n"
+        # Previously "catch { }" -- an entire privileged group could vanish
+        # with nothing anywhere to show the count was under-reported (P4).
+        # No placeholder in THIS section by design: it feeds a count of
+        # privileged accounts (the "total" of query_page in tools/users.py).
+        # The unresolved DNs are visible as placeholders in privileged_groups
+        # and group_members instead.
+        "if ($unresolvable -gt 0) {\n"
+        "  Write-Warning \"$unresolvable unresolvable members during the expansion of privileged groups -- excluded from this count to avoid skewing it, visible as placeholders in privileged_groups and group_members\"\n"
+        "}\n"
+        "if ($failed.Count -gt 0) {\n"
+        "  Write-Warning \"Privileged groups NOT enumerated ($($failed.Count)/$($groups.Count)): $($failed -join ', ') -- the privileged account count is incomplete\"\n"
         "}\n"
         "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
     ),
@@ -471,16 +754,33 @@ _SCRIPTS: dict[str, str] = {
     # 8 built-in privileged groups.
     # ------------------------------------------------------------------
     "privileged_groups": (
-        "$names = @('Domain Admins','Enterprise Admins','Schema Admins',"
-        "'Administrators','Account Operators','Backup Operators',"
-        "'Print Operators','Server Operators')\n"
+        _PS_MEMBERSHIP_HELPERS +
+        _PS_PRIVILEGED_GROUPS +
+        "$names = @($privilegedGroupNames)\n"
         "$results = foreach ($name in $names) {\n"
         "  try {\n"
-        "    $members = Get-ADGroupMember -Identity $name -Recursive |\n"
-        "      Select-Object SamAccountName, objectClass, distinguishedName\n"
+        "    $groupObj = Get-ADGroup -Identity $name\n"
+        "    $expansion = Get-GroupMembersRecursive -GroupDN $groupObj.DistinguishedName\n"
+        "    if ($expansion.Unresolved.Count -gt 0) {\n"
+        "      Write-Warning \"Group '$name': $($expansion.Unresolved.Count) unresolvable members (orphaned SID / removed object / external principal) -- reported as objectClass='unresolved' placeholders, the other members were collected\"\n"
+        "    }\n"
+        # Field casing is part of the JSON contract -- keep it as-is.
+        "    $members = @($expansion.Resolved | ForEach-Object {\n"
+        "      [PSCustomObject]@{ SamAccountName = $_.SamAccountName;\n"
+        "        objectClass = $_.ObjectClass; distinguishedName = $_.DistinguishedName }\n"
+        "    })\n"
+        # Placeholder per unresolved DN, same three keys. This is the only
+        # place where "this broken DN sits inside <privileged group>" survives.
+        "    $members += @($expansion.Unresolved | ForEach-Object {\n"
+        "      [PSCustomObject]@{ SamAccountName = $null;\n"
+        "        objectClass = 'unresolved'; distinguishedName = $_ }\n"
+        "    })\n"
         "    [PSCustomObject]@{ Group = $name; Members = @($members) }\n"
         "  } catch {\n"
-        "    [PSCustomObject]@{ Group = $name; Members = @() }\n"
+        # Error was present in the collector but had been lost here -- P2 drift
+        # found in the task #134 diagnostic, restored in the same pass.
+        "    Write-Warning \"Group '$name' not collected: $_\"\n"
+        "    [PSCustomObject]@{ Group = $name; Members = @(); Error = $_.ToString() }\n"
         "  }\n"
         "}\n"
         "@($results) | ConvertTo-Json -Depth 5"
@@ -490,30 +790,63 @@ _SCRIPTS: dict[str, str] = {
     # Enabled for user and computer members via individual AD lookups.
     # ------------------------------------------------------------------
     "group_members": (
-        "$results = Get-ADGroup -Filter * | ForEach-Object {\n"
+        _PS_MEMBERSHIP_HELPERS +
+        "$unresolvableTotal = 0\n"
+        "$groupsWithUnresolvable = 0\n"
+        "$groupsFailed = 0\n"
+        # Materialized before the loop -- the per-member resolution is far too
+        # slow to run under an open ADWS enumeration cursor (see "groups").
+        "$allGroups = @(Get-ADGroup -Filter *)\n"
+        "$results = $allGroups | ForEach-Object {\n"
         "  $groupName = $_.Name\n"
         "  $groupDN   = $_.DistinguishedName\n"
         "  try {\n"
-        "    Get-ADGroupMember -Identity $groupDN | ForEach-Object {\n"
-        "      $m = $_\n"
-        "      $enabled = $null\n"
-        "      if ($m.objectClass -eq 'user') {\n"
-        "        try { $enabled = (Get-ADUser -Identity $m.distinguishedName"
-        " -Properties Enabled).Enabled } catch { }\n"
-        "      } elseif ($m.objectClass -eq 'computer') {\n"
-        "        try { $enabled = (Get-ADComputer -Identity $m.distinguishedName"
-        " -Properties Enabled).Enabled } catch { }\n"
+        "    $unresolvableHere = 0\n"
+        "    foreach ($dn in (Get-RawGroupMemberDNs -GroupDN $groupDN)) {\n"
+        "      $m = Resolve-ADMemberByDN -DN $dn\n"
+        # Placeholder instead of dropping the row: the raw DN identifies the
+        # broken reference to clean up, and it keeps rows == MemberCount.
+        # Existing keys only -- no new column for the loader to discard.
+        "      if ($null -eq $m) {\n"
+        "        $unresolvableHere++\n"
+        "        [PSCustomObject]@{\n"
+        "          GroupName               = $groupName\n"
+        "          MemberSamAccountName    = $null\n"
+        "          MemberDisplayName       = $null\n"
+        "          MemberObjectClass       = 'unresolved'\n"
+        "          MemberDistinguishedName = $dn\n"
+        "          MemberEnabled           = $null\n"
+        "        }\n"
+        "        continue\n"
         "      }\n"
         "      [PSCustomObject]@{\n"
         "        GroupName               = $groupName\n"
         "        MemberSamAccountName    = $m.SamAccountName\n"
-        "        MemberDisplayName       = $m.name\n"
-        "        MemberObjectClass       = $m.objectClass\n"
-        "        MemberDistinguishedName = $m.distinguishedName\n"
-        "        MemberEnabled           = $enabled\n"
+        "        MemberDisplayName       = $m.Name\n"
+        "        MemberObjectClass       = $m.ObjectClass\n"
+        "        MemberDistinguishedName = $m.DistinguishedName\n"
+        "        MemberEnabled           = $m.Enabled\n"
         "      }\n"
         "    }\n"
-        "  } catch { }\n"
+        "    if ($unresolvableHere -gt 0) {\n"
+        "      $unresolvableTotal += $unresolvableHere\n"
+        "      $groupsWithUnresolvable++\n"
+        "    }\n"
+        # Per-group warning naming the failed group, as the collector does:
+        # an aggregate count alone gives no way to tell WHICH groups are
+        # missing from the output.
+        "  } catch {\n"
+        "    $groupsFailed++\n"
+        "    Write-Warning \"Group '$groupName' not enumerated: $_\"\n"
+        "  }\n"
+        "}\n"
+        # Aggregated once, not one warning per member: on an environment where
+        # this fires at scale, per-member warnings would flood the run.
+        "if ($unresolvableTotal -gt 0) {\n"
+        "  Write-Warning \"$unresolvableTotal unresolvable members across $groupsWithUnresolvable groups (orphaned SID / removed object / external principal) -- reported as placeholder rows with MemberObjectClass='unresolved' and the raw DN in MemberDistinguishedName\"\n"
+        "}\n"
+        "if ($groupsFailed -gt 0) {\n"
+        "  Write-Warning \"$groupsFailed groups not enumerated due to a read error -- see the preceding WARN lines\"\n"
         "}\n"
         "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
     ),
@@ -522,8 +855,9 @@ _SCRIPTS: dict[str, str] = {
     # GPMC / GroupPolicy PS module (RSAT). Wrapped in try/catch.
     # ------------------------------------------------------------------
     "gpo_links": (
+        _PS_TARGET_RESOLUTION +
         "try {\n"
-        "  $domainDN = (Get-ADDomain).DistinguishedName\n"
+        "  $domainDN = (Get-TargetDomain).DistinguishedName\n"
         "  $ouDNs = Get-ADOrganizationalUnit -Filter *"
         " | Select-Object -ExpandProperty DistinguishedName\n"
         "  $targets = @($domainDN) + @($ouDNs)\n"
@@ -583,15 +917,15 @@ _SCRIPTS: dict[str, str] = {
         "} catch { '[]' }"
     ),
     # ------------------------------------------------------------------
-    # computers — full computer inventory; capped at 10 000 objects.
-    # IsCNO/IsVCO derived from ServicePrincipalNames / isCriticalSystemObject.
+    # computers — full computer inventory. No cap (Principle 4 — no
+    # implicit, silent truncation). IsCNO/IsVCO derived from
+    # ServicePrincipalNames / isCriticalSystemObject.
     # ------------------------------------------------------------------
     "computers": (
         "Get-ADComputer -Filter * -Properties OperatingSystem,OperatingSystemVersion,"
         "Enabled,LastLogonDate,PasswordLastSet,Description,"
         "ServicePrincipalNames,isCriticalSystemObject,"
         "TrustedForDelegation,TrustedToAuthForDelegation,'msDS-AllowedToDelegateTo' |\n"
-        "  Select-Object -First 10000 |\n"
         "  ForEach-Object {\n"
         "    $isCNO = [bool]($_.ServicePrincipalNames -like '*MSClusterVirtualServer*')\n"
         "    $isVCO = [bool]((-not $isCNO) -and $_.isCriticalSystemObject)\n"
@@ -863,7 +1197,8 @@ _SCRIPTS: dict[str, str] = {
     # IsOrphaned=True when the SID cannot be resolved to an NTAccount.
     # ------------------------------------------------------------------
     "fsp": (
-        "$domainDN = (Get-ADDomain).DistinguishedName\n"
+        _PS_TARGET_RESOLUTION +
+        "$domainDN = (Get-TargetDomain).DistinguishedName\n"
         "$fspDN = 'CN=ForeignSecurityPrincipals,' + $domainDN\n"
         "try {\n"
         "  $results = Get-ADObject -SearchBase $fspDN -Filter *"

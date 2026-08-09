@@ -45,8 +45,14 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         """Return the direct members of a specific group.
 
         Each row: GroupName, MemberSamAccountName, MemberDisplayName,
-        MemberObjectClass (user/computer/group), MemberDistinguishedName,
+        MemberObjectClass (user/computer/group/unresolved), MemberDistinguishedName,
         MemberEnabled (True/False for users and computers, null for nested groups).
+
+        MemberObjectClass="unresolved" marks a member whose DN could not be
+        resolved (orphaned SID, deleted object, foreign principal across a
+        broken trust). Only MemberDistinguishedName is populated on those rows,
+        with the raw DN -- useful for cleaning up broken references in AD.
+        Filter on MemberObjectClass="unresolved" to list them.
 
         Returns a paginated result: {items, total, offset, limit, has_more}.
         Default limit is 50. Large groups (e.g. Domain Computers) may require
