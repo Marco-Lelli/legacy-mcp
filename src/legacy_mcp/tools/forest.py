@@ -37,6 +37,8 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         beyond the default Microsoft base schema.
 
         Returns a paginated result: {items, total, offset, limit, has_more}.
+        May include a "warnings" list in Live Mode (e.g. when the 500-object
+        cap truncates results; present only then, absent otherwise).
         Default limit is 200. The collector caps collection at 500 objects.
         """
         conn = workspace.connector(forest_name)

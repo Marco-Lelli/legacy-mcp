@@ -37,9 +37,16 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
     def get_user_summary(forest_name: str | None = None) -> dict[str, Any]:
         """Return user counts by state: total, enabled, disabled, locked out,
         password-never-expires, password-not-required, delegation configured,
-        and accounts inactive for more than 90 days."""
+        and accounts inactive for more than 90 days.
+
+        In Live Mode, the result may include a "warnings" list (e.g.
+        userAccountControl unreadable for N users -- see the null-field
+        notes on Enabled/PasswordNeverExpires/TrustedForDelegation/
+        TrustedToAuthForDelegation above). Present only when something
+        actually degraded this collection; absent otherwise.
+        """
         conn = workspace.connector(forest_name)
-        users = conn.query("users")
+        users, warnings = conn.query_with_warnings("users")
         now = datetime.now(tz=timezone.utc)
         total = len(users)
         enabled_count = sum(1 for u in users if _is_true(u.get("Enabled")))
@@ -67,7 +74,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         pgid_count = sum(1 for u in users if _get_primary_group_id(u) != 513)
         ccp_count = sum(1 for u in users if _is_true(u.get("CannotChangePassword")))
 
-        return {
+        result: dict[str, Any] = {
             "total":                  total,
             "enabled":                enabled_count,
             "disabled":               sum(1 for u in users if not _is_true(u.get("Enabled"))),
@@ -96,6 +103,12 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
                 "pct_of_total": round(ccp_count / total * 100, 2) if total > 0 else 0.0,
             },
         }
+        # task #141: present only when this call actually produced a
+        # warning (e.g. userAccountControl null for N users) -- omitted
+        # otherwise, same convention as LiveConnector.query_page().
+        if warnings:
+            result["warnings"] = warnings
+        return result
 
     @mcp.tool()
     def get_privileged_accounts(
@@ -107,6 +120,8 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         (Domain Admins, Enterprise Admins, Schema Admins, Administrators).
 
         Returns a paginated result: {items, total, offset, limit, has_more}.
+        May include a "warnings" list in Live Mode (present only when
+        something degraded this collection; absent otherwise).
         Default limit is 200.
         """
         conn = workspace.connector(forest_name)
@@ -182,11 +197,14 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
           4. Use get_user_by_name for point lookups on a specific account.
 
         Returns a paginated result: {items, total, offset, limit, has_more}.
-        total reflects the filtered count before pagination.
+        total reflects the filtered count before pagination. May include a
+        "warnings" list in Live Mode -- present only when something
+        degraded this collection (e.g. userAccountControl unreadable for
+        some users); absent otherwise.
         Default limit is 200.
         """
         conn = workspace.connector(forest_name)
-        users = conn.query("users")
+        users, warnings = conn.query_with_warnings("users")
 
         if enabled is True:
             users = [u for u in users if _is_true(u.get("Enabled"))]
@@ -250,13 +268,18 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
 
         total = len(users)
         page = users[offset : offset + limit]
-        return {
+        result: dict[str, Any] = {
             "items":    page,
             "total":    total,
             "offset":   offset,
             "limit":    limit,
             "has_more": offset + len(page) < total,
         }
+        # task #141: present only when this call actually produced a
+        # warning -- omitted otherwise, same convention as query_page().
+        if warnings:
+            result["warnings"] = warnings
+        return result
 
     @mcp.tool()
     def get_user_by_name(
@@ -268,6 +291,11 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         Returns null if the account is not found. Use this for point lookups
         when you already know the account name — avoids loading the full
         user list.
+
+        Does not surface a "warnings" field (single-object return, no
+        natural place for it) -- any collection warning for this section is
+        still captured in full in the server's EventLog. Use get_users or
+        get_user_summary if you need warnings in the response itself.
         """
         conn = workspace.connector(forest_name)
         results = conn.query("users", SamAccountName=sam_account_name)

@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from legacy_mcp.workspace.workspace import ForestConfig
 
 from legacy_mcp.eventlog import writer as eventlog
+from legacy_mcp.modes import _clixml
 
 
 # RFC 1123 hostname/FQDN: letters, digits, hyphens, dots. No other
@@ -947,12 +948,32 @@ _SCRIPTS: dict[str, str] = {
         "  } | ConvertTo-Json -Depth 3"
     ),
     # ------------------------------------------------------------------
-    # schema — custom schema objects (non-Microsoft OIDs). Capped at 500.
+    # schema — custom schema objects (non-Microsoft OIDs). Capped at 500,
+    # same default as the collector's Get-SchemaExtensionsData (task #130).
     # Filters out standard MS, US-DoD, and Microsoft enterprise OIDs.
+    #
+    # No -Limit equivalent here, deliberately: same reasoning already
+    # applied to users/computers in Live Mode -- there is no test/debug
+    # consumer for an override parameter in this context, only a real
+    # collection. What changed is visibility: the truncation now emits a
+    # Write-Warning instead of silently dropping rows past 500.
+    #
+    # That Write-Warning inherits a real, separate limitation shared by
+    # EVERY other Write-Warning in this file (CannotChangePassword nulls,
+    # userAccountControl nulls, unresolved group members, etc.), confirmed
+    # empirically while fixing this section: PowerShell writes warnings to
+    # the Warning stream, which _run_ps_on()/run_ps_local() capture on the
+    # process's stderr -- but both only read result.stderr when
+    # returncode != 0. On the success path (which is exactly when a cap
+    # truncates without erroring), result.stderr is never inspected, so
+    # the warning is silently discarded before it reaches Python. Not
+    # fixed here -- it is a pre-existing, file-wide gap in every Live Mode
+    # section's warning visibility, not specific to schema, and well
+    # beyond task #130's scope. Flagged to Marco as a separate item.
     # ------------------------------------------------------------------
     "schema": (
         "$schemaDN = (Get-ADRootDSE).schemaNamingContext\n"
-        "$results = Get-ADObject -SearchBase $schemaDN -Filter *"
+        "$results = @(Get-ADObject -SearchBase $schemaDN -Filter *"
         " -Properties lDAPDisplayName,objectClass,adminDescription,governsID,attributeID |\n"
         "  Where-Object {\n"
         "    $oid = if ($_.governsID) { $_.governsID } else { $_.attributeID }\n"
@@ -961,8 +982,11 @@ _SCRIPTS: dict[str, str] = {
         "    -not $oid.StartsWith('2.16.840.1.101.2') -and\n"
         "    -not $oid.StartsWith('1.3.6.1.4.1.311')\n"
         "  } |\n"
-        "  Select-Object lDAPDisplayName,objectClass,adminDescription,governsID,attributeID |\n"
-        "  Select-Object -First 500\n"
+        "  Select-Object lDAPDisplayName,objectClass,adminDescription,governsID,attributeID)\n"
+        "if ($results.Count -gt 500) {\n"
+        "  Write-Warning \"Schema extensions: $($results.Count) found, truncated to 500 -- full collection requires the offline collector with -Limit 0\"\n"
+        "  $results = @($results | Select-Object -First 500)\n"
+        "}\n"
         "if ($results) { @($results) | ConvertTo-Json -Depth 3 } else { '[]' }"
     ),
     # ------------------------------------------------------------------
@@ -1275,6 +1299,33 @@ def _build_script(section: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Task #141: filter the per-group "group_members" failure warning out of
+# JSON responses -- the one genuinely unbounded Write-Warning call site
+# among the 12 mapped in Fase 1's analysis (fires once per group that fails
+# to enumerate, across the whole domain, not just the 8 built-in privileged
+# groups). Every other call site is already a single aggregate line or
+# bounded to those 8 groups, so it is included verbatim.
+#
+# Message text cannot change (out of scope for #141 by explicit decision),
+# so this matches the exact shape emitted by group_members's own script:
+# Write-Warning "Group '$groupName' not enumerated: $_". The section's
+# script already emits a separate, real aggregate line covering the same
+# failures ("$groupsFailed groups not enumerated due to a read error...")
+# -- that one is NOT filtered out, it is the one meant to reach the JSON
+# response. Every warning, filtered or not, still reaches EventLog in full
+# (see LiveConnector._run_subprocess) -- this filter only changes what
+# reaches the tool's JSON response, not what gets logged.
+# ---------------------------------------------------------------------------
+_PER_GROUP_WARNING_RE = re.compile(r"^Group '.*' not enumerated: ")
+
+
+def _warnings_for_json(section: str, warnings: list[str]) -> list[str]:
+    if section == "group_members":
+        return [w for w in warnings if not _PER_GROUP_WARNING_RE.match(w)]
+    return warnings
+
+
+# ---------------------------------------------------------------------------
 # Connector
 # ---------------------------------------------------------------------------
 
@@ -1284,14 +1335,66 @@ class LiveConnector:
     def __init__(self, forest: "ForestConfig") -> None:
         self.forest = forest
 
-    def _run_ps_on(self, dc_fqdn: str, script: str) -> Any:
+    def _run_subprocess(
+        self, argv: list[str], error_prefix: str, timeout_message: str, section: str | None
+    ) -> tuple[Any, list[str]]:
+        """Shared subprocess execution + stream handling for _run_ps_on() and
+        run_ps_local() (task #141) -- both wrap Invoke-Command/local execution
+        differently but need identical stdout/stderr handling afterward, so
+        that logic lives here once instead of twice. *error_prefix* and
+        *timeout_message* let each caller keep its own exact, pre-#141
+        message wording (e.g. "PowerShell error on {dc}" vs "PowerShell
+        local error") without this method needing to know which one it is.
+
+        stderr is always read and parsed, not just on failure (verified in
+        Fase 1: subprocess.run(capture_output=True) already captures it
+        unconditionally regardless of what the caller does with it
+        afterward -- reading it adds no measurable cost, ~2ms to parse even
+        an extreme 1000-warning stderr blob, dwarfed by the ~800ms PowerShell
+        startup cost already paid on every call).
+
+        Returns (rows, warnings). Every Warning-stream message is written to
+        EventLog here, in full, unconditionally -- regardless of whether the
+        caller ends up including it in a JSON response (task #141, "tutti e
+        12 i punti, senza eccezione"). On failure, the full CLIXML/raw stderr
+        is written to EventLog (event 3000, the existing "blocking failure"
+        channel) before raising, so the technical detail is never lost even
+        though the exception message itself is now a clean, readable string
+        instead of a raw CLIXML blob.
+        """
+        try:
+            result = subprocess.run(argv, capture_output=True, timeout=self.forest.timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"{timeout_message}: {exc}") from exc
+
+        if result.returncode != 0:
+            raw_stderr = result.stderr.decode(errors="replace").strip()
+            section_note = f" ({section})" if section else ""
+            eventlog.error(f"{error_prefix}{section_note}: {raw_stderr}")
+            message = _clixml.extract_error_message(result.stderr)
+            raise RuntimeError(f"{error_prefix}: {message}")
+
+        warnings = _clixml.extract_warnings(result.stderr)
+        label = f"{self.forest.name}/{section}" if section else self.forest.name
+        for w in warnings:
+            eventlog.warn(f"[{label}] {w}")
+
+        raw = result.stdout.decode(errors="replace").strip()
+        if not raw or raw == "null":
+            return [], warnings
+        return json.loads(raw), warnings
+
+    def _run_ps_on(self, dc_fqdn: str, script: str, section: str | None = None) -> tuple[Any, list[str]]:
         """Run a PowerShell script on a specific DC via Invoke-Command subprocess.
 
         Wraps the script in Invoke-Command targeting dc_fqdn with UseSSL and
         Kerberos authentication. The caller's process identity is used for
         Kerberos -- no explicit credentials required (Principle 3).
-        Raises RuntimeError on non-zero exit code. Returns [] on empty output
-        (Principle 10).
+        Raises RuntimeError on non-zero exit code. Returns ([], []) on empty
+        output (Principle 10).
+
+        Returns (rows, warnings) -- see _run_subprocess() for the warning/
+        error handling this delegates to (task #141).
         """
         _validate_dc_fqdn(dc_fqdn)
         wrapped = (
@@ -1300,56 +1403,36 @@ class LiveConnector:
             f"-ScriptBlock {{ {script} }}"
         )
         encoded = b64encode(wrapped.encode("utf_16_le")).decode("ascii")
-        try:
-            result = subprocess.run(
-                ["powershell.exe", "-NonInteractive", "-EncodedCommand", encoded],
-                capture_output=True,
-                timeout=self.forest.timeout_seconds,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(
-                f"PowerShell timeout on DC '{dc_fqdn}' "
-                f"(timeout={self.forest.timeout_seconds}s): {exc}"
-            ) from exc
-        if result.returncode != 0:
-            stderr = result.stderr.decode(errors="replace").strip()
-            raise RuntimeError(f"PowerShell error on {dc_fqdn}: {stderr}")
-        raw = result.stdout.decode(errors="replace").strip()
-        if not raw or raw == "null":
-            return []
-        return json.loads(raw)
+        argv = ["powershell.exe", "-NonInteractive", "-EncodedCommand", encoded]
+        return self._run_subprocess(
+            argv,
+            error_prefix=f"PowerShell error on {dc_fqdn}",
+            timeout_message=f"PowerShell timeout on DC '{dc_fqdn}' (timeout={self.forest.timeout_seconds}s)",
+            section=section,
+        )
 
-    def run_ps(self, script: str) -> Any:
+    def run_ps(self, script: str, section: str | None = None) -> tuple[Any, list[str]]:
         """Run a PowerShell script on the forest entry-point DC via subprocess."""
-        return self._run_ps_on(self.forest.dc, script)
+        return self._run_ps_on(self.forest.dc, script, section=section)
 
-    def run_ps_local(self, script: str) -> Any:
+    def run_ps_local(self, script: str, section: str | None = None) -> tuple[Any, list[str]]:
         """Run a PowerShell script directly on the MCP server host without Invoke-Command.
 
         Used for sections that need single-hop -ComputerName access to DCs
         (dns, dns_forwarders). Kerberos from the calling process is used
         implicitly (Principle 3). Raises RuntimeError on non-zero exit code.
-        Returns [] on empty output (Principle 10).
+        Returns ([], []) on empty output (Principle 10).
+
+        Returns (rows, warnings) -- see _run_subprocess() (task #141).
         """
         encoded = b64encode(script.encode("utf_16_le")).decode("ascii")
-        try:
-            result = subprocess.run(
-                ["powershell.exe", "-NonInteractive", "-EncodedCommand", encoded],
-                capture_output=True,
-                timeout=self.forest.timeout_seconds,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(
-                f"PowerShell local timeout "
-                f"(timeout={self.forest.timeout_seconds}s): {exc}"
-            ) from exc
-        if result.returncode != 0:
-            stderr = result.stderr.decode(errors="replace").strip()
-            raise RuntimeError(f"PowerShell local error: {stderr}")
-        raw = result.stdout.decode(errors="replace").strip()
-        if not raw or raw == "null":
-            return []
-        return json.loads(raw)
+        argv = ["powershell.exe", "-NonInteractive", "-EncodedCommand", encoded]
+        return self._run_subprocess(
+            argv,
+            error_prefix="PowerShell local error",
+            timeout_message=f"PowerShell local timeout (timeout={self.forest.timeout_seconds}s)",
+            section=section,
+        )
 
     def enumerate_dcs(self) -> list[str]:
         """Return FQDNs of all DCs in the forest, queried from the entry-point DC.
@@ -1359,7 +1442,7 @@ class LiveConnector:
         (soft degradation — Principle 10).
         """
         try:
-            result = self.run_ps(_SCRIPTS["_enumerate_dcs"])
+            result, _warnings = self.run_ps(_SCRIPTS["_enumerate_dcs"], section="_enumerate_dcs")
             if isinstance(result, str):
                 return [result]
             if isinstance(result, list):
@@ -1389,7 +1472,10 @@ class LiveConnector:
         script = _SCRIPTS[section]
         for dc_fqdn in dcs:
             try:
-                rows = self._run_ps_on(dc_fqdn, script)
+                # DC inventory sections have no Write-Warning call sites today
+                # (verified in task #141's Fase 1 map) -- warnings discarded
+                # here, not silently lost: nothing to lose yet.
+                rows, _warnings = self._run_ps_on(dc_fqdn, script, section=section)
                 if isinstance(rows, list):
                     results.extend(rows)
                 elif rows:
@@ -1404,19 +1490,37 @@ class LiveConnector:
                 results.append(fallback)
         return results
 
-    def query(self, section: str, **filters: Any) -> list[dict[str, Any]]:
-        """Execute the appropriate PS script for a given AD section."""
+    def query_with_warnings(
+        self, section: str, **filters: Any
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """Like query(), but also returns the warnings captured for this
+        call (task #141), filtered to what belongs in a JSON response (see
+        _warnings_for_json() -- the one genuinely unbounded call site,
+        group_members's per-group failures, is excluded here even though
+        EventLog already has it in full, written unconditionally inside
+        run_ps()/run_ps_local()).
+
+        Tools that want to surface degradation to the LLM calling them use
+        this instead of query(). query() itself is a thin wrapper that
+        discards the warnings, unchanged for the many sections that never
+        produce any.
+        """
         if section in _DC_INVENTORY_SECTIONS:
             rows = self.collect_dc_inventory(section)
+            warnings: list[str] = []
         elif section in _LOCAL_SECTIONS:
-            rows = self.run_ps_local(_build_script(section))
+            rows, warnings = self.run_ps_local(_build_script(section), section=section)
         else:
-            script = _build_script(section)
-            rows = self.run_ps(script)
+            rows, warnings = self.run_ps(_build_script(section), section=section)
         if not isinstance(rows, list):
             rows = [rows] if rows else []
         for key, value in filters.items():
             rows = [r for r in rows if str(r.get(key, "")).lower() == str(value).lower()]
+        return rows, _warnings_for_json(section, warnings)
+
+    def query(self, section: str, **filters: Any) -> list[dict[str, Any]]:
+        """Execute the appropriate PS script for a given AD section."""
+        rows, _warnings = self.query_with_warnings(section, **filters)
         return rows
 
     def query_page(
@@ -1430,6 +1534,12 @@ class LiveConnector:
 
         Returns the same contract as OfflineConnector.query_page:
             {items, total, offset, limit, has_more}
+        plus an optional "warnings" key (task #141): a list of strings,
+        present only when this call produced at least one warning worth
+        surfacing. Omitted entirely otherwise, so the common all-clear case
+        keeps the exact same shape as before and as OfflineConnector --
+        Principle 10 calls for degradation to be explicit, not for every
+        response to carry an empty-array tax when nothing happened.
 
         If the section has no PowerShell script implemented yet, returns an
         empty page without raising an error.
@@ -1446,30 +1556,22 @@ class LiveConnector:
             return _empty
 
         try:
-            if section in _DC_INVENTORY_SECTIONS:
-                rows = self.collect_dc_inventory(section)
-            elif section in _LOCAL_SECTIONS:
-                rows = self.run_ps_local(_SCRIPTS[section])
-            else:
-                rows = self.run_ps(_SCRIPTS[section])
+            rows, warnings = self.query_with_warnings(section, **filters)
         except (RuntimeError, ValueError):
             return _empty
 
-        if not isinstance(rows, list):
-            rows = [rows] if rows else []
-
-        for key, value in filters.items():
-            rows = [r for r in rows if str(r.get(key, "")).lower() == str(value).lower()]
-
         total = len(rows)
         page = rows[offset : offset + limit]
-        return {
+        result: dict[str, Any] = {
             "items": page,
             "total": total,
             "offset": offset,
             "limit": limit,
             "has_more": offset + len(page) < total,
         }
+        if warnings:
+            result["warnings"] = warnings
+        return result
 
     def scalar(self, section: str) -> dict[str, Any] | None:
         results = self.query(section)

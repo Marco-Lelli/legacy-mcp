@@ -31,6 +31,18 @@ class OfflineConnector:
         engine = self._ensure_loaded()
         return engine.query(section, **filters)
 
+    def query_with_warnings(
+        self, section: str, **filters: Any
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """Same shape as LiveConnector.query_with_warnings() (task #141), so
+        tool code can call either connector uniformly. Offline Mode never
+        has per-query warnings of its own -- its equivalent degradation
+        signal already lives in the loaded JSON's own
+        _metadata.collection_summary, a collection-time concept, not a
+        query-time one -- so this always returns an empty warnings list.
+        """
+        return self.query(section, **filters), []
+
     def query_page(
         self,
         section: str,

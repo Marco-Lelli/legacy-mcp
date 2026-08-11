@@ -1,8 +1,22 @@
 # Schema.psm1 -- AD Schema extensions data collection helpers
 
+# Explicit dependency: this module calls Write-SafeCollectorLog. Importing it
+# here makes the module self-sufficient (Principle 18 -- a module must never
+# rely on another module's function having already been loaded by whatever
+# happens to import it first).
+Import-Module (Join-Path $PSScriptRoot "Logging.psm1") -Force
+
 function Get-SchemaExtensionsData {
     [CmdletBinding()]
-    param([hashtable]$CommonParams = @{})
+    param(
+        [hashtable]$CommonParams = @{},
+        # Default cap, unlike Users/Computers (#128, unlimited by default):
+        # few organizations have hundreds of custom schema extensions, so a
+        # default cap is a reasonable safety net here, not a silent data-loss
+        # risk. 0 = unlimited, explicit override for the rare environment
+        # that needs it.
+        [int]$Limit = 500
+    )
 
     $schemaDN = (Get-ADRootDSE @CommonParams).schemaNamingContext
 
@@ -20,10 +34,15 @@ function Get-SchemaExtensionsData {
             -not $oid.StartsWith("2.16.840.1.101.2") -and
             -not $oid.StartsWith("1.3.6.1.4.1.311")
         })
-    if ($allExtensions.Count -gt 500) {
-        Write-Warning "Schema extensions truncated to 500 -- environment has $($allExtensions.Count) custom extensions"
+
+    $result = $allExtensions
+    if ($Limit -gt 0 -and $allExtensions.Count -gt $Limit) {
+        Write-SafeCollectorLog -Level WARN -Section "Schema" `
+            -Message "Schema extensions: $($allExtensions.Count) found, truncated to $Limit -- use -Limit 0 for a complete collection"
+        $result = $allExtensions | Select-Object -First $Limit
     }
-    $allExtensions | Select-Object -First 500 | ForEach-Object {
+
+    $result | ForEach-Object {
         [PSCustomObject]@{
             lDAPDisplayName  = $_.lDAPDisplayName
             ObjectClass      = $_.objectClass

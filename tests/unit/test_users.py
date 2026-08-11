@@ -683,6 +683,10 @@ class TestGetUsersLiveModeBoolNormalization:
         from unittest.mock import MagicMock
         connector = MagicMock()
         connector.query.return_value = [self._ALICE, self._BOB]
+        # get_users/get_user_summary call query_with_warnings() now (task
+        # #141) -- (rows, warnings), empty warnings here since these tests
+        # are about bool normalization, not warning surfacing.
+        connector.query_with_warnings.return_value = ([self._ALICE, self._BOB], [])
         workspace = MagicMock()
         workspace.connector.return_value = connector
         mcp = _MockMCP()

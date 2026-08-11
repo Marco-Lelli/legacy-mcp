@@ -21,6 +21,8 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         scope (Global/DomainLocal/Universal), and member count.
 
         Returns a paginated result: {items, total, offset, limit, has_more}.
+        May include a "warnings" list in Live Mode (present only when
+        something degraded this collection; absent otherwise).
         Default limit is 50 (records are heavy — Members field is embedded JSON).
         Use offset to page through large environments.
         """
@@ -31,7 +33,14 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
     def get_privileged_groups(forest_name: str | None = None) -> list[dict[str, Any]]:
         """Return membership of privileged groups with full nested resolution:
         Domain Admins, Enterprise Admins, Schema Admins, Administrators,
-        Account Operators, Backup Operators, Print Operators, Server Operators."""
+        Account Operators, Backup Operators, Print Operators, Server Operators.
+
+        Returns a bare list (no pagination wrapper), so this tool does not
+        surface a "warnings" field even in Live Mode -- any collection
+        warning for this section is still captured in full in the server's
+        EventLog. Use get_group_members or get_privileged_accounts if you
+        need warnings in the response itself.
+        """
         conn = workspace.connector(forest_name)
         return conn.query("privileged_groups")
 
@@ -57,6 +66,13 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         Returns a paginated result: {items, total, offset, limit, has_more}.
         Default limit is 50. Large groups (e.g. Domain Computers) may require
         multiple pages.
+
+        May include a "warnings" list in Live Mode -- always the aggregate
+        count of groups that failed to enumerate in this domain, never the
+        per-group detail (which can run into the hundreds on a large,
+        partially-inaccessible domain); present only when at least one
+        group failed, absent otherwise. The per-group detail is still
+        captured in full in the server's EventLog.
 
         For privileged groups use get_privileged_groups -- it provides
         recursive nested expansion.
