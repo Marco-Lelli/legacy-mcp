@@ -11,7 +11,8 @@ import pytest
 
 from legacy_mcp.workspace.workspace import ForestConfig, ForestRelation, Workspace, WorkspaceMode
 from legacy_mcp.tools import users as users_module
-from legacy_mcp.tools.users import _get_primary_group_id, _is_true
+from legacy_mcp.tools.users import _get_primary_group_id
+from legacy_mcp.tools._normalize import is_true as _is_true
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -666,13 +667,15 @@ class TestGetUsersLiveModeBoolNormalization:
         "TrustedToAuthForDelegation": False, "CannotChangePassword": False,
         "AllowedToDelegateTo": None, "LastLogonDate": "2026-03-01T00:00:00Z",
         "SIDHistory": [], "PrimaryGroupID": 513, "AdminCount": None,
+        "PasswordNotRequired": False,
     }
     _BOB = {
         "SamAccountName": "bob", "Enabled": False, "PasswordNeverExpires": True,
         "LockedOut": True, "TrustedForDelegation": True,
         "TrustedToAuthForDelegation": False, "CannotChangePassword": True,
         "AllowedToDelegateTo": None, "LastLogonDate": "2020-01-01T00:00:00Z",
-        "SIDHistory": [], "PrimaryGroupID": 513, "AdminCount": None,
+        "SIDHistory": [], "PrimaryGroupID": 513, "AdminCount": 1,
+        "PasswordNotRequired": True,
     }
 
     @pytest.fixture
@@ -734,3 +737,20 @@ class TestGetUsersLiveModeBoolNormalization:
         assert result["password_never_expires"] == 1
         assert result["cannot_change_password"]["count"] == 1
         assert result["delegation_configured"] == 1
+
+    def test_password_not_required_native_bool(self, live_tools: _MockMCP) -> None:
+        # Regression for the miss in get_user_summary — was comparing
+        # PasswordNotRequired == "True" directly, which never matches a
+        # native bool from Live Mode.
+        result = live_tools.get_user_summary()
+        assert result["password_not_required"] == 1
+
+    def test_admin_count_true_native_int(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_users(admin_count=True)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "bob"
+
+    def test_admin_count_false_native_int(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_users(admin_count=False)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "alice"

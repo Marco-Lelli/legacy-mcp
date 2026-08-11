@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from legacy_mcp.tools._normalize import is_true
+
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from legacy_mcp.workspace.workspace import Workspace
@@ -51,13 +53,13 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
 
         return {
             "total": len(computers),
-            "enabled": sum(1 for c in computers if c.get("Enabled") == "True"),
-            "disabled": sum(1 for c in computers if c.get("Enabled") == "False"),
+            "enabled": sum(1 for c in computers if is_true(c.get("Enabled"))),
+            "disabled": sum(1 for c in computers if not is_true(c.get("Enabled"))),
             "stale_90d": stale,
-            "cno": sum(1 for c in computers if c.get("IsCNO") == "True"),
-            "vco": sum(1 for c in computers if c.get("IsVCO") == "True"),
+            "cno": sum(1 for c in computers if is_true(c.get("IsCNO"))),
+            "vco": sum(1 for c in computers if is_true(c.get("IsVCO"))),
             "trusted_for_delegation": sum(
-                1 for c in computers if c.get("TrustedForDelegation") == "True"
+                1 for c in computers if is_true(c.get("TrustedForDelegation"))
             ),
             "os_breakdown": dict(sorted(os_counts.items())),
         }
@@ -90,8 +92,10 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         conn = workspace.connector(forest_name)
         computers = conn.query("computers")
 
-        if enabled is not None:
-            computers = [c for c in computers if c.get("Enabled") == str(enabled)]
+        if enabled is True:
+            computers = [c for c in computers if is_true(c.get("Enabled"))]
+        elif enabled is False:
+            computers = [c for c in computers if not is_true(c.get("Enabled"))]
 
         if stale_only:
             now = datetime.now(tz=timezone.utc)
@@ -114,8 +118,8 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         if delegation_only:
             computers = [
                 c for c in computers
-                if c.get("TrustedForDelegation") == "True"
-                or c.get("TrustedToAuthForDelegation") == "True"
+                if is_true(c.get("TrustedForDelegation"))
+                or is_true(c.get("TrustedToAuthForDelegation"))
                 or c.get("AllowedToDelegateTo")
             ]
 

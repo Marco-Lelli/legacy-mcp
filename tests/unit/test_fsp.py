@@ -155,3 +155,36 @@ class TestGetFspEmptySection:
         result = mcp.get_fsp(orphaned_only=True)
         assert result["items"] == []
         assert result["total"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Live Mode -- native Python bool field values (no SQLite serialization)
+# ---------------------------------------------------------------------------
+
+class TestGetFspLiveModeBoolNormalization:
+    """Verify orphaned_only works when IsOrphaned is a native Python bool,
+    as returned by the Live Mode connector (no SQLite string serialization).
+    Task #139 regression coverage."""
+
+    _RESOLVED = {"Name": "S-1-5-21-resolved", "IsOrphaned": False, "ResolvedName": "EXTDOM\\user1"}
+    _ORPHANED = {"Name": "S-1-5-21-orphaned", "IsOrphaned": True, "ResolvedName": None}
+
+    @pytest.fixture
+    def live_tools(self) -> _MockMCP:
+        from unittest.mock import MagicMock
+        connector = MagicMock()
+        connector.query.return_value = [self._RESOLVED, self._ORPHANED]
+        workspace = MagicMock()
+        workspace.connector.return_value = connector
+        mcp = _MockMCP()
+        fsp_module.register(mcp, workspace)
+        return mcp
+
+    def test_orphaned_only_true_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_fsp(orphaned_only=True)
+        assert result["total"] == 1
+        assert result["items"][0]["Name"] == "S-1-5-21-orphaned"
+
+    def test_orphaned_only_false_native_bool_returns_all(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_fsp(orphaned_only=False)
+        assert result["total"] == 2

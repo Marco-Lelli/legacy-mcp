@@ -32,6 +32,13 @@ is the primary defense that keeps PS* artefact fields out of the output;
 the corollary above about stripping those fields at the two touch points
 is the safety net behind it, not the first line of defense.
 
+Corollary: alignment between Collector and Live Mode must target the
+correct behavior, not merely mirror whatever the other side currently
+does. A prior alignment is not proof of correctness — if one side had a
+defect, aligning the other side to match it only doubles the defect. Any
+fix to one side must be verified against the other before the task is
+considered complete.
+
 ## 3. Kerberos only — NTLM is not a fallback
 
 NTLM is deprecated and must not be used as a transport or fallback mechanism.
@@ -126,3 +133,17 @@ Corollary: any new section or modification that queries a Domain Controller
 must be evaluated against the POLP matrix in docs/minimum-permissions.md.
 If the operation requires permissions beyond the certified baseline, the
 matrix must be updated and re-certified before closing.
+
+## 18. Every module declares what it uses
+
+A module must never rely on another module's function, variable, or import
+having already been loaded by whatever happens to import it first. If
+module B calls a function defined in module A, module B must import
+module A explicitly — regardless of what the host script does today.
+Implicit dependencies on load order are fragile: they work by coincidence
+and break silently the moment that order changes.
+
+(Origin: two distinct regressions in session #59 caused by exactly this —
+Write-CollectorLog invisible to modules when the invocation order changed,
+and Get-PrivilegedGroupNames lost when another module's import order
+changed.)

@@ -208,3 +208,68 @@ class TestGetComputersDelegationOnly:
         names = [c["Name"] for c in result]
         assert "WS-MILAN-001" not in names
         assert "SQLCLUSTER" not in names
+
+
+# ---------------------------------------------------------------------------
+# Live Mode -- native Python bool field values (no SQLite serialization)
+# ---------------------------------------------------------------------------
+
+class TestGetComputersLiveModeBoolNormalization:
+    """Verify get_computers/get_computer_summary work when boolean fields
+    are native Python bools, as returned by the Live Mode connector
+    (no SQLite string serialization). Task #139 regression coverage:
+    Live Mode previously compared these fields to the string "True",
+    which never matches a native bool and silently under-counted."""
+
+    _WS01 = {
+        "Name": "WS01", "Enabled": True, "IsCNO": False, "IsVCO": False,
+        "TrustedForDelegation": False, "TrustedToAuthForDelegation": False,
+        "AllowedToDelegateTo": None, "LastLogonDate": "2026-03-01T00:00:00Z",
+        "OperatingSystem": "Windows 11 Pro",
+    }
+    _SRV01 = {
+        "Name": "SRV01", "Enabled": False, "IsCNO": True, "IsVCO": False,
+        "TrustedForDelegation": True, "TrustedToAuthForDelegation": False,
+        "AllowedToDelegateTo": None, "LastLogonDate": "2020-01-01T00:00:00Z",
+        "OperatingSystem": "Windows Server 2022 Standard",
+    }
+
+    @pytest.fixture
+    def live_tools(self) -> _MockMCP:
+        from unittest.mock import MagicMock
+        connector = MagicMock()
+        connector.query.return_value = [self._WS01, self._SRV01]
+        workspace = MagicMock()
+        workspace.connector.return_value = connector
+        mcp = _MockMCP()
+        computers_module.register(mcp, workspace)
+        return mcp
+
+    def test_enabled_true_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_computers(enabled=True)
+        assert len(result) == 1
+        assert result[0]["Name"] == "WS01"
+
+    def test_enabled_false_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_computers(enabled=False)
+        assert len(result) == 1
+        assert result[0]["Name"] == "SRV01"
+
+    def test_delegation_only_native_bool(self, live_tools: _MockMCP) -> None:
+        result = live_tools.get_computers(delegation_only=True)
+        assert len(result) == 1
+        assert result[0]["Name"] == "SRV01"
+
+    def test_summary_enabled_disabled_native_bool(self, live_tools: _MockMCP) -> None:
+        summary = live_tools.get_computer_summary()
+        assert summary["enabled"] == 1
+        assert summary["disabled"] == 1
+
+    def test_summary_cno_vco_native_bool(self, live_tools: _MockMCP) -> None:
+        summary = live_tools.get_computer_summary()
+        assert summary["cno"] == 1
+        assert summary["vco"] == 0
+
+    def test_summary_trusted_for_delegation_native_bool(self, live_tools: _MockMCP) -> None:
+        summary = live_tools.get_computer_summary()
+        assert summary["trusted_for_delegation"] == 1

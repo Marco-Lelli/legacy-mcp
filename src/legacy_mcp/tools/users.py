@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from legacy_mcp.tools._normalize import is_admin_count_set, is_true as _is_true
+
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from legacy_mcp.workspace.workspace import Workspace
@@ -27,13 +29,6 @@ def _get_primary_group_id(u: dict) -> int:
         return int(val)
     except (TypeError, ValueError):
         return 513
-
-
-def _is_true(val: Any) -> bool:
-    """Normalize boolean fields from both Offline (string) and Live (native bool) mode."""
-    if isinstance(val, bool):
-        return val
-    return str(val) == "True"
 
 
 def register(mcp: "FastMCP", workspace: "Workspace") -> None:
@@ -77,7 +72,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             "enabled":                enabled_count,
             "disabled":               sum(1 for u in users if not _is_true(u.get("Enabled"))),
             "password_never_expires": sum(1 for u in users if _is_true(u.get("PasswordNeverExpires"))),
-            "password_not_required":  sum(1 for u in users if u.get("PasswordNotRequired") == "True"),
+            "password_not_required":  sum(1 for u in users if _is_true(u.get("PasswordNotRequired"))),
             "locked_out":             sum(1 for u in users if _is_true(u.get("LockedOut"))),
             "delegation_configured":  sum(
                 1 for u in users
@@ -199,9 +194,9 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             users = [u for u in users if not _is_true(u.get("Enabled"))]
 
         if admin_count is True:
-            users = [u for u in users if u.get("AdminCount") == "1"]
+            users = [u for u in users if is_admin_count_set(u.get("AdminCount"))]
         elif admin_count is False:
-            users = [u for u in users if u.get("AdminCount") != "1"]
+            users = [u for u in users if not is_admin_count_set(u.get("AdminCount"))]
 
         if stale_only:
             now = datetime.now(tz=timezone.utc)

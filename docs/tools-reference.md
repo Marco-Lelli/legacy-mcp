@@ -648,6 +648,12 @@ All filters are combinable and applied in sequence. Use `get_user_summary` first
 
 Paginated result: `{ items, total, offset, limit, has_more }`. `total` reflects the filtered count before pagination.
 
+**Notes**
+
+`Enabled`, `PasswordNeverExpires`, `TrustedForDelegation`, and `TrustedToAuthForDelegation` can be explicit `null` on an item, not just `true`/`false`. This means the value could not be determined -- typically because the collector session that produced the data was not elevated, or the account used lacks read access to `userAccountControl` -- not that the flag is unset. Do not treat `null` as `false` for these four fields.
+
+`PasswordNotRequired` does not follow this rule: it can report a fabricated `false` in the same situation instead of `null` (known limitation, task #135). Treat it as unreliable for any account where the four fields above are `null`.
+
 **Example prompts**
 
 - "List all enabled accounts with passwords that never expire."
@@ -671,6 +677,10 @@ Return the full record for a single user looked up by SamAccountName.
 
 Full user record dict, or `null` if not found.
 
+**Notes**
+
+`Enabled`, `PasswordNeverExpires`, `TrustedForDelegation`, and `TrustedToAuthForDelegation` in the returned record can be explicit `null` when `userAccountControl` could not be read for this user -- see the same note under [`get_users`](#get_users). `PasswordNotRequired` does not follow this rule yet (task #135).
+
 **Example prompts**
 
 - "Show me the full account details for jdoe."
@@ -693,6 +703,10 @@ Return accounts that are members of privileged groups (Domain Admins, Enterprise
 **Returns**
 
 Paginated result: `{ items, total, offset, limit, has_more }`.
+
+**Notes**
+
+Membership is resolved member-by-member: a single member that cannot be resolved (orphaned SID, deleted object, unresolvable external principal) no longer drops the whole privileged group from this count, the way it used to. Unresolved members are excluded from this list entirely, by design, so the count stays accurate -- they are not lost, they surface as placeholder entries in [`get_privileged_groups`](#get_privileged_groups) and [`get_group_members`](#get_group_members) instead. Check those two if you need to see what was excluded here.
 
 **Example prompts**
 
@@ -746,10 +760,15 @@ Return the direct members of a specific group. For privileged groups, prefer `ge
 
 Paginated result: `{ items, total, offset, limit, has_more }`. Each item includes `GroupName`, `MemberSamAccountName`, `MemberDisplayName`, `MemberObjectClass`, `MemberDistinguishedName`, `MemberEnabled`.
 
+**Notes**
+
+`MemberObjectClass` can be `"unresolved"`. This means the member's distinguished name could not be resolved to an object -- an orphaned SID, a deleted object, or an external principal from a domain/forest not in scope. It is a real member reference in AD, just not an identifiable one. `MemberDistinguishedName` still contains the raw DN in this case, which is the starting point for cleanup; the other `Member*` fields are typically empty.
+
 **Example prompts**
 
 - "Who are the members of the HelpDesk group?"
 - "List all members of the VPN-Users group including their enabled status."
+- "Are there any unresolved members in our privileged groups? Check MemberObjectClass."
 
 ---
 
@@ -765,7 +784,11 @@ Return membership of privileged groups with full nested resolution: Domain Admin
 
 **Returns**
 
-A list of group membership records with nested expansion.
+A list with one item per privileged group: `{ Group, Members, Error }`. `Members` is the recursively expanded, de-duplicated list of leaf principals, each `{ SamAccountName, objectClass, distinguishedName }`. `Error` is present only if the group itself could not be enumerated.
+
+**Notes**
+
+Membership is resolved member-by-member: a single unresolvable member (orphaned SID, deleted object, unresolvable external principal) no longer discards the whole group's expansion the way it used to. It appears instead as its own entry in `Members` with `SamAccountName: null`, `objectClass: "unresolved"`, and `distinguishedName` holding the raw DN. Note the field names here are lowercase and different from `get_group_members`' `MemberObjectClass`/`MemberDistinguishedName` -- same concept, different section, different casing.
 
 **Example prompts**
 

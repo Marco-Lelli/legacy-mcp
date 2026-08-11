@@ -78,6 +78,14 @@ REQUIREMENTS
   (Run as Administrator) to ensure remote registry access for NTP and EventLog
   configuration queries.
 
+  This also matters for user and computer data: in some AD environments, a
+  non-elevated session causes userAccountControl to come back unreadable for
+  every account, which silently empties Enabled, PasswordNeverExpires, and
+  the delegation fields (TrustedForDelegation, TrustedToAuthForDelegation) --
+  see the "users"/"computers" field notes in OUTPUT FORMAT below and the
+  v1.7.0 entry in VERSION HISTORY. Since v1.7.0 the script detects this and
+  prints a non-blocking warning; it does not stop the collection.
+
 
 REQUIRED RIGHTS
 ---------------
@@ -299,8 +307,9 @@ OUTPUT FORMAT
     Medium domain (500-5000 objects): 5-30 MB
     Large domain  (> 5000 objects):  30 MB+
 
-  Users are capped at 5,000 objects. Computer objects are capped at 10,000.
-  Adjust the limits in the script if the environment exceeds these thresholds.
+  Users and computers have no collection limit by default (since v1.7.0).
+  A -Limit parameter exists for test/debug use only -- it is opt-in and
+  does not apply during a normal assessment.
 
   Fields per section (selected):
 
@@ -309,12 +318,24 @@ OUTPUT FORMAT
     Mail, Enabled, PasswordNeverExpires, LockedOut, LastLogonDate,
     PasswordLastSet, Description, AdminCount,
     TrustedForDelegation, TrustedToAuthForDelegation, AllowedToDelegateTo
+    Since v1.7.0: Enabled, PasswordNeverExpires, TrustedForDelegation, and
+    TrustedToAuthForDelegation are explicit null -- instead of a fabricated
+    value -- for any user whose userAccountControl could not be read (see
+    "Elevated session" above). An aggregate warning is printed when this
+    happens.
+    Known gap (task #135, not yet fixed): PasswordNotRequired does not
+    follow this rule yet -- it still reports a fabricated false in the same
+    situation, instead of null. Treat PasswordNotRequired as unreliable for
+    any user affected by a userAccountControl read failure until #135 is
+    resolved.
 
   computers
     Name, DistinguishedName, OperatingSystem, OperatingSystemVersion,
     Enabled, LastLogonDate, PasswordLastSet, Description,
     IsCNO, IsVCO,
     TrustedForDelegation, TrustedToAuthForDelegation, AllowedToDelegateTo
+    Computer accounts are not affected by the userAccountControl read
+    failure described under "users" above.
 
   group_members
     GroupName, MemberSamAccountName, MemberDisplayName,
@@ -322,6 +343,20 @@ OUTPUT FORMAT
     One row per direct member per group. MemberEnabled is null for
     nested group members (objectClass = group). Groups with no members
     produce no rows.
+    Since v1.7.0: a member whose DN cannot be resolved (orphaned SID,
+    deleted object, unresolvable external principal) no longer drops the
+    whole group from the export. It is recorded as a placeholder row with
+    MemberObjectClass = "unresolved" -- MemberDistinguishedName still
+    contains the raw DN, which is the starting point for cleanup.
+
+    The same member-by-member resolution (task #134) also protects
+    privileged_groups (placeholder entries with lowercase objectClass =
+    "unresolved" -- different field names than above, same idea) and the
+    groups section (MemberCount now counts raw member DNs directly instead
+    of failing, so it stays accurate even with unresolvable members inside).
+    privileged_accounts is the one exception: unresolvable members are
+    excluded from it on purpose, to keep its count accurate -- they remain
+    visible in privileged_groups and group_members instead.
 
   gpo_links
     DisplayName, GpoId, Enabled, Enforced, Target, Order

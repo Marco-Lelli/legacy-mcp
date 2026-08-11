@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from legacy_mcp.tools._normalize import is_true
+
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from legacy_mcp.workspace.workspace import Workspace
@@ -38,7 +40,7 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         items = conn.query("fsp")
 
         if orphaned_only:
-            items = [item for item in items if item.get("IsOrphaned") == "True"]
+            items = [item for item in items if is_true(item.get("IsOrphaned"))]
 
         total = len(items)
         page = items[offset: offset + limit]

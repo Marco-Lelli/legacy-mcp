@@ -2,6 +2,55 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+Collector-only cycle — no MCP server package release. The server package
+remains at v0.2.5 (see below); only the collector script was updated.
+
+### Collector
+
+- Collector bumped to v1.7.0.
+- Removed the silent `-Limit` caps on Users/Computers collection (previously
+  5,000/10,000); collection is now unlimited by default, with `-Limit`
+  available only for opt-in test/debug use.
+- `Enabled`, `PasswordNeverExpires`, `TrustedForDelegation`, and
+  `TrustedToAuthForDelegation` now report explicit null — instead of a
+  fabricated value — when `userAccountControl` cannot be read for a user
+  (typically caused by a non-elevated collector session; task #131).
+- Added a non-blocking elevation check: the collector now warns when run
+  from a non-elevated PowerShell session, since some AD environments
+  return a null `userAccountControl` without one (task #137).
+- Fixed forest/domain name resolution to anchor to the target server
+  (`-Server`) instead of the calling machine's own identity — previously
+  produced wrong output filenames and an incorrect `forest`/`fsmo_roles`
+  section in cross-forest and trust scenarios (task #132).
+- New `Membership.psm1`: group membership is now resolved member-by-member
+  instead of failing an entire group on a single broken reference.
+  Unresolvable members are recorded as placeholder rows instead of
+  disappearing in `group_members` and `privileged_groups` (different field
+  casing between the two). `groups` stays accurate too, by counting raw
+  member DNs directly. `privileged_accounts` is the one exception:
+  unresolvable members are excluded from it on purpose, to keep its count
+  accurate -- they remain visible in `privileged_groups`/`group_members`
+  (task #134).
+- New `Logging.psm1`: shared fallback logging so warnings from collector
+  modules are never silently lost regardless of invocation style.
+- Fixed an ADWS enumeration timeout on large group/DC counts by
+  materializing collections before iterating.
+- `installer/Manage-Workspaces.ps1`: fixed array-collapse bugs causing
+  incorrect behavior with a single forest and a crash with zero forests
+  configured (`-RepairMetadata`, `-Validate -Name`).
+
+### Known limitations
+
+- `PasswordNotRequired` can still report a fabricated `false` instead of an
+  explicit null when user account data cannot be fully read, unlike the
+  fields listed above — treat it as unreliable in that situation until
+  this is fixed (task #135).
+- `get_user_summary`'s `disabled` count does not yet separate confirmed
+  disabled accounts from accounts whose enabled/disabled state could not
+  be determined — both are counted together for now (task #136).
+
 ## [0.2.5] - 2026-07-12 "Fable-ous Findings"
 
 ### Security
