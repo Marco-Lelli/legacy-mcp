@@ -201,6 +201,7 @@ New to LegacyMCP? Start here:
 Already know which profile you need?
 - [Profile A — local offline setup](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/getting-started-a.md)
 - [Profile B-core — LAN endpoint with HTTPS](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/getting-started-b-core.md)
+- [First collection and analysis — from install to your first report](https://github.com/Marco-Lelli/legacy-mcp/blob/master/docs/first-analysis.md)
 
 ---
 
