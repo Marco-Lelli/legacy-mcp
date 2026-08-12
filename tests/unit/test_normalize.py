@@ -5,7 +5,7 @@ identically."""
 
 from __future__ import annotations
 
-from legacy_mcp.tools._normalize import is_admin_count_set, is_true
+from legacy_mcp.tools._normalize import is_admin_count_set, is_false, is_true
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +36,35 @@ class TestIsTrue:
         # 1 is neither a bool nor the string "True" -- must not be
         # mistaken for a truthy boolean field.
         assert is_true(1) is False
+
+
+# ---------------------------------------------------------------------------
+# is_false (task #136 -- strict counterpart to is_true for 3-state fields)
+# ---------------------------------------------------------------------------
+
+class TestIsFalse:
+
+    def test_native_false(self) -> None:
+        assert is_false(False) is True
+
+    def test_native_true(self) -> None:
+        assert is_false(True) is False
+
+    def test_string_false(self) -> None:
+        assert is_false("False") is True
+
+    def test_string_true(self) -> None:
+        assert is_false("True") is False
+
+    def test_none_is_neither_true_nor_false(self) -> None:
+        # The task #136 fix: None (uac unreadable) must not be folded into
+        # "false" by `not is_true(None)` -- is_false(None) must also be
+        # False, so a None value matches neither is_true nor is_false.
+        assert is_false(None) is False
+        assert is_true(None) is False
+
+    def test_zero_is_false(self) -> None:
+        assert is_false(0) is False
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,20 @@ def is_true(val: Any) -> bool:
     return str(val) == "True"
 
 
+def is_false(val: Any) -> bool:
+    """Strict counterpart to is_true() for 3-state fields (True / False / None).
+
+    True only when val is explicitly False. None -- unreadable source field,
+    e.g. userAccountControl (task #131/#135/#136) -- is neither true nor
+    false here, same as in is_true(): a None value must fall into neither
+    bucket, not be folded into "false" by default (that was the task #136
+    bug -- `not is_true(None)` fabricates a false positive).
+    """
+    if isinstance(val, bool):
+        return not val
+    return str(val) == "False"
+
+
 def is_admin_count_set(val: Any) -> bool:
     """Normalize AdminCount (int-like flag, not boolean) from both modes.
 

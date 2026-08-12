@@ -600,7 +600,7 @@ Paginated result: `{ items, total, offset, limit, has_more }`.
 
 ### get_user_summary
 
-Return user counts by state: total, enabled, disabled, locked out, password-never-expires, password-not-required, delegation configured, accounts inactive for 90+ days, accounts with no logon date, accounts with non-standard primary group, and accounts that cannot change their password.
+Return user counts by state: total, enabled, disabled, accounts with unreadable `userAccountControl`, locked out, password-never-expires, password-not-required, delegation configured, accounts inactive for 90+ days, accounts with no logon date, accounts with non-standard primary group, and accounts that cannot change their password.
 
 **Parameters**
 
@@ -611,6 +611,8 @@ Return user counts by state: total, enabled, disabled, locked out, password-neve
 **Returns**
 
 A dict with counts and percentages for each user state category. `no_last_logon`, `primary_group_not_domain_users`, and `cannot_change_password` include sub-counts and percentages.
+
+`enabled` and `disabled` are strict: an account counts toward one of them only when `Enabled` is explicitly `true`/`false`. Accounts whose `userAccountControl` could not be read count toward neither -- they are reported in `uac_unreadable_count` instead, so `enabled + disabled + uac_unreadable_count == total` always holds (task #136). The same read also backs `PasswordNeverExpires`, `TrustedForDelegation`, `TrustedToAuthForDelegation`, and `PasswordNotRequired` (task #135) -- they go `null` for the same users at the same time, so `uac_unreadable_count` covers all 5 with a single number.
 
 **Example prompts**
 
@@ -631,11 +633,13 @@ All filters are combinable and applied in sequence. Use `get_user_summary` first
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `forest_name` | str | no | first forest in workspace | Target forest |
-| `enabled` | bool | no | `null` (all) | `true` = enabled only, `false` = disabled only |
+| `enabled` | bool | no | `null` (all) | `true` = Enabled explicitly true, `false` = explicitly false. Accounts with unreadable `userAccountControl` match neither -- use `uac_unreadable` |
 | `admin_count` | bool | no | `null` (all) | `true` = AdminCount=1 (SDProp-protected), `false` = without AdminCount |
 | `stale_only` | bool | no | `false` | Only accounts with no logon in 90+ days or never logged on |
-| `delegation_only` | bool | no | `false` | Only accounts with any Kerberos delegation configured |
-| `password_never_expires` | bool | no | `null` (all) | `true` = PasswordNeverExpires set |
+| `delegation_only` | bool | no | `false` | Only accounts with any Kerberos delegation configured. Accounts with unreadable `userAccountControl` are excluded unless `AllowedToDelegateTo` is independently set |
+| `uac_unreadable` | bool | no | `false` | Only accounts whose `userAccountControl` could not be read (Enabled/PasswordNeverExpires/TrustedForDelegation/TrustedToAuthForDelegation/PasswordNotRequired all `null`). Combined with a `true`/`false` value on any of those filters, always returns empty |
+| `password_never_expires` | bool | no | `null` (all) | `true` = PasswordNeverExpires explicitly true, `false` = explicitly false. Same null handling as `enabled` |
+| `password_not_required` | bool | no | `null` (all) | `true` = PasswordNotRequired explicitly true (PASSWD_NOTREQD set), `false` = explicitly false. Same null handling as `enabled` |
 | `locked_out` | bool | no | `null` (all) | `true` = locked-out accounts only |
 | `has_sid_history` | bool | no | `null` (all) | `true` = accounts with non-empty SIDHistory |
 | `no_last_logon` | bool | no | `false` | Only accounts that have never logged on |
@@ -650,15 +654,16 @@ Paginated result: `{ items, total, offset, limit, has_more }`. `total` reflects 
 
 **Notes**
 
-`Enabled`, `PasswordNeverExpires`, `TrustedForDelegation`, and `TrustedToAuthForDelegation` can be explicit `null` on an item, not just `true`/`false`. This means the value could not be determined -- typically because the collector session that produced the data was not elevated, or the account used lacks read access to `userAccountControl` -- not that the flag is unset. Do not treat `null` as `false` for these four fields.
+`Enabled`, `PasswordNeverExpires`, `TrustedForDelegation`, `TrustedToAuthForDelegation`, and `PasswordNotRequired` can be explicit `null` on an item, not just `true`/`false`. This means `userAccountControl` could not be read for that account -- typically because the collector session that produced the data was not elevated, or the account used lacks read access to `userAccountControl` -- not that the flag is unset. All 5 fields go `null` together for the same account (they come from a single read).
 
-`PasswordNotRequired` does not follow this rule: it can report a fabricated `false` in the same situation instead of `null` (known limitation, task #135). Treat it as unreliable for any account where the four fields above are `null`.
+The `enabled`, `password_never_expires`, and `password_not_required` filters are strict: `true` matches only an explicit `true`, `false` matches only an explicit `false`, and a `null` account matches neither. Use `uac_unreadable=true` to retrieve that population explicitly (task #136).
 
 **Example prompts**
 
 - "List all enabled accounts with passwords that never expire."
 - "Show me stale accounts that are also members of privileged groups (admin_count=true, stale_only=true)."
 - "Which enabled accounts have never logged on?"
+- "Are there accounts where userAccountControl couldn't be read? (get_users with uac_unreadable=true)"
 
 ---
 
@@ -679,7 +684,7 @@ Full user record dict, or `null` if not found.
 
 **Notes**
 
-`Enabled`, `PasswordNeverExpires`, `TrustedForDelegation`, and `TrustedToAuthForDelegation` in the returned record can be explicit `null` when `userAccountControl` could not be read for this user -- see the same note under [`get_users`](#get_users). `PasswordNotRequired` does not follow this rule yet (task #135).
+`Enabled`, `PasswordNeverExpires`, `TrustedForDelegation`, `TrustedToAuthForDelegation`, and `PasswordNotRequired` in the returned record can be explicit `null` when `userAccountControl` could not be read for this user -- see the same note under [`get_users`](#get_users).
 
 **Example prompts**
 

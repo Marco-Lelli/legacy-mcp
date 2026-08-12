@@ -4,8 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Collector-only cycle — no MCP server package release. The server package
-remains at v0.2.5 (see below); only the collector script was updated.
+No MCP server package release yet — the published package remains at
+v0.2.5 (see below), but this cycle now includes MCP server code changes
+alongside the collector ones (see "MCP Server" below).
 
 ### Collector
 
@@ -41,15 +42,21 @@ remains at v0.2.5 (see below); only the collector script was updated.
   incorrect behavior with a single forest and a crash with zero forests
   configured (`-RepairMetadata`, `-Validate -Name`).
 
-### Known limitations
+### MCP Server
 
-- `PasswordNotRequired` can still report a fabricated `false` instead of an
-  explicit null when user account data cannot be fully read, unlike the
-  fields listed above — treat it as unreliable in that situation until
-  this is fixed (task #135).
-- `get_user_summary`'s `disabled` count does not yet separate confirmed
-  disabled accounts from accounts whose enabled/disabled state could not
-  be determined — both are counted together for now (task #136).
+- `PasswordNotRequired` now reports explicit `null` — instead of a
+  fabricated `false` — when `userAccountControl` cannot be read for a
+  user, matching the other 4 UAC-derived fields already fixed in task
+  #131. Fixed identically in the collector and in Live Mode (task #135).
+- `get_user_summary`: `disabled` no longer counts accounts with unreadable
+  `userAccountControl` as disabled. New `uac_unreadable_count` field
+  reports that population explicitly, so `enabled + disabled +
+  uac_unreadable_count == total` always holds (task #136).
+- `get_users`: the `enabled` and `password_never_expires` filters no
+  longer misclassify accounts with unreadable `userAccountControl` into
+  the `false` branch; new `password_not_required` filter added for
+  symmetry; new `uac_unreadable` filter to query that population
+  explicitly, combinable with every non-UAC filter (task #136).
 
 ## [0.2.5] - 2026-07-12 "Fable-ous Findings"
 

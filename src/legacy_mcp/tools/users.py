@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from legacy_mcp.tools._normalize import is_admin_count_set, is_true as _is_true
+from legacy_mcp.tools._normalize import is_admin_count_set, is_false as _is_false, is_true as _is_true
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -37,19 +37,35 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
     def get_user_summary(forest_name: str | None = None) -> dict[str, Any]:
         """Return user counts by state: total, enabled, disabled, locked out,
         password-never-expires, password-not-required, delegation configured,
-        and accounts inactive for more than 90 days.
+        accounts inactive for more than 90 days, and uac_unreadable_count.
+
+        enabled and disabled are strict: an account only counts toward one
+        of them when Enabled is explicitly True/False. Accounts whose
+        userAccountControl could not be read (Enabled is null, task #131)
+        count toward neither -- they are reported separately in
+        uac_unreadable_count instead, so enabled + disabled +
+        uac_unreadable_count == total always holds (task #136). The same
+        userAccountControl read also backs PasswordNeverExpires,
+        TrustedForDelegation, TrustedToAuthForDelegation, and
+        PasswordNotRequired (task #135) -- they go null for the same users
+        at the same time, so a single count covers all 5.
 
         In Live Mode, the result may include a "warnings" list (e.g.
-        userAccountControl unreadable for N users -- see the null-field
-        notes on Enabled/PasswordNeverExpires/TrustedForDelegation/
-        TrustedToAuthForDelegation above). Present only when something
-        actually degraded this collection; absent otherwise.
+        userAccountControl unreadable for N users). Present only when
+        something actually degraded this collection; absent otherwise.
         """
         conn = workspace.connector(forest_name)
         users, warnings = conn.query_with_warnings("users")
         now = datetime.now(tz=timezone.utc)
         total = len(users)
         enabled_count = sum(1 for u in users if _is_true(u.get("Enabled")))
+        disabled_count = sum(1 for u in users if _is_false(u.get("Enabled")))
+        # Enabled is the representative field for the shared null cause --
+        # all 5 UAC-derived fields go null together for the same user
+        # (Users.psm1 / live.py compute them in the same if/else block from
+        # a single $uac read), so checking just this one is exact, not an
+        # approximation (confirmed in Fase 1 analysis, task #136).
+        uac_unreadable_count = sum(1 for u in users if u.get("Enabled") is None)
 
         stale = 0
         for u in users:
@@ -77,7 +93,8 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         result: dict[str, Any] = {
             "total":                  total,
             "enabled":                enabled_count,
-            "disabled":               sum(1 for u in users if not _is_true(u.get("Enabled"))),
+            "disabled":               disabled_count,
+            "uac_unreadable_count":   uac_unreadable_count,
             "password_never_expires": sum(1 for u in users if _is_true(u.get("PasswordNeverExpires"))),
             "password_not_required":  sum(1 for u in users if _is_true(u.get("PasswordNotRequired"))),
             "locked_out":             sum(1 for u in users if _is_true(u.get("LockedOut"))),
@@ -133,7 +150,9 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         admin_count: bool | None = None,
         stale_only: bool = False,
         delegation_only: bool = False,
+        uac_unreadable: bool = False,
         password_never_expires: bool | None = None,
+        password_not_required: bool | None = None,
         locked_out: bool | None = None,
         has_sid_history: bool | None = None,
         no_last_logon: bool = False,
@@ -149,7 +168,11 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         Filters (all combinable, applied in sequence):
 
         enabled:
-            True = only enabled accounts, False = only disabled, None = all.
+            True = only accounts with Enabled explicitly True, False = only
+            accounts with Enabled explicitly False, None = all. Accounts
+            whose userAccountControl could not be read (Enabled is null,
+            task #131) match neither True nor False -- use uac_unreadable=True
+            to retrieve them.
         admin_count:
             True = only accounts with AdminCount=1 (SDProp-protected, i.e.
             current or former privileged group members).
@@ -162,11 +185,31 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
             If True, return only accounts with any form of Kerberos delegation
             (TrustedForDelegation, TrustedToAuthForDelegation, or
             AllowedToDelegateTo set). Service accounts with delegation are
-            high-value targets — use this to find misconfigurations.
+            high-value targets — use this to find misconfigurations. Accounts
+            whose userAccountControl could not be read are excluded unless
+            AllowedToDelegateTo is independently set (that field does not
+            depend on userAccountControl) -- their delegation status via
+            TrustedForDelegation/TrustedToAuthForDelegation is unknown, not
+            confirmed absent; cross-check with uac_unreadable=True.
+        uac_unreadable:
+            If True, return only accounts whose userAccountControl could not
+            be read during collection (Enabled, PasswordNeverExpires,
+            TrustedForDelegation, TrustedToAuthForDelegation, and
+            PasswordNotRequired are all null for these accounts — task #135,
+            #136). Combining this with enabled/password_never_expires/
+            password_not_required True or False, or with delegation_only,
+            always returns an empty result, since those filters require a
+            confirmed value on fields this population does not have by
+            definition.
         password_never_expires:
-            True = only accounts with PasswordNeverExpires set.
-            False = only accounts where password does expire.
-            None = all.
+            True = only accounts with PasswordNeverExpires explicitly True,
+            False = only accounts with PasswordNeverExpires explicitly False,
+            None = all. Same null handling as enabled above.
+        password_not_required:
+            True = only accounts with PasswordNotRequired explicitly True
+            (PASSWD_NOTREQD set — the account can have a blank password),
+            False = only accounts with PasswordNotRequired explicitly False,
+            None = all. Same null handling as enabled above.
         locked_out:
             True = only locked-out accounts.
             False = only non-locked accounts.
@@ -209,7 +252,10 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         if enabled is True:
             users = [u for u in users if _is_true(u.get("Enabled"))]
         elif enabled is False:
-            users = [u for u in users if not _is_true(u.get("Enabled"))]
+            users = [u for u in users if _is_false(u.get("Enabled"))]
+
+        if uac_unreadable:
+            users = [u for u in users if u.get("Enabled") is None]
 
         if admin_count is True:
             users = [u for u in users if is_admin_count_set(u.get("AdminCount"))]
@@ -245,7 +291,12 @@ def register(mcp: "FastMCP", workspace: "Workspace") -> None:
         if password_never_expires is True:
             users = [u for u in users if _is_true(u.get("PasswordNeverExpires"))]
         elif password_never_expires is False:
-            users = [u for u in users if not _is_true(u.get("PasswordNeverExpires"))]
+            users = [u for u in users if _is_false(u.get("PasswordNeverExpires"))]
+
+        if password_not_required is True:
+            users = [u for u in users if _is_true(u.get("PasswordNotRequired"))]
+        elif password_not_required is False:
+            users = [u for u in users if _is_false(u.get("PasswordNotRequired"))]
 
         if locked_out is True:
             users = [u for u in users if _is_true(u.get("LockedOut"))]

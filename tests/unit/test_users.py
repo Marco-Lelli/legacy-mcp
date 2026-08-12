@@ -758,3 +758,195 @@ class TestGetUsersLiveModeBoolNormalization:
         result = live_tools.get_users(admin_count=False)
         assert result["total"] == 1
         assert result["items"][0]["SamAccountName"] == "alice"
+
+
+# ---------------------------------------------------------------------------
+# task #136 -- uac_unreadable population (Offline Mode)
+#
+# Dedicated fixture, deliberately NOT the shared module-scoped `tools`
+# fixture above: that one backs dozens of pre-existing tests with
+# hardcoded counts against the 15-user contoso-sample.json, none of whose
+# users have a null Enabled/PasswordNeverExpires/TrustedForDelegation/
+# TrustedToAuthForDelegation/PasswordNotRequired today. Reusing it here
+# would mean recomputing every one of those counts for no reason.
+#
+# alice / bob: fully known (uac readable), opposite states, to prove the
+#   strict True/False split still behaves like before.
+# carol: uac unreadable, no AllowedToDelegateTo -- excluded from every
+#   True/False branch of the 5 fields, and from delegation_only.
+# dave: uac unreadable, but AllowedToDelegateTo IS set -- must still be
+#   picked up by delegation_only (that field doesn't depend on uac).
+# ---------------------------------------------------------------------------
+
+_UAC_FIXTURE_USERS = [
+    {
+        "SamAccountName": "alice", "Enabled": True, "PasswordNeverExpires": False,
+        "TrustedForDelegation": False, "TrustedToAuthForDelegation": False,
+        "PasswordNotRequired": False, "AllowedToDelegateTo": "",
+    },
+    {
+        "SamAccountName": "bob", "Enabled": False, "PasswordNeverExpires": True,
+        "TrustedForDelegation": True, "TrustedToAuthForDelegation": False,
+        "PasswordNotRequired": True, "AllowedToDelegateTo": "",
+    },
+    {
+        "SamAccountName": "carol", "Enabled": None, "PasswordNeverExpires": None,
+        "TrustedForDelegation": None, "TrustedToAuthForDelegation": None,
+        "PasswordNotRequired": None, "AllowedToDelegateTo": "",
+    },
+    {
+        "SamAccountName": "dave", "Enabled": None, "PasswordNeverExpires": None,
+        "TrustedForDelegation": None, "TrustedToAuthForDelegation": None,
+        "PasswordNotRequired": None, "AllowedToDelegateTo": "CN=svc-target,DC=contoso,DC=local",
+    },
+]
+
+
+@pytest.fixture
+def uac_tools(tmp_path) -> _MockMCP:
+    fixture_json = tmp_path / "uac-unreadable.json"
+    fixture_json.write_text(json.dumps({"users": _UAC_FIXTURE_USERS}), encoding="utf-8")
+    forest = ForestConfig(
+        name="uac-test.local",
+        relation=ForestRelation.STANDALONE,
+        file=str(fixture_json),
+    )
+    ws = Workspace(mode=WorkspaceMode.OFFLINE, forests=[forest])
+    ws._init_connectors()
+    mcp = _MockMCP()
+    users_module.register(mcp, ws)
+    return mcp
+
+
+class TestGetUserSummaryUacUnreadable:
+
+    def test_uac_unreadable_count(self, uac_tools: _MockMCP) -> None:
+        result = uac_tools.get_user_summary()
+        assert result["uac_unreadable_count"] == 2
+
+    def test_enabled_disabled_unreadable_sum_to_total(self, uac_tools: _MockMCP) -> None:
+        result = uac_tools.get_user_summary()
+        assert result["enabled"] + result["disabled"] + result["uac_unreadable_count"] == result["total"]
+
+    def test_disabled_no_longer_counts_unreadable_as_disabled(self, uac_tools: _MockMCP) -> None:
+        # The task #136 bug: disabled used to be `not is_true(Enabled)`, so
+        # carol/dave (Enabled=null) were fabricated into "disabled".
+        result = uac_tools.get_user_summary()
+        assert result["enabled"] == 1
+        assert result["disabled"] == 1
+
+    def test_password_never_expires_and_not_required_unaffected_in_logic(
+        self, uac_tools: _MockMCP
+    ) -> None:
+        # These stay "count of confirmed True" -- unchanged logic, still
+        # correct: only bob is confirmed True for either field.
+        result = uac_tools.get_user_summary()
+        assert result["password_never_expires"] == 1
+        assert result["password_not_required"] == 1
+
+    def test_delegation_configured_counts_bob_and_dave(self, uac_tools: _MockMCP) -> None:
+        # bob via TrustedForDelegation=True, dave via AllowedToDelegateTo
+        # (independent of the null uac block) -- carol contributes nothing.
+        result = uac_tools.get_user_summary()
+        assert result["delegation_configured"] == 2
+
+
+class TestGetUsersUacUnreadableFilters:
+
+    def test_enabled_true_excludes_unreadable(self, uac_tools: _MockMCP) -> None:
+        result = uac_tools.get_users(enabled=True)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "alice"
+
+    def test_enabled_false_excludes_unreadable(self, uac_tools: _MockMCP) -> None:
+        # The task #136 bug, concretely: carol/dave must NOT appear here.
+        result = uac_tools.get_users(enabled=False)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "bob"
+
+    def test_password_never_expires_true_excludes_unreadable(self, uac_tools: _MockMCP) -> None:
+        result = uac_tools.get_users(password_never_expires=True)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "bob"
+
+    def test_password_never_expires_false_excludes_unreadable(self, uac_tools: _MockMCP) -> None:
+        result = uac_tools.get_users(password_never_expires=False)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "alice"
+
+    def test_password_not_required_true_excludes_unreadable(self, uac_tools: _MockMCP) -> None:
+        result = uac_tools.get_users(password_not_required=True)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "bob"
+
+    def test_password_not_required_false_excludes_unreadable(self, uac_tools: _MockMCP) -> None:
+        result = uac_tools.get_users(password_not_required=False)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "alice"
+
+    def test_uac_unreadable_filter_returns_carol_and_dave(self, uac_tools: _MockMCP) -> None:
+        result = uac_tools.get_users(uac_unreadable=True)
+        names = {u["SamAccountName"] for u in result["items"]}
+        assert names == {"carol", "dave"}
+
+    def test_uac_unreadable_combined_with_enabled_true_is_empty(self, uac_tools: _MockMCP) -> None:
+        # Contradictory by construction -- documented in the docstring, not
+        # an error condition, just an empty intersection.
+        result = uac_tools.get_users(uac_unreadable=True, enabled=True)
+        assert result["total"] == 0
+
+    def test_delegation_only_excludes_carol_includes_dave(self, uac_tools: _MockMCP) -> None:
+        result = uac_tools.get_users(delegation_only=True)
+        names = {u["SamAccountName"] for u in result["items"]}
+        assert names == {"bob", "dave"}
+
+
+# ---------------------------------------------------------------------------
+# task #136 -- uac_unreadable population (Live Mode)
+#
+# Same fixture data as the Offline classes above, but as native Python
+# types (bool/None) through a mocked LiveConnector, mirroring
+# TestGetUsersLiveModeBoolNormalization's pattern. Confirms the fix is
+# symmetric across modes by construction (same tools/users.py code path,
+# no SQLite string serialization involved).
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def uac_live_tools() -> _MockMCP:
+    from unittest.mock import MagicMock
+    connector = MagicMock()
+    connector.query_with_warnings.return_value = (_UAC_FIXTURE_USERS, [])
+    workspace = MagicMock()
+    workspace.connector.return_value = connector
+    mcp = _MockMCP()
+    users_module.register(mcp, workspace)
+    return mcp
+
+
+class TestGetUserSummaryUacUnreadableLiveMode:
+
+    def test_uac_unreadable_count(self, uac_live_tools: _MockMCP) -> None:
+        result = uac_live_tools.get_user_summary()
+        assert result["uac_unreadable_count"] == 2
+
+    def test_enabled_disabled_unreadable_sum_to_total(self, uac_live_tools: _MockMCP) -> None:
+        result = uac_live_tools.get_user_summary()
+        assert result["enabled"] + result["disabled"] + result["uac_unreadable_count"] == result["total"]
+
+
+class TestGetUsersUacUnreadableFiltersLiveMode:
+
+    def test_enabled_false_excludes_unreadable(self, uac_live_tools: _MockMCP) -> None:
+        result = uac_live_tools.get_users(enabled=False)
+        assert result["total"] == 1
+        assert result["items"][0]["SamAccountName"] == "bob"
+
+    def test_uac_unreadable_filter_returns_carol_and_dave(self, uac_live_tools: _MockMCP) -> None:
+        result = uac_live_tools.get_users(uac_unreadable=True)
+        names = {u["SamAccountName"] for u in result["items"]}
+        assert names == {"carol", "dave"}
+
+    def test_delegation_only_excludes_carol_includes_dave(self, uac_live_tools: _MockMCP) -> None:
+        result = uac_live_tools.get_users(delegation_only=True)
+        names = {u["SamAccountName"] for u in result["items"]}
+        assert names == {"bob", "dave"}
