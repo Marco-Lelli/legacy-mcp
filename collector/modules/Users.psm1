@@ -38,21 +38,26 @@ function Get-UsersData {
             # Get-ADUser -Filter * pull (task #131, field-confirmed on AUSL
             # Romagna, 11105 users). If userAccountControl itself is $null
             # (seen structurally on a whole domain in a later field test,
-            # cause not yet determined -- see task #133), the 4 derived
+            # cause not yet determined -- see task #133), the 5 derived
             # fields stay $null explicitly instead of defaulting to a
-            # plausible-looking but fabricated boolean.
+            # plausible-looking but fabricated boolean (task #135:
+            # PasswordNotRequired was still reading the raw property here,
+            # fabricating $false instead of null -- brought in line with
+            # the other 4).
             if ($_.userAccountControl -ne $null) {
                 $uac                        = [int]$_.userAccountControl
                 $enabled                    = (-not [bool]($uac -band 0x2))       # ACCOUNTDISABLE
                 $passwordNeverExpires       = [bool]($uac -band 0x10000)          # DONT_EXPIRE_PASSWORD
                 $trustedForDelegation       = [bool]($uac -band 0x80000)          # TRUSTED_FOR_DELEGATION
                 $trustedToAuthForDelegation = [bool]($uac -band 0x1000000)        # TRUSTED_TO_AUTH_FOR_DELEGATION
+                $passwordNotRequired        = [bool]($uac -band 0x20)             # PASSWD_NOTREQD
             } else {
                 $uacNullCount++
                 $enabled                    = $null
                 $passwordNeverExpires       = $null
                 $trustedForDelegation       = $null
                 $trustedToAuthForDelegation = $null
+                $passwordNotRequired        = $null
             }
 
             [PSCustomObject]@{
@@ -72,7 +77,7 @@ function Get-UsersData {
                 TrustedForDelegation         = $trustedForDelegation
                 TrustedToAuthForDelegation   = $trustedToAuthForDelegation
                 AllowedToDelegateTo          = @($_."msDS-AllowedToDelegateTo") -join ", "
-                PasswordNotRequired          = [bool]($_.userAccountControl -band 0x20)
+                PasswordNotRequired          = $passwordNotRequired
                 HomeDrive                    = $_.homeDrive
                 HomeDirectory                = $_.homeDirectory
                 PrimaryGroupID               = $_.primaryGroupID
@@ -95,7 +100,7 @@ function Get-UsersData {
     }
     if ($uacNullCount -gt 0) {
         Write-SafeCollectorLog -Level WARN -Section "Users" `
-            -Message "userAccountControl not available for $uacNullCount users out of $(@($users).Count) collected - Enabled/PasswordNeverExpires/TrustedForDelegation/TrustedToAuthForDelegation set to null for these users, not calculable - cause to be investigated separately (permissions/DC)"
+            -Message "userAccountControl not available for $uacNullCount users out of $(@($users).Count) collected - Enabled/PasswordNeverExpires/TrustedForDelegation/TrustedToAuthForDelegation/PasswordNotRequired set to null for these users, not calculable - cause to be investigated separately (permissions/DC)"
     }
 }
 

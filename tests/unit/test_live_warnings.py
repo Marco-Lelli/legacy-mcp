@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from legacy_mcp.modes.live import LiveConnector
+from legacy_mcp.modes.live import _SCRIPTS, LiveConnector
 from legacy_mcp.workspace.workspace import ForestConfig, ForestRelation
 
 
@@ -122,6 +122,45 @@ class TestQueryWithWarningsGroupMembersUnbounded:
             )
             rows, warnings = connector.query_with_warnings("group_members")
         assert warnings == [aggregate]
+
+
+# ---------------------------------------------------------------------------
+# "users" script content -- PasswordNotRequired derivation (task #135)
+#
+# The generated PowerShell for the "users" section is a static string never
+# executed by pytest (it runs on the target DC), so the only way to pin its
+# correctness here is a content assertion on _SCRIPTS["users"] itself. This
+# is a regression test for the bug: PasswordNotRequired used to read the raw
+# userAccountControl property directly instead of the normalized $uac
+# already computed for the other 4 derived fields (Enabled,
+# PasswordNeverExpires, TrustedForDelegation, TrustedToAuthForDelegation),
+# fabricating $false instead of null when userAccountControl itself is
+# unreadable. Mirrors Users.psm1 on the collector side, per P2.
+# ---------------------------------------------------------------------------
+
+class TestUsersScriptPasswordNotRequiredNormalization:
+
+    def test_computed_from_normalized_uac_not_raw_property(self) -> None:
+        script = _SCRIPTS["users"]
+        assert "$_.userAccountControl -band 0x20" not in script
+        assert "$passwordNotRequired = [bool]($uac -band 0x20)" in script
+
+    def test_null_in_the_uac_unreadable_branch(self) -> None:
+        script = _SCRIPTS["users"]
+        assert "$passwordNotRequired = $null" in script
+
+    def test_object_field_assigned_from_the_derived_variable(self) -> None:
+        script = _SCRIPTS["users"]
+        assert "PasswordNotRequired        = $passwordNotRequired" in script
+
+    def test_aggregate_warning_lists_password_not_required(self) -> None:
+        # No separate warning -- it shares uacNullCount with the other 4
+        # fields, so the fix only needs to add the field name to that
+        # existing aggregate message.
+        script = _SCRIPTS["users"]
+        assert script.count("$uacNullCount++") == 1
+        assert script.count("if ($uacNullCount -gt 0) {") == 1
+        assert "TrustedToAuthForDelegation/PasswordNotRequired set to null" in script
 
     def test_unresolvable_members_aggregate_line_also_survives(
         self, connector: LiveConnector

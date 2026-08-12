@@ -353,20 +353,25 @@ _SCRIPTS: dict[str, str] = {
         # explicitly in a mass Get-ADUser -Filter * pull (task #131, field-confirmed
         # on AUSL Romagna, 11105 users). If userAccountControl itself is $null (seen
         # structurally on a whole domain in a later field test, cause not yet
-        # determined -- see task #133), the 4 derived fields stay $null explicitly
-        # instead of defaulting to a plausible-looking but fabricated boolean.
+        # determined -- see task #133), the 5 derived fields stay $null explicitly
+        # instead of defaulting to a plausible-looking but fabricated boolean
+        # (task #135: PasswordNotRequired was still reading the raw property
+        # here, fabricating $false instead of null -- brought in line with
+        # the other 4).
         "    if ($_.userAccountControl -ne $null) {\n"
         "      $uac = [int]$_.userAccountControl\n"
         "      $enabled = (-not [bool]($uac -band 0x2))\n"
         "      $passwordNeverExpires = [bool]($uac -band 0x10000)\n"
         "      $trustedForDelegation = [bool]($uac -band 0x80000)\n"
         "      $trustedToAuthForDelegation = [bool]($uac -band 0x1000000)\n"
+        "      $passwordNotRequired = [bool]($uac -band 0x20)\n"
         "    } else {\n"
         "      $uacNullCount++\n"
         "      $enabled = $null\n"
         "      $passwordNeverExpires = $null\n"
         "      $trustedForDelegation = $null\n"
         "      $trustedToAuthForDelegation = $null\n"
+        "      $passwordNotRequired = $null\n"
         "    }\n"
         "    [PSCustomObject]@{\n"
         "      SamAccountName             = $_.SamAccountName\n"
@@ -385,7 +390,7 @@ _SCRIPTS: dict[str, str] = {
         "      TrustedForDelegation       = $trustedForDelegation\n"
         "      TrustedToAuthForDelegation = $trustedToAuthForDelegation\n"
         "      AllowedToDelegateTo        = ($_.'msDS-AllowedToDelegateTo') -join ', '\n"
-        "      PasswordNotRequired        = [bool]($_.userAccountControl -band 0x20)\n"
+        "      PasswordNotRequired        = $passwordNotRequired\n"
         "      HomeDrive                  = $_.homeDrive\n"
         "      HomeDirectory              = $_.homeDirectory\n"
         "      PrimaryGroupID             = $_.primaryGroupID\n"
@@ -402,7 +407,7 @@ _SCRIPTS: dict[str, str] = {
         "  Write-Warning \"CannotChangePassword was null for $cannotChangePasswordNullCount users out of $(@($results).Count) collected - fallback to false applied for all - see task #133\"\n"
         "}\n"
         "if ($uacNullCount -gt 0) {\n"
-        "  Write-Warning \"userAccountControl not available for $uacNullCount users out of $(@($results).Count) collected - Enabled/PasswordNeverExpires/TrustedForDelegation/TrustedToAuthForDelegation set to null for these users, not calculable - cause to be investigated separately (permissions/DC)\"\n"
+        "  Write-Warning \"userAccountControl not available for $uacNullCount users out of $(@($results).Count) collected - Enabled/PasswordNeverExpires/TrustedForDelegation/TrustedToAuthForDelegation/PasswordNotRequired set to null for these users, not calculable - cause to be investigated separately (permissions/DC)\"\n"
         "}\n"
         "@($results) | ConvertTo-Json -Depth 3"
     ),
