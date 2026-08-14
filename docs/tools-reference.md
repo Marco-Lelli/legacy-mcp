@@ -5,6 +5,14 @@ For setup and deployment, see [getting-started-a.md](getting-started-a.md) (Prof
 
 ---
 
+## Live Mode: the `warnings` field
+
+In Live Mode, a tool's response may include an optional `warnings` key: a list of strings describing degradation that occurred during that specific call (e.g. `userAccountControl` unreadable for some users, a collection cap truncating results, group members that failed to enumerate). It is present only when something actually degraded that call -- omitted entirely otherwise, so the common all-clear response keeps the exact same shape as Offline Mode.
+
+Every warning reaches the server's EventLog regardless of whether it is also surfaced here. A tool's own **Returns** section below says explicitly when `warnings` applies to it. Tools that don't mention it either return a single object or a bare (non-paginated) list with no natural place for the field, or -- for the DC Inventory tools (`get_dc_features`, `get_dc_services`, `get_dc_software`, `get_dc_file_locations`, `get_dc_network_config`, `get_eventlog_config`, `get_ntp_config`, `get_sysvol_state`) -- report degradation per-DC through their own `Status` field instead.
+
+---
+
 ## Workspace
 
 Tools for discovering available data sources, managing the workspace, and working with snapshots.
@@ -218,7 +226,7 @@ Return all domains in the forest with their configuration: DNS name, NetBIOS nam
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -273,7 +281,7 @@ A dict with all five FSMO role holders.
 
 ### get_schema_extensions
 
-Return custom schema classes and attributes added to the AD schema beyond the default Microsoft base schema. The collector caps collection at 500 objects.
+Return custom schema classes and attributes added to the AD schema beyond the default Microsoft base schema. Collection is capped at 500 objects by default in both modes: the offline collector accepts `-Limit 0` for a complete collection, Live Mode has no equivalent override -- use the offline collector for an environment with more than 500 custom extensions.
 
 **Parameters**
 
@@ -285,7 +293,7 @@ Return custom schema classes and attributes added to the AD schema beyond the de
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode when the 500-item cap truncates the result -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -334,7 +342,7 @@ Return all Domain Controllers in the forest with OS version, IP address, GC/RODC
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -560,7 +568,7 @@ Return all AD sites with their associated subnets and DCs.
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`. Each item includes site name, subnets, and associated DCs.
+Paginated result: `{ items, total, offset, limit, has_more }`. Each item includes site name, subnets, and associated DCs. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -584,7 +592,7 @@ Return all site links with cost, replication interval, schedule, and transport p
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -610,7 +618,7 @@ Return user counts by state: total, enabled, disabled, accounts with unreadable 
 
 **Returns**
 
-A dict with counts and percentages for each user state category. `no_last_logon`, `primary_group_not_domain_users`, and `cannot_change_password` include sub-counts and percentages.
+A dict with counts and percentages for each user state category. `no_last_logon`, `primary_group_not_domain_users`, and `cannot_change_password` include sub-counts and percentages. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 `enabled` and `disabled` are strict: an account counts toward one of them only when `Enabled` is explicitly `true`/`false`. Accounts whose `userAccountControl` could not be read count toward neither -- they are reported in `uac_unreadable_count` instead, so `enabled + disabled + uac_unreadable_count == total` always holds (task #136). The same read also backs `PasswordNeverExpires`, `TrustedForDelegation`, `TrustedToAuthForDelegation`, and `PasswordNotRequired` (task #135) -- they go `null` for the same users at the same time, so `uac_unreadable_count` covers all 5 with a single number.
 
@@ -650,7 +658,7 @@ All filters are combinable and applied in sequence. Use `get_user_summary` first
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`. `total` reflects the filtered count before pagination.
+Paginated result: `{ items, total, offset, limit, has_more }`. `total` reflects the filtered count before pagination. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Notes**
 
@@ -707,7 +715,7 @@ Return accounts that are members of privileged groups (Domain Admins, Enterprise
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Notes**
 
@@ -739,7 +747,7 @@ Return AD groups with category (Security/Distribution), scope (Global/DomainLoca
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -763,7 +771,7 @@ Return the direct members of a specific group. For privileged groups, prefer `ge
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`. Each item includes `GroupName`, `MemberSamAccountName`, `MemberDisplayName`, `MemberObjectClass`, `MemberDistinguishedName`, `MemberEnabled`.
+Paginated result: `{ items, total, offset, limit, has_more }`. Each item includes `GroupName`, `MemberSamAccountName`, `MemberDisplayName`, `MemberObjectClass`, `MemberDistinguishedName`, `MemberEnabled`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field). Per-group enumeration failures are aggregated into a single count in `warnings` rather than named group-by-group; the full detail is always in the EventLog.
 
 **Notes**
 
@@ -872,7 +880,7 @@ Return the complete OU tree with distinguished names, parent OU, and whether inh
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -895,7 +903,7 @@ Return all GPOs with display name, GUID, status (enabled/disabled), and creation
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -919,7 +927,7 @@ Return GPO links to OUs, sites, and the domain root, including link enabled stat
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`. One row per GPO per target OU -- complex environments can have thousands of rows.
+Paginated result: `{ items, total, offset, limit, has_more }`. One row per GPO per target OU -- complex environments can have thousands of rows. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -943,7 +951,7 @@ Return OUs with GPO inheritance blocked.
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -970,7 +978,7 @@ Return all trust relationships: type (External/Forest/Shortcut/Realm), direction
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -994,7 +1002,7 @@ Return all Fine-Grained Password Policies (PSOs) with precedence, password setti
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -1047,7 +1055,7 @@ Return DNS zones hosted on Domain Controllers: zone name, type (Primary/Secondar
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 
@@ -1095,7 +1103,7 @@ Note: detailed PKI configuration analysis is in the Enterprise layer.
 
 **Returns**
 
-Paginated result: `{ items, total, offset, limit, has_more }`.
+Paginated result: `{ items, total, offset, limit, has_more }`. May include a `warnings` list in Live Mode -- see [Live Mode: the `warnings` field](#live-mode-the-warnings-field).
 
 **Example prompts**
 

@@ -309,25 +309,35 @@ OUTPUT FORMAT
 
   Users and computers have no collection limit by default (since v1.7.0).
   A -Limit parameter exists for test/debug use only -- it is opt-in and
-  does not apply during a normal assessment.
+  does not apply during a normal assessment. This does not apply to every
+  section: schema extensions keep a default cap -- see "schema" below.
 
   Fields per section (selected):
+
+  schema
+    lDAPDisplayName, ObjectClass, AdminDescription, GovernsID, AttributeID
+    Capped at 500 custom schema extensions by default (since v1.6.4) --
+    few environments have more than a few dozen, so this is a safety net,
+    not a silent data-loss risk. Since v1.7.0 the cap is configurable via
+    -Limit (0 = unlimited, for the rare environment that needs a full
+    collection) and a warning is logged through the same Write-SafeCollectorLog
+    path used elsewhere when the cap actually truncates the result (task
+    #130). Live Mode applies the identical 500 cap to the "schema" section,
+    with no -Limit override available there -- use the offline collector
+    with -Limit 0 if a complete list is needed for an environment that
+    exceeds 500 custom extensions.
 
   users
     SamAccountName, DisplayName, UserPrincipalName, DistinguishedName,
     Mail, Enabled, PasswordNeverExpires, LockedOut, LastLogonDate,
     PasswordLastSet, Description, AdminCount,
     TrustedForDelegation, TrustedToAuthForDelegation, AllowedToDelegateTo
-    Since v1.7.0: Enabled, PasswordNeverExpires, TrustedForDelegation, and
-    TrustedToAuthForDelegation are explicit null -- instead of a fabricated
-    value -- for any user whose userAccountControl could not be read (see
-    "Elevated session" above). An aggregate warning is printed when this
-    happens.
-    Known gap (task #135, not yet fixed): PasswordNotRequired does not
-    follow this rule yet -- it still reports a fabricated false in the same
-    situation, instead of null. Treat PasswordNotRequired as unreliable for
-    any user affected by a userAccountControl read failure until #135 is
-    resolved.
+    Since v1.7.0: Enabled, PasswordNeverExpires, TrustedForDelegation,
+    TrustedToAuthForDelegation, and PasswordNotRequired are explicit null
+    -- instead of a fabricated value -- for any user whose
+    userAccountControl could not be read (see "Elevated session" above).
+    All five fields come from the same read and go null together for the
+    same user. An aggregate warning is printed when this happens.
 
   computers
     Name, DistinguishedName, OperatingSystem, OperatingSystemVersion,
@@ -505,7 +515,15 @@ VERSION HISTORY
     - Users.psm1: Enabled, PasswordNeverExpires, TrustedForDelegation,
       TrustedToAuthForDelegation now report explicit null (with an
       aggregate warning) instead of a fabricated value when
-      userAccountControl cannot be read for a user.
+      userAccountControl cannot be read for a user. PasswordNotRequired
+      was fixed identically in a follow-up pass (task #135) -- same root
+      cause, same aggregate warning, no separate opt-in needed.
+    - Schema.psm1: schema extensions collection is now capped via a
+      -Limit parameter (default 500, 0 = unlimited) instead of a fixed
+      500 with no override. A warning is logged through
+      Write-SafeCollectorLog when the cap actually truncates the result.
+      Live Mode applies the same 500 cap to its "schema" section, with no
+      -Limit override on that side (task #130).
     - Forest.psm1: FSMO role data resolved from the target domain
       instead of the calling machine's own forest.
     - New Membership.psm1 module: group membership is now resolved
@@ -536,6 +554,8 @@ VERSION HISTORY
     - DNS.psm1: iterate all DCs for zone collection instead of first DC only; warn if no DC has DNS role
     - PKI.psm1: tighten CA filter to objectClass pKIEnrollmentService only
     - Schema.psm1: warn when schema extensions exceed 500 and are truncated
+      (fixed cap, no override -- superseded by the -Limit-based mechanism
+      in v1.7.0 above)
     - Groups.psm1: warn on group member enumeration failure instead of silent skip
     - FSP.psm1: warn on FSP collection failure instead of silent empty return
     - Fixed em dash characters in module headers (ASCII compliance, P11)

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.3.0] - 2026-08-13 "Heavy Load"
 
 No MCP server package release yet — the published package remains at
 v0.2.5 (see below), but this cycle now includes MCP server code changes
@@ -36,6 +36,13 @@ alongside the collector ones (see "MCP Server" below).
   (task #134).
 - New `Logging.psm1`: shared fallback logging so warnings from collector
   modules are never silently lost regardless of invocation style.
+- `Schema.psm1`: schema extensions collection is now capped via a `-Limit`
+  parameter (default `500`, `0` = unlimited) instead of a fixed cap with
+  no override; a warning is logged through `Write-SafeCollectorLog` when
+  the cap actually truncates the result. The `schema` section in Live
+  Mode applies the identical 500 cap, with no `-Limit` override on that
+  side — use the offline collector with `-Limit 0` for a complete
+  collection in an environment that exceeds it (task #130).
 - Fixed an ADWS enumeration timeout on large group/DC counts by
   materializing collections before iterating.
 - `installer/Manage-Workspaces.ps1`: fixed array-collapse bugs causing
@@ -57,6 +64,18 @@ alongside the collector ones (see "MCP Server" below).
   the `false` branch; new `password_not_required` filter added for
   symmetry; new `uac_unreadable` filter to query that population
   explicitly, combinable with every non-UAC filter (task #136).
+- Live Mode: warnings and non-fatal errors from PowerShell were being
+  silently discarded on every successful call — `stderr` was only
+  inspected after a failure, so a non-blocking warning (e.g. unreadable
+  `userAccountControl`, the new Schema cap, unresolved group members)
+  never reached the caller or the EventLog. `stderr` is now always read,
+  parsed with a new shared CLIXML parser (`_clixml.py`). Every warning is
+  logged to the EventLog unconditionally; most tools additionally surface
+  it in their JSON response via an optional `warnings` field, present
+  only when that specific call actually degraded — see
+  `docs/tools-reference.md` for the exact list of tools this applies to.
+  Failure-path error messages shown to the caller are now extracted with
+  the same parser instead of a raw CLIXML blob (task #141).
 
 ## [0.2.5] - 2026-07-12 "Fable-ous Findings"
 
