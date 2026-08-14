@@ -4,9 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [0.3.0] - 2026-08-13 "Heavy Load"
 
-No MCP server package release yet — the published package remains at
-v0.2.5 (see below), but this cycle now includes MCP server code changes
-alongside the collector ones (see "MCP Server" below).
+First MCP server package release since v0.2.5. This cycle touched both
+the collector (already released separately as v1.7.0) and the server
+package itself — Live Mode (`live.py`), the boolean/UAC normalization
+fixes in `tools/users.py`, `tools/computers.py`, and `tools/fsp.py`
+(`_normalize.py`), and the new Live Mode warning channel (`_clixml.py`)
+— see "MCP Server" below.
 
 ### Collector
 
